@@ -127,6 +127,10 @@ class StatCard extends StatelessWidget {
   final IconData? icon;
   final Color? valueColor;
 
+  /// When non-null, an info icon appears next to the label. Tap to see
+  /// this text in a Tooltip (works on touch — Tooltip's tap-trigger).
+  final String? tooltip;
+
   const StatCard({
     super.key,
     required this.label,
@@ -134,6 +138,7 @@ class StatCard extends StatelessWidget {
     this.subtitle,
     this.icon,
     this.valueColor,
+    this.tooltip,
   });
 
   @override
@@ -153,6 +158,10 @@ class StatCard extends StatelessWidget {
                 label.toUpperCase(),
                 style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
               ),
+              if (tooltip != null) ...[
+                const SizedBox(width: 4),
+                InfoIcon(message: tooltip!),
+              ],
             ],
           ),
           const SizedBox(height: 8),
@@ -173,6 +182,43 @@ class StatCard extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Small info-circle icon that shows [message] in a Tooltip when tapped.
+/// Drop next to a label to attach a contextual explanation that doesn't
+/// take screen real estate by default.
+class InfoIcon extends StatelessWidget {
+  final String message;
+  final double size;
+
+  const InfoIcon({super.key, required this.message, this.size = 14});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: message,
+      triggerMode: TooltipTriggerMode.tap,
+      preferBelow: false,
+      showDuration: const Duration(seconds: 4),
+      decoration: BoxDecoration(
+        color: TibaneColors.darker,
+        border: Border.all(color: TibaneColors.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      textStyle: const TextStyle(
+        color: TibaneColors.text,
+        fontSize: 12,
+        height: 1.4,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: Icon(
+        Icons.info_outline,
+        size: size,
+        color: TibaneColors.textDim,
       ),
     );
   }

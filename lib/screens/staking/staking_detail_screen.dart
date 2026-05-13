@@ -13,6 +13,7 @@ import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
+import '../swap_screen.dart';
 import '../wallet/inapp_unlock_screen.dart';
 import 'staking_members_screen.dart';
 
@@ -127,6 +128,22 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Swap SOL → ${pool.tokenSymbol ?? "token"}',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => Scaffold(
+                  backgroundColor: TibaneColors.black,
+                  appBar: AppBar(title: const Text('Swap')),
+                  body: SwapScreen(
+                    initialInputMint: wsolMint,
+                    initialOutputMint: pool.mint,
+                  ),
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.swap_horiz, size: 20),
+          ),
           IconButton(
             onPressed: () {
               Clipboard.setData(ClipboardData(text: pool.address));
@@ -510,6 +527,8 @@ class _PoolStatsSection extends StatelessWidget {
                 label: 'Total Staked',
                 value: formatTokenAmount(pool.totalStaked, pool.tokenDecimals),
                 icon: Icons.lock,
+                tooltip:
+                    'All tokens currently staked across every member of this pool.',
               ),
             ),
             const SizedBox(width: 8),
@@ -519,6 +538,9 @@ class _PoolStatsSection extends StatelessWidget {
                 value: '${formatSol(pool.rewardBalance, decimals: 3)} SOL',
                 valueColor: TibaneColors.gold,
                 icon: Icons.diamond,
+                tooltip:
+                    'SOL balance the pool will distribute to stakers as rewards. '
+                    'Grows as the pool authority tops it up.',
               ),
             ),
           ],
@@ -532,6 +554,10 @@ class _PoolStatsSection extends StatelessWidget {
                 value: pool.tauFormatted,
                 subtitle: 'Decay period',
                 icon: Icons.timer,
+                tooltip:
+                    'Time-weighted decay constant. Your stake weight grows '
+                    'toward your full deposit over time at a rate set by '
+                    'tau — smaller tau ramps up faster.',
               ),
             ),
             const SizedBox(width: 8),
@@ -540,6 +566,8 @@ class _PoolStatsSection extends StatelessWidget {
                 label: 'Members',
                 value: '${pool.memberCount}',
                 icon: Icons.people,
+                tooltip:
+                    'Number of unique wallets currently staked in this pool.',
               ),
             ),
           ],
@@ -1385,19 +1413,60 @@ class _PoolInfoSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('POOL INFO', style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+        Text('POOL INFO',
+            style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
         const SizedBox(height: 12),
         TibaneCard(
           child: Column(
             children: [
-              _InfoRow(label: 'Pool', value: shortenAddress(pool.address)),
-              _InfoRow(label: 'Mint', value: shortenAddress(pool.mint)),
-              _InfoRow(label: 'Authority', value: shortenAddress(pool.authority)),
-              _InfoRow(label: 'Tau', value: '${pool.tauSeconds} seconds'),
+              _InfoRow(
+                label: 'Pool',
+                value: shortenAddress(pool.address),
+                copyValue: pool.address,
+                tooltip:
+                    'On-chain account that holds the staked tokens and '
+                    'tracks total weight.',
+              ),
+              _InfoRow(
+                label: 'Mint',
+                value: shortenAddress(pool.mint),
+                copyValue: pool.mint,
+                tooltip:
+                    'The SPL token mint this pool stakes. Every deposit and '
+                    'withdrawal uses this exact token.',
+              ),
+              _InfoRow(
+                label: 'Authority',
+                value: shortenAddress(pool.authority),
+                copyValue: pool.authority,
+                tooltip:
+                    'Wallet allowed to deposit reward SOL and update pool '
+                    'settings (min stake, lock duration, cooldown).',
+              ),
+              _InfoRow(
+                label: 'Tau',
+                value: '${pool.tauSeconds} seconds',
+                tooltip:
+                    'Decay constant. Your stake weight grows toward your '
+                    'full deposit at a rate set by tau — smaller tau ramps '
+                    'up faster.',
+              ),
               if (pool.lockDurationSeconds > BigInt.zero)
-                _InfoRow(label: 'Lock', value: '${pool.lockDurationSeconds.toInt() ~/ 3600}h'),
+                _InfoRow(
+                  label: 'Lock',
+                  value: '${pool.lockDurationSeconds.toInt() ~/ 3600}h',
+                  tooltip:
+                      'Minimum time your stake stays locked before you can '
+                      'request to unstake.',
+                ),
               if (pool.unstakeCooldownSeconds > BigInt.zero)
-                _InfoRow(label: 'Cooldown', value: '${pool.unstakeCooldownSeconds.toInt() ~/ 3600}h'),
+                _InfoRow(
+                  label: 'Cooldown',
+                  value: '${pool.unstakeCooldownSeconds.toInt() ~/ 3600}h',
+                  tooltip:
+                      'Waiting period between requesting and completing an '
+                      'unstake — the tokens are reserved during this window.',
+                ),
             ],
           ),
         ),
@@ -1409,18 +1478,73 @@ class _PoolInfoSection extends StatelessWidget {
 class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
+  final String? copyValue;
+  final String? tooltip;
 
-  const _InfoRow({required this.label, required this.value});
+  const _InfoRow({
+    required this.label,
+    required this.value,
+    this.copyValue,
+    this.tooltip,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final valueWidget = Text(value, style: monoStyle(fontSize: 12));
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13)),
-          Text(value, style: monoStyle(fontSize: 12)),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: TibaneColors.textMuted,
+                  fontSize: 13,
+                ),
+              ),
+              if (tooltip != null) ...[
+                const SizedBox(width: 6),
+                InfoIcon(message: tooltip!),
+              ],
+            ],
+          ),
+          if (copyValue != null)
+            InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: copyValue!));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('$label address copied'),
+                    duration: const Duration(seconds: 1),
+                  ),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 2,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    valueWidget,
+                    const SizedBox(width: 6),
+                    const Icon(
+                      Icons.copy,
+                      size: 12,
+                      color: TibaneColors.textDim,
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            valueWidget,
         ],
       ),
     );
