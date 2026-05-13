@@ -1,12 +1,42 @@
 import 'package:flutter/material.dart';
+import 'package:libwallet/libwallet.dart' show VersionInfo;
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/cat_logo.dart';
 import '../widgets/tibane_card.dart';
 
-class AboutScreen extends StatelessWidget {
+class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
+
+  @override
+  State<AboutScreen> createState() => _AboutScreenState();
+}
+
+class _AboutScreenState extends State<AboutScreen> {
+  VersionInfo? _versionInfo;
+  String? _versionError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final client =
+          await context.read<WalletService>().libwallet.ensureClient();
+      final v = await client.info.versionInfo();
+      if (!mounted) return;
+      setState(() => _versionInfo = v);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _versionError = e.toString());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -130,6 +160,13 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(height: 32),
 
+          // Diagnostics
+          Text('DIAGNOSTICS',
+              style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+          const SizedBox(height: 12),
+          _VersionInfoCard(info: _versionInfo, error: _versionError),
+          const SizedBox(height: 32),
+
           // Built with
           Center(
             child: Column(
@@ -140,7 +177,7 @@ class AboutScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '2025 Tibane Labs',
+                  '2026 Karpeles Lab Inc',
                   style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
                 ),
               ],
@@ -224,4 +261,58 @@ class _LinkCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _VersionInfoCard extends StatelessWidget {
+  final VersionInfo? info;
+  final String? error;
+  const _VersionInfoCard({required this.info, required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return TibaneCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _kv('libwallet', info?.version.isNotEmpty == true
+              ? info!.version
+              : (error != null ? 'unavailable' : 'loading…')),
+          if (info != null && info!.gitTag.isNotEmpty)
+            _kv('git', info!.gitTag),
+          if (info != null && info!.dateTag.isNotEmpty)
+            _kv('build', info!.dateTag),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                error!,
+                style: monoStyle(fontSize: 10, color: TibaneColors.error),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _kv(String k, String v) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 80,
+              child: Text(
+                k,
+                style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                v,
+                style: monoStyle(fontSize: 11, color: TibaneColors.text),
+              ),
+            ),
+          ],
+        ),
+      );
 }

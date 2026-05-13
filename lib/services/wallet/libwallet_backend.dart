@@ -794,10 +794,12 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
   // --- wallet dashboard APIs ---
 
-  /// List assets for the current account (SOL + SPL tokens).
-  Future<List<Asset>> getAssets() async {
+  /// List assets for the current account (SOL + SPL tokens). Passes
+  /// `convert: 'USD'` so each Asset comes back with `fiatAmount` populated
+  /// for the dashboard's per-token USD column.
+  Future<List<Asset>> getAssets({String convert = 'USD'}) async {
     final client = await _getClient();
-    return client.assets.list();
+    return client.assets.list(convert: convert);
   }
 
   /// List recent transactions for the current account, newest first.
