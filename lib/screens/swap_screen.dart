@@ -536,15 +536,9 @@ class _SwapScreenState extends State<SwapScreen> {
         _quoteOutUi = null;
         _amountController.clear();
       });
-      // Register the output token with libwallet so the new balance
-      // shows up on the dashboard. If it's already in the curated /
-      // custom whitelist this is a no-op, otherwise we discover its
-      // metadata on-chain and create() a token row scoped to the
-      // active network. Fire-and-forget — failure shouldn't block the
-      // success UI.
-      if (outputMint != null) {
-        unawaited(_ensureOutputTokenTracked(wallet, outputMint));
-      }
+      // libwallet 0.4.27 handles both balance-refresh notification and
+      // auto-registration of unknown swap outputs server-side, so no
+      // client-side discover/create round-trip is needed here.
       wallet.refreshBalances();
       _loadHoldings();
       // Show the success sheet. Don't await — let it sit while we kick
@@ -575,39 +569,6 @@ class _SwapScreenState extends State<SwapScreen> {
       if (mounted) {
         setState(() => _swapping = false);
       }
-    }
-  }
-
-  /// Make sure libwallet tracks the [mint] we just swapped into so the
-  /// new balance shows up in assets.list(). The native asset (wSOL) is
-  /// always tracked, and tokens.list() is checked first to avoid a
-  /// pointless discover round-trip when the entry already exists.
-  Future<void> _ensureOutputTokenTracked(
-    WalletService wallet,
-    String mint,
-  ) async {
-    if (mint == wsolMint) return;
-    try {
-      final client = await wallet.libwallet.ensureClient();
-      final existing = await client.tokens.list();
-      if (existing.any((t) => t.address == mint)) return;
-      final net = wallet.libwallet.currentNetwork;
-      if (net == null) return;
-      final chainKey = '${net.type.name}.${net.chainId}';
-      final discovered = await client.tokens.discover(
-        network: chainKey,
-        address: mint,
-      );
-      await client.tokens.create(
-        name: discovered.name,
-        symbol: discovered.symbol,
-        address: discovered.address,
-        decimals: discovered.decimals,
-        network: chainKey,
-        type: discovered.type,
-      );
-    } catch (e) {
-      debugPrint('register swap output token failed: $e');
     }
   }
 
