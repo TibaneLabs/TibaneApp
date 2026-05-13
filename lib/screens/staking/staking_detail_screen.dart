@@ -1445,7 +1445,7 @@ class _PoolInfoSection extends StatelessWidget {
               ),
               _InfoRow(
                 label: 'Tau',
-                value: '${pool.tauSeconds} seconds',
+                value: _formatDuration(pool.tauSeconds.toInt()),
                 tooltip:
                     'Decay constant. Your stake weight grows toward your '
                     'full deposit at a rate set by tau — smaller tau ramps '
@@ -1454,7 +1454,7 @@ class _PoolInfoSection extends StatelessWidget {
               if (pool.lockDurationSeconds > BigInt.zero)
                 _InfoRow(
                   label: 'Lock',
-                  value: '${pool.lockDurationSeconds.toInt() ~/ 3600}h',
+                  value: _formatDuration(pool.lockDurationSeconds.toInt()),
                   tooltip:
                       'Minimum time your stake stays locked before you can '
                       'request to unstake.',
@@ -1462,7 +1462,7 @@ class _PoolInfoSection extends StatelessWidget {
               if (pool.unstakeCooldownSeconds > BigInt.zero)
                 _InfoRow(
                   label: 'Cooldown',
-                  value: '${pool.unstakeCooldownSeconds.toInt() ~/ 3600}h',
+                  value: _formatDuration(pool.unstakeCooldownSeconds.toInt()),
                   tooltip:
                       'Waiting period between requesting and completing an '
                       'unstake — the tokens are reserved during this window.',
