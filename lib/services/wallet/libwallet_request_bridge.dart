@@ -38,9 +38,22 @@ class LibwalletRequestBridge {
       case ChainSwitchRequest():
         await _handleChainSwitch(ctx, req);
       case WatchAssetRequest():
+        await _handleWatchAsset(ctx, req);
       case UnknownPendingRequest():
         await _reject(req.id);
     }
+  }
+
+  Future<void> _handleWatchAsset(
+    BuildContext ctx,
+    WatchAssetRequest req,
+  ) async {
+    final ok = await showWatchAssetSheet(ctx, req: req);
+    if (!ok) {
+      await _reject(req.id);
+      return;
+    }
+    await client.requests.approve(req.id);
   }
 
   Future<void> _handleConnect(BuildContext ctx, ConnectRequest req) async {

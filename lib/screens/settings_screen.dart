@@ -17,6 +17,7 @@ import 'wallet/inapp_unlock_screen.dart';
 import 'wallet/networks_screen.dart';
 import 'wallet/wallet_details_screen.dart';
 import 'wallet/wallets_management_screen.dart';
+import 'wallet/web3_connections_screen.dart';
 import 'walletconnect/walletconnect_sessions_screen.dart';
 
 /// Replaces the legacy "About" tab. Surfaces wallet/account management and
@@ -91,6 +92,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const WalletConnectSessionsScreen(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          _SettingsTile(
+            icon: Icons.public,
+            title: 'Connected sites',
+            subtitle: 'Revoke dApp permissions granted in-browser',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const Web3ConnectionsScreen(),
               ),
             ),
           ),

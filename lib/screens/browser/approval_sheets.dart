@@ -449,6 +449,117 @@ Future<bool> showAddNetworkSheet(
       false;
 }
 
+/// Sheet for `WatchAssetRequest` (EIP-747 wallet_watchAsset) — dApp wants
+/// us to add a token to the wallet's tracked-assets list. Returns true on
+/// approve.
+Future<bool> showWatchAssetSheet(
+  BuildContext context, {
+  required WatchAssetRequest req,
+}) async {
+  final isNft = req.assetType == 'ERC721' || req.assetType == 'ERC1155';
+  final preview = req.address.length > 14
+      ? '${req.address.substring(0, 8)}…${req.address.substring(req.address.length - 6)}'
+      : req.address;
+  final body = Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Row(
+        children: [
+          if (req.image.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                req.image,
+                width: 40,
+                height: 40,
+                errorBuilder: (_, __, ___) => const _AssetIconFallback(),
+              ),
+            )
+          else
+            const _AssetIconFallback(),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  req.symbol.isEmpty ? '(no symbol)' : req.symbol,
+                  style: const TextStyle(
+                    color: TibaneColors.text,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  req.assetType,
+                  style: monoStyle(
+                    fontSize: 11,
+                    color: TibaneColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 16),
+      _KeyValue('Contract', preview),
+      if (!isNft) ...[
+        const SizedBox(height: 8),
+        _KeyValue('Decimals', req.decimals.toString()),
+      ],
+      if (req.tokenId.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        _KeyValue('Token ID', req.tokenId),
+      ],
+      if (req.addressLooksInvalid) ...[
+        const SizedBox(height: 14),
+        _WarningRow(
+          text: 'The contract address does not parse as a valid EVM '
+              'address. Approving could add a phishing token — verify the '
+              'address before continuing.',
+        ),
+      ],
+      if (req.isAlreadyTracked) ...[
+        const SizedBox(height: 14),
+        _WarningRow(
+          text: 'This token is already tracked in your wallet. Approving '
+              'is a no-op.',
+        ),
+      ],
+    ],
+  );
+  return await _show(
+        context,
+        title: isNft ? 'Add NFT collection' : 'Add token',
+        host: req.host.isEmpty ? '(unknown)' : req.host,
+        approveLabel: 'Add',
+        body: body,
+      ) ??
+      false;
+}
+
+class _AssetIconFallback extends StatelessWidget {
+  const _AssetIconFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: TibaneColors.orange.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Icon(
+        Icons.token_outlined,
+        color: TibaneColors.orange,
+        size: 22,
+      ),
+    );
+  }
+}
+
 class ChainSwitchResult {
   final String? networkId;
   final String? accountId;
