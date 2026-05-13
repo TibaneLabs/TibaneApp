@@ -19,7 +19,20 @@ import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
 
 class SwapScreen extends StatefulWidget {
-  const SwapScreen({super.key});
+  /// Optional input mint to pre-select once holdings finish loading. Pass
+  /// the wSOL mint (`So11…1112`) to default to SOL. When null, the user
+  /// must pick from holdings.
+  final String? initialInputMint;
+
+  /// Optional output mint. Defaults to ChiefPussy when null (Tibane's
+  /// default destination on the home screen Swap action).
+  final String? initialOutputMint;
+
+  const SwapScreen({
+    super.key,
+    this.initialInputMint,
+    this.initialOutputMint,
+  });
 
   @override
   State<SwapScreen> createState() => _SwapScreenState();
@@ -84,13 +97,17 @@ class _SwapScreenState extends State<SwapScreen> {
     super.initState();
     _amountController.addListener(_onAmountChanged);
 
-    // Default output: Tibane Thecat
+    // Default output: ChiefPussy unless caller overrode it. Decimals
+    // are inferred (SOL = 9, pump.fun tokens = 6); on the libwallet
+    // path the actual decimals come from the quote so the hint is just
+    // for the on-screen preview before the quote lands.
+    final initOutMint = widget.initialOutputMint ?? chiefPussyMint;
     _selectedOutput = _SwapToken(
-      mint: chiefPussyMint,
-      symbol: 'ChiefPussy',
-      name: 'Tibane Thecat',
+      mint: initOutMint,
+      symbol: initOutMint == chiefPussyMint ? 'ChiefPussy' : '',
+      name: initOutMint == chiefPussyMint ? 'Tibane Thecat' : '',
     );
-    _outputDecimals = 6; // pump.fun tokens are 6 decimals
+    _outputDecimals = initOutMint == wsolMint ? 9 : 6;
 
     final wallet = context.read<WalletService>();
     _wallet = wallet;
@@ -329,6 +346,16 @@ class _SwapScreenState extends State<SwapScreen> {
             _selectedInput = null;
             _amountController.clear();
           }
+        } else if (widget.initialInputMint != null) {
+          // Caller asked us to pre-select a specific input — find the
+          // matching holding now that the list is loaded. Falls through
+          // silently if the user doesn't hold that asset.
+          final wanted = widget.initialInputMint!;
+          final match = holdings.cast<TokenHolding?>().firstWhere(
+            (h) => h!.mint == wanted,
+            orElse: () => null,
+          );
+          if (match != null) _selectedInput = match;
         }
       });
     } catch (e) {
@@ -509,6 +536,15 @@ class _SwapScreenState extends State<SwapScreen> {
         _quoteOutUi = null;
         _amountController.clear();
       });
+      // Register the output token with libwallet so the new balance
+      // shows up on the dashboard. If it's already in the curated /
+      // custom whitelist this is a no-op, otherwise we discover its
+      // metadata on-chain and create() a token row scoped to the
+      // active network. Fire-and-forget — failure shouldn't block the
+      // success UI.
+      if (outputMint != null) {
+        unawaited(_ensureOutputTokenTracked(wallet, outputMint));
+      }
       wallet.refreshBalances();
       _loadHoldings();
       // Show the success sheet. Don't await — let it sit while we kick
@@ -539,6 +575,39 @@ class _SwapScreenState extends State<SwapScreen> {
       if (mounted) {
         setState(() => _swapping = false);
       }
+    }
+  }
+
+  /// Make sure libwallet tracks the [mint] we just swapped into so the
+  /// new balance shows up in assets.list(). The native asset (wSOL) is
+  /// always tracked, and tokens.list() is checked first to avoid a
+  /// pointless discover round-trip when the entry already exists.
+  Future<void> _ensureOutputTokenTracked(
+    WalletService wallet,
+    String mint,
+  ) async {
+    if (mint == wsolMint) return;
+    try {
+      final client = await wallet.libwallet.ensureClient();
+      final existing = await client.tokens.list();
+      if (existing.any((t) => t.address == mint)) return;
+      final net = wallet.libwallet.currentNetwork;
+      if (net == null) return;
+      final chainKey = '${net.type.name}.${net.chainId}';
+      final discovered = await client.tokens.discover(
+        network: chainKey,
+        address: mint,
+      );
+      await client.tokens.create(
+        name: discovered.name,
+        symbol: discovered.symbol,
+        address: discovered.address,
+        decimals: discovered.decimals,
+        network: chainKey,
+        type: discovered.type,
+      );
+    } catch (e) {
+      debugPrint('register swap output token failed: $e');
     }
   }
 
@@ -743,19 +812,8 @@ class _SwapScreenState extends State<SwapScreen> {
       onRefresh: _loadHoldings,
       color: TibaneColors.orange,
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         children: [
-          // Header
-          Text(
-            'Swap',
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Swap tokens directly via Jupiter',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
-          ),
-          const SizedBox(height: 20),
 
           if (!wallet.isConnected) ...[
             TibaneCard(

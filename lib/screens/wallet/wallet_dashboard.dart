@@ -170,16 +170,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
               _ActionButton(
                 icon: Icons.swap_horiz,
                 label: 'Swap',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => Scaffold(
-                      backgroundColor: TibaneColors.black,
-                      appBar: AppBar(title: const Text('Swap')),
-                      body: const SwapScreen(),
-                    ),
-                  ),
-                ),
+                onTap: () => _openSwap(context),
               ),
             ],
           ),
@@ -195,6 +186,11 @@ class _WalletDashboardState extends State<WalletDashboard> {
                       padding: const EdgeInsets.only(bottom: 6),
                       child: TibaneCard(
                         padding: const EdgeInsets.all(12),
+                        onTap: () => _openSwap(
+                          context,
+                          inputMint: _mintFromAssetKey(a.key),
+                          outputMint: wsolMint,
+                        ),
                         child: Row(
                           children: [
                             Expanded(
@@ -258,6 +254,41 @@ class _WalletDashboardState extends State<WalletDashboard> {
         ],
       ),
     );
+  }
+
+  /// Open the swap screen pre-filled with the requested input/output mints.
+  /// Defaults: input = SOL (wSOL), output = ChiefPussy — the dashboard's
+  /// headline "Swap" action wants this; the token rows override input to
+  /// the tapped mint and output to SOL.
+  void _openSwap(
+    BuildContext context, {
+    String? inputMint,
+    String? outputMint,
+  }) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: TibaneColors.black,
+          appBar: AppBar(title: const Text('Swap')),
+          body: SwapScreen(
+            initialInputMint: inputMint ?? wsolMint,
+            initialOutputMint: outputMint ?? chiefPussyMint,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Extract the mint from a libwallet Asset.key. Format is
+  /// `<chain>:<id>`; for SPL tokens id is the base58 mint, for native
+  /// it's the symbol (`SOL`, `ETH`, …) and we map back to wSOL so the
+  /// swap screen can treat it as native.
+  String _mintFromAssetKey(String key) {
+    final i = key.lastIndexOf(':');
+    if (i < 0) return key;
+    final id = key.substring(i + 1);
+    if (id == 'SOL') return wsolMint;
+    return id;
   }
 }
 

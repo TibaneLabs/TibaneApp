@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:phone_form_field/phone_form_field.dart';
 import 'package:provider/provider.dart';
 
+import 'constants/solana_constants.dart';
 import 'screens/browser/dapp_browser_screen.dart';
 import 'screens/clawdwallet/pairing_screen.dart';
 import 'screens/home_screen.dart';
@@ -189,7 +190,9 @@ class TibaneShellState extends State<TibaneShell> {
         index: _currentIndex,
         children: [
           HomeScreen(onNavigate: _navigateTo, onNavigateToToken: _openTokenInfo),
-          _isSeekerDevice ? const SwapScreen() : const WalletScreen(),
+          _isSeekerDevice
+              ? const SwapScreen(initialInputMint: wsolMint)
+              : const WalletScreen(),
           const DAppBrowserScreen(),
           const SettingsScreen(),
         ],
