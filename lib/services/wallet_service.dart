@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../constants/solana_constants.dart';
 import 'relay_service.dart';
 import 'rpc_service.dart';
 import 'wallet/libwallet_backend.dart';
@@ -126,6 +127,8 @@ class WalletService extends ChangeNotifier {
     await active.disconnect();
     _solBalance = BigInt.zero;
     _chiefPussyBalance = BigInt.zero;
+    _solFiatUsd = 0;
+    _chiefPussyFiatUsd = 0;
     await _auth.logout();
     notifyListeners();
   }
@@ -136,20 +139,61 @@ class WalletService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Convenience for code that wants per-asset fiat values without
+  /// fetching the asset list a second time. Updated alongside
+  /// [_solBalance] / [_chiefPussyBalance] on every successful refresh.
+  double _solFiatUsd = 0;
+  double _chiefPussyFiatUsd = 0;
+  double get solFiatUsd => _solFiatUsd;
+  double get chiefPussyFiatUsd => _chiefPussyFiatUsd;
+
   Future<void> refreshBalances() async {
     final addr = publicKey;
     if (addr == null) return;
+    // Prefer libwallet's whitelist when an in-app wallet is loaded — it
+    // already filters to curated + user-tracked tokens and carries fiat
+    // amounts via the `convert: 'USD'` param. Falls back to a direct
+    // RPC scan for MWA mode where libwallet has no account context.
+    if (_kind == WalletKind.inapp && _libwallet.hasWallet) {
+      try {
+        final assets = await _libwallet.getAssets();
+        BigInt sol = BigInt.zero;
+        BigInt cp = BigInt.zero;
+        double solFiat = 0;
+        double cpFiat = 0;
+        for (final a in assets) {
+          if (a.type == 'native' && a.symbol.toUpperCase() == 'SOL') {
+            sol = a.amount.value;
+            solFiat = a.fiatAmount?.toDouble() ?? 0;
+          } else if (a.symbol == 'ChiefPussy' ||
+              a.key.contains(chiefPussyMint)) {
+            cp = a.amount.value;
+            cpFiat = a.fiatAmount?.toDouble() ?? 0;
+          }
+        }
+        _solBalance = sol;
+        _chiefPussyBalance = cp;
+        _solFiatUsd = solFiat;
+        _chiefPussyFiatUsd = cpFiat;
+        notifyListeners();
+        return;
+      } catch (e) {
+        debugPrint('libwallet refreshBalances failed, falling back to RPC: $e');
+      }
+    }
     final rpc = RpcService();
     try {
       _solBalance = await rpc.getBalance(addr);
       final splAccounts = await rpc.getTokenAccountsByOwner(addr);
       var cp = BigInt.zero;
       for (final account in splAccounts) {
-        if (account.mint == 'DRtvTCzfiKGhCVREmBbZdN9sB8PHeq9KdRZ3VmFhpump') {
+        if (account.mint == chiefPussyMint) {
           cp += account.amount;
         }
       }
       _chiefPussyBalance = cp;
+      _solFiatUsd = 0;
+      _chiefPussyFiatUsd = 0;
       notifyListeners();
     } catch (e) {
       debugPrint('refreshBalances error: $e');

@@ -135,6 +135,16 @@ class _WalletDashboardState extends State<WalletDashboard> {
                       ),
                 ),
                 Text('SOL', style: monoStyle(fontSize: 14, color: TibaneColors.textDim)),
+                if (wallet.solFiatUsd > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '\$${wallet.solFiatUsd.toStringAsFixed(2)}',
+                    style: monoStyle(
+                      fontSize: 12,
+                      color: TibaneColors.textMuted,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
