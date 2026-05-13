@@ -298,7 +298,7 @@ class _StubLibwallet extends LibwalletBackend {
   Future<void> tryRestore() async {}
 
   @override
-  Future<List<lw.Asset>> getAssets() async {
+  Future<List<lw.Asset>> getAssets({String convert = 'USD'}) async {
     final now = DateTime.now();
     return [
       lw.Asset(
