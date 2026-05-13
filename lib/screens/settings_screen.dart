@@ -15,6 +15,8 @@ import 'wallet/inapp_export_screen.dart';
 import 'wallet/inapp_import_screen.dart';
 import 'wallet/inapp_unlock_screen.dart';
 import 'wallet/networks_screen.dart';
+import 'wallet/nfts_screen.dart';
+import 'wallet/tokens_screen.dart';
 import 'wallet/wallet_details_screen.dart';
 import 'wallet/wallets_management_screen.dart';
 import 'wallet/web3_connections_screen.dart';
@@ -73,6 +75,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: 'Saved addresses for sends and swaps',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const ContactsScreen()),
+            ),
+          ),
+          const SizedBox(height: 6),
+          _SettingsTile(
+            icon: Icons.collections_outlined,
+            title: 'NFTs',
+            subtitle: 'View NFTs held on the active network',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const NftsScreen()),
+            ),
+          ),
+          const SizedBox(height: 6),
+          _SettingsTile(
+            icon: Icons.token_outlined,
+            title: 'Tokens',
+            subtitle: 'Add custom tokens or pick from the curated list',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const TokensScreen()),
             ),
           ),
           const SizedBox(height: 6),
