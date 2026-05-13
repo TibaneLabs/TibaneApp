@@ -92,6 +92,8 @@ class _SwapScreenState extends State<SwapScreen> {
   bool _switchingNetwork = false;
   String? _lastCheckedNetworkId;
 
+  bool _quoteDetailsExpanded = false;
+
   @override
   void initState() {
     super.initState();
@@ -1044,44 +1046,100 @@ class _SwapScreenState extends State<SwapScreen> {
   }
 
   Widget _buildJupiterQuoteDetails(SwapQuote q) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: TibaneCard(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            if (q.inUsdValue != null)
-              _quoteRow('You pay', '\$${q.inUsdValue!.toStringAsFixed(2)}'),
-            if (q.outUsdValue != null)
-              _quoteRow('You receive', '\$${q.outUsdValue!.toStringAsFixed(2)}'),
-            _quoteRow('Price impact', '${q.priceImpactPct}%'),
-            if (q.gasless)
-              _quoteRow('Gas', 'Gasless', valueColor: TibaneColors.cyan),
-            _quoteRow('Fee', '0.5%'),
-          ],
-        ),
-      ),
+    final summary = StringBuffer();
+    if (q.outUsdValue != null) {
+      summary.write('\$${q.outUsdValue!.toStringAsFixed(2)}');
+    }
+    summary.write('  ·  ${q.priceImpactPct}% impact');
+    summary.write('  ·  0.5% fee');
+    return _expandableCard(
+      summary: summary.toString(),
+      children: [
+        if (q.inUsdValue != null)
+          _quoteRow('You pay', '\$${q.inUsdValue!.toStringAsFixed(2)}'),
+        if (q.outUsdValue != null)
+          _quoteRow('You receive', '\$${q.outUsdValue!.toStringAsFixed(2)}'),
+        _quoteRow('Price impact', '${q.priceImpactPct}%'),
+        if (q.gasless)
+          _quoteRow('Gas', 'Gasless', valueColor: TibaneColors.cyan),
+        _quoteRow('Fee', '0.5%'),
+      ],
     );
   }
 
   Widget _buildLwQuoteDetails(lw.SwapQuote q) {
+    final provider = q.providerLabel.isNotEmpty ? q.providerLabel : q.provider;
+    final summary = StringBuffer();
+    summary.write(
+        '${_formatOutputAmount(q.amountOut.toDouble())} ${q.tokenOut.symbol}');
+    if (q.priceImpact > 0) {
+      summary.write('  ·  ${(q.priceImpact * 100).toStringAsFixed(2)}% impact');
+    }
+    summary.write('  ·  via $provider');
+    return _expandableCard(
+      summary: summary.toString(),
+      children: [
+        _quoteRow('Provider', provider),
+        _quoteRow('You receive',
+            '${_formatOutputAmount(q.amountOut.toDouble())} ${q.tokenOut.symbol}'),
+        _quoteRow('Min receive', _formatOutputAmount(q.minAmountOut.toDouble())),
+        if (q.priceImpact > 0)
+          _quoteRow('Price impact',
+              '${(q.priceImpact * 100).toStringAsFixed(2)}%'),
+        if (q.networkFee != null)
+          _quoteRow('Network fee',
+              '${q.networkFee!.toDouble().toStringAsFixed(6)} SOL'),
+        _quoteRow('Fee', '${(q.feeBps / 100).toStringAsFixed(1)}%'),
+        if (q.route.isNotEmpty)
+          _quoteRow('Route', q.route.map((h) => h.venue).join(' → ')),
+      ],
+    );
+  }
+
+  /// Collapsible quote-details card. Default state is a one-line summary
+  /// so the swap form fits on shorter screens; tapping the row reveals
+  /// the full breakdown.
+  Widget _expandableCard({
+    required String summary,
+    required List<Widget> children,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TibaneCard(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            _quoteRow('Provider', q.providerLabel.isNotEmpty ? q.providerLabel : q.provider),
-            _quoteRow('You receive', '${_formatOutputAmount(q.amountOut.toDouble())} ${q.tokenOut.symbol}'),
-            _quoteRow('Min receive', _formatOutputAmount(q.minAmountOut.toDouble())),
-            if (q.priceImpact > 0)
-              _quoteRow('Price impact', '${(q.priceImpact * 100).toStringAsFixed(2)}%'),
-            if (q.networkFee != null)
-              _quoteRow('Network fee', '${q.networkFee!.toDouble().toStringAsFixed(6)} SOL'),
-            _quoteRow('Fee', '${(q.feeBps / 100).toStringAsFixed(1)}%'),
-            if (q.route.isNotEmpty)
-              _quoteRow('Route', q.route.map((h) => h.venue).join(' → ')),
-          ],
+        padding: EdgeInsets.zero,
+        onTap: () => setState(
+            () => _quoteDetailsExpanded = !_quoteDetailsExpanded),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      summary,
+                      style: monoStyle(
+                        fontSize: 11,
+                        color: TibaneColors.textMuted,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _quoteDetailsExpanded
+                        ? Icons.expand_less
+                        : Icons.expand_more,
+                    color: TibaneColors.textDim,
+                    size: 18,
+                  ),
+                ],
+              ),
+              if (_quoteDetailsExpanded) ...[
+                const SizedBox(height: 6),
+                ...children,
+              ],
+            ],
+          ),
         ),
       ),
     );
