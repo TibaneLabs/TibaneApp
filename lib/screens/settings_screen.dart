@@ -295,6 +295,13 @@ class _WalletActions extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           _SettingsTile(
+            icon: Icons.sms_outlined,
+            title: 'Rotate 2FA share',
+            subtitle: 'Reshare the remote (email / SMS) TSS share',
+            onTap: () => _rotateRemoteKey(context),
+          ),
+          const SizedBox(height: 6),
+          _SettingsTile(
             icon: Icons.download_outlined,
             title: 'Export in-app wallet',
             subtitle: 'Encrypted backup file (share or save to disk)',
@@ -385,6 +392,61 @@ class _WalletActions extends StatelessWidget {
             ? 'Password changed'
             : (wallet.libwallet.error ?? 'Change password failed'),
       ),
+    ));
+  }
+
+  Future<void> _rotateRemoteKey(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: TibaneColors.card,
+        title: const Text('Rotate 2FA share?'),
+        content: const Text(
+          'This sends a fresh verification code to the email or phone tied '
+          'to this wallet and reshares the remote TSS key. Use it if you '
+          'suspect the 2FA channel has been compromised.',
+          style: TextStyle(color: TibaneColors.textMuted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Start',
+              style: TextStyle(color: TibaneColors.orange),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (!context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final session = await wallet.libwallet.startRemoteKeyReshare();
+    if (session == null) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(wallet.libwallet.error ?? 'Reshare start failed'),
+      ));
+      return;
+    }
+    if (!context.mounted) return;
+    final code = await showDialog<String>(
+      context: context,
+      builder: (_) => _CodeEntryDialog(length: session.length),
+    );
+    if (code == null || code.isEmpty) return;
+    final ok = await wallet.libwallet.completeRemoteKeyReshare(
+      session: session.session,
+      code: code,
+    );
+    if (!context.mounted) return;
+    messenger.showSnackBar(SnackBar(
+      content: Text(ok
+          ? '2FA share rotated'
+          : (wallet.libwallet.error ?? 'Reshare failed')),
     ));
   }
 
@@ -775,6 +837,67 @@ class _PasswordCachePromptState extends State<_PasswordCachePrompt> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CodeEntryDialog extends StatefulWidget {
+  final int length;
+  const _CodeEntryDialog({required this.length});
+
+  @override
+  State<_CodeEntryDialog> createState() => _CodeEntryDialogState();
+}
+
+class _CodeEntryDialogState extends State<_CodeEntryDialog> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: TibaneColors.card,
+      title: const Text('Enter verification code'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Check your email or SMS for the ${widget.length}-digit code.',
+            style: const TextStyle(color: TibaneColors.textMuted),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _ctrl,
+            keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(widget.length),
+            ],
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Code'),
+            style: monoStyle(fontSize: 18),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _ctrl.text.trim()),
+          child: const Text(
+            'Verify',
+            style: TextStyle(color: TibaneColors.orange),
+          ),
+        ),
+      ],
     );
   }
 }

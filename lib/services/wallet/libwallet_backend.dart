@@ -532,6 +532,56 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
   }
 
+  /// Start a remote-key reshare for the wallet's 2FA share. Returns the
+  /// session descriptor so the UI can prompt for the code; complete by
+  /// calling [completeRemoteKeyReshare] with the user-typed digits.
+  Future<RemoteKeySession?> startRemoteKeyReshare() async {
+    if (_remoteKeyId == null || _walletId == null) {
+      _error = 'No remote key configured on this wallet';
+      notifyListeners();
+      return null;
+    }
+    try {
+      final client = await _getClient();
+      final wallet = await client.wallets.get(_walletId!);
+      return await client.remoteKeys.reshare(
+        key: _remoteKeyId!,
+        curve: wallet.curve,
+      );
+    } catch (e) {
+      _error = 'Reshare failed to start: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Validate the verification code to finish a remote-key reshare. Updates
+  /// the local `_remoteKeyId` if the backend rotated it.
+  Future<bool> completeRemoteKeyReshare({
+    required String session,
+    required String code,
+  }) async {
+    try {
+      final client = await _getClient();
+      final validation =
+          await client.remoteKeys.validate(session: session, code: code);
+      if (validation.remoteKey.isNotEmpty &&
+          validation.remoteKey != _remoteKeyId) {
+        _remoteKeyId = validation.remoteKey;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_prefsRemoteKeyId, _remoteKeyId!);
+      }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Reshare validation failed: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Reshare the active wallet replacing the StoreKey share with a
   /// freshly-generated one. Useful when the user suspects the device
   /// share has been exposed and wants to invalidate it. Requires the
