@@ -1,0 +1,14 @@
+Tibane is a non-custodial Solana wallet and toolset. No account or login is required to use the app.
+
+Most of the app (Home, Staking pool browsing, Token info, dApp browser) is fully accessible without setting up a wallet.
+
+To exercise the in-app wallet creation/recovery flow:
+- Open the Wallet tab and tap "Create wallet" or "Recover wallet".
+- When prompted for a phone number, use the test number: +1 (404) 555-1234
+- The OTP code for that test number is: 000000
+
+The wallet keys are generated and stored on-device. The phone/OTP is only used for our optional encrypted backup service; nothing is custodied by Tibane Labs.
+
+The Incinerator and Staking features require a connected wallet. Once wallet creation is complete, you can browse staking pools (read-only without staking SOL), and use the Incinerator on any token accounts the wallet holds.
+
+Source code and additional documentation: https://tibane.net

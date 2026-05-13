@@ -1,0 +1,7 @@
+Initial App Store release of Tibane.
+
+- Non-custodial Solana wallet, with optional Mobile Wallet Adapter for Seeker and Saga.
+- Browse and join ChiefStaker staking pools.
+- Incinerator: burn empty token accounts, junk NFTs, and unused .sol domains to reclaim SOL.
+- Token info: supply, market cap, burned amount, top holders.
+- Built-in Solana dApp browser.

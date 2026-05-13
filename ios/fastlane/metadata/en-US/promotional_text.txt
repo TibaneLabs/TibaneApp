@@ -1,0 +1,1 @@
+Solana's Swiss army knife: non-custodial wallet, staking explorer, account incinerator, and token info — all in one app. Built for Seeker, runs anywhere.

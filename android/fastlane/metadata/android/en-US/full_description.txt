@@ -1,0 +1,32 @@
+Tibane gives Solana power users a single, fast app for everything that matters: a non-custodial wallet, a staking explorer with live pool stats, an account incinerator that reclaims SOL from dust accounts, and a token info tool with on-chain holders, market cap, and supply.
+
+WALLET
+- Non-custodial. Your keys live on your device.
+- Built first for Solana Mobile (Seeker, Saga) with Mobile Wallet Adapter.
+- Also runs as a self-contained in-app wallet — no external app required.
+- Live SOL and SPL token balances, with portfolio totals and recent transfers.
+
+STAKING POOLS
+- Browse every ChiefStaker pool — total staked, rewards, member count.
+- Dive into a pool's full stats: pool weight, decay (tau), milestones.
+- Track your own stake, weight progression, and pending rewards.
+
+INCINERATOR
+- Find empty token accounts, junk NFTs, and unused .sol domains.
+- Burn them to reclaim the SOL rent (about 0.002 SOL per account).
+- Sponsored mode: a relay pays the network fee, you keep most of the rent.
+- Adjustable tip — share rent with the relay or keep nearly all of it.
+
+TOKEN INFO
+- Look up any SPL token: supply, market cap, burned amount, decimals.
+- Top holders with on-chain percentages.
+- Mint address with one-tap copy.
+
+DAPP BROWSER
+- Launch any Solana dApp from the in-app browser.
+- Sign with the wallet you already have set up.
+
+Open source. Built by Tibane Labs — a Solana research team named after the cat that started it all.
+
+Privacy: https://tibane.net/app/privacy
+Source: https://tibane.net

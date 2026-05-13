@@ -1,0 +1,82 @@
+default_platform(:android)
+
+platform :android do
+  desc "Build and upload to Play Store internal testing"
+  lane :beta do
+    Dir.chdir("..") do
+      sh("cd .. && flutter build appbundle --release")
+    end
+
+    upload_to_play_store(
+      track: "internal",
+      aab: "../build/app/outputs/bundle/release/app-release.aab",
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+
+  desc "Upload existing AAB (no rebuild) to Play Store internal testing"
+  lane :upload_internal do
+    upload_to_play_store(
+      track: "internal",
+      aab: "../build/app/outputs/bundle/release/app-release.aab",
+      release_status: "draft",
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+
+  desc "Build and upload to Play Store production"
+  lane :production do
+    Dir.chdir("..") do
+      sh("cd .. && flutter build appbundle --release")
+    end
+
+    upload_to_play_store(
+      track: "production",
+      aab: "../build/app/outputs/bundle/release/app-release.aab",
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+
+  desc "Upload Play Store listing text + screenshots + icon + feature graphic (no AAB)"
+  lane :push_metadata do
+    codes = google_play_track_version_codes(
+      track: "internal",
+      package_name: "net.tibane.tibaneapp",
+      json_key: "fastlane/play-store-credentials.json"
+    )
+    # Listings/images/screenshots are app-wide, not release-bound. We pin a
+    # version_code only because supply demands one for the meta loop — but
+    # we skip every release-touching path (aab, apk, changelogs) so that
+    # the commit only contains listing edits and never tries to mutate the
+    # existing release objects (which would trip the "draft app /
+    # completed release" validation on commit).
+    upload_to_play_store(
+      track: "internal",
+      version_code: codes.first,
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_metadata: false,
+      skip_upload_changelogs: true,
+      skip_upload_images: false,
+      skip_upload_screenshots: false
+    )
+  end
+
+  desc "Promote internal to production"
+  lane :promote do
+    upload_to_play_store(
+      track: "internal",
+      track_promote_to: "production",
+      skip_upload_aab: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+end

@@ -1,0 +1,238 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'relay_service.dart';
+import 'rpc_service.dart';
+import 'wallet/libwallet_backend.dart';
+import 'wallet/mwa_wallet_backend.dart';
+import 'wallet/wallet_backend.dart';
+import 'wallet/walletconnect_bridge.dart';
+
+/// Backend selector persisted across launches.
+enum WalletKind { mwa, inapp }
+
+WalletKind _parseKind(String? s) => switch (s) {
+      'inapp' => WalletKind.inapp,
+      _ => WalletKind.mwa,
+    };
+
+String _kindToString(WalletKind k) => k == WalletKind.inapp ? 'inapp' : 'mwa';
+
+/// Façade that routes every wallet call to the active [WalletBackend]. Screens
+/// and auth flows continue to use this class; only the backends change.
+class WalletService extends ChangeNotifier {
+  WalletService() {
+    _mwa.addListener(_onBackendChanged);
+    _libwallet.addListener(_onBackendChanged);
+    _libwallet.balanceTick.addListener(_onBalanceTick);
+  }
+
+  final MwaWalletBackend _mwa = MwaWalletBackend();
+  final LibwalletBackend _libwallet = LibwalletBackend();
+  final _auth = AuthService();
+
+  WalletKind _kind = WalletKind.mwa;
+  BigInt _solBalance = BigInt.zero;
+  BigInt _chiefPussyBalance = BigInt.zero;
+
+  // --- public API kept compatible with previous WalletService ---
+
+  WalletBackend get active => _kind == WalletKind.inapp ? _libwallet : _mwa;
+
+  /// The current backend kind. UI reads this to decide what buttons to show.
+  WalletKind get kind => _kind;
+
+  /// Direct access to specific backends for setup flows (create wallet, unlock).
+  MwaWalletBackend get mwa => _mwa;
+  LibwalletBackend get libwallet => _libwallet;
+
+  WalletConnectBridge? _wc;
+
+  /// Lazily build a [WalletConnectBridge] tied to the libwallet client. The
+  /// bridge isn't started here — call [WalletConnectBridge.start] from the
+  /// WC screen once the user opts in.
+  Future<WalletConnectBridge> walletConnect(
+    GlobalKey<NavigatorState> navKey,
+  ) async {
+    final existing = _wc;
+    if (existing != null) return existing;
+    final client = await _libwallet.ensureClient();
+    final bridge = WalletConnectBridge(
+      client: client,
+      backend: _libwallet,
+      rootNavigatorKey: navKey,
+    );
+    _wc = bridge;
+    return bridge;
+  }
+
+  /// The WC bridge if it has been initialized in this session, else null.
+  WalletConnectBridge? get wcOrNull => _wc;
+
+  String? get publicKey => active.publicKey;
+  String? get walletName => active.walletName;
+  BigInt get solBalance => _solBalance;
+  BigInt get chiefPussyBalance => _chiefPussyBalance;
+  bool get isConnected => active.isConnected;
+  bool get isAuthenticated => _auth.isAuthenticated;
+  bool get isConnecting => active.isConnecting;
+  String? get error => active.error;
+
+  String get shortAddress {
+    final addr = publicKey;
+    if (addr == null) return '';
+    if (addr.length <= 8) return addr;
+    return '${addr.substring(0, 4)}...${addr.substring(addr.length - 4)}';
+  }
+
+  Future<void> tryRestore() async {
+    final prefs = await SharedPreferences.getInstance();
+    _kind = _parseKind(prefs.getString('wallet_backend'));
+    await _mwa.tryRestore();
+    await _libwallet.tryRestore();
+    if (isConnected) {
+      refreshBalances();
+      if (!_auth.isAuthenticated) {
+        _authenticateWithServer();
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Connect via the Seed Vault / external MWA flow.
+  Future<void> connectMwa() async {
+    await _setKind(WalletKind.mwa);
+    final ok = await _mwa.connect();
+    if (ok) {
+      refreshBalances();
+      _authenticateWithServer();
+    }
+  }
+
+  /// Switch to the in-app libwallet backend. Assumes the wallet has already
+  /// been created or unlocked via the in-app setup flow.
+  Future<void> useLibwallet() async {
+    await _setKind(WalletKind.inapp);
+    if (isConnected) {
+      refreshBalances();
+      _authenticateWithServer();
+    }
+  }
+
+  Future<void> disconnect() async {
+    await active.disconnect();
+    _solBalance = BigInt.zero;
+    _chiefPussyBalance = BigInt.zero;
+    await _auth.logout();
+    notifyListeners();
+  }
+
+  void updateBalances({BigInt? sol, BigInt? chiefPussy}) {
+    if (sol != null) _solBalance = sol;
+    if (chiefPussy != null) _chiefPussyBalance = chiefPussy;
+    notifyListeners();
+  }
+
+  Future<void> refreshBalances() async {
+    final addr = publicKey;
+    if (addr == null) return;
+    final rpc = RpcService();
+    try {
+      _solBalance = await rpc.getBalance(addr);
+      final splAccounts = await rpc.getTokenAccountsByOwner(addr);
+      var cp = BigInt.zero;
+      for (final account in splAccounts) {
+        if (account.mint == 'DRtvTCzfiKGhCVREmBbZdN9sB8PHeq9KdRZ3VmFhpump') {
+          cp += account.amount;
+        }
+      }
+      _chiefPussyBalance = cp;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('refreshBalances error: $e');
+    } finally {
+      rpc.dispose();
+    }
+  }
+
+  Future<String?> signAndSendTransaction(Uint8List tx) async {
+    final results = await active.signAndSendTransactions([tx]);
+    return results.isEmpty ? null : results.first;
+  }
+
+  Future<List<String?>> signAndSendTransactions(List<Uint8List> txs) =>
+      active.signAndSendTransactions(txs);
+
+  Future<Uint8List?> signTransaction(Uint8List tx) async {
+    final results = await active.signTransactions([tx]);
+    return results.isEmpty ? null : results.first;
+  }
+
+  Future<List<Uint8List?>> signTransactions(List<Uint8List> txs) =>
+      active.signTransactions(txs);
+
+  Future<Uint8List?> signMessage(Uint8List message) =>
+      active.signMessage(message);
+
+  void clearError() {
+    active.clearError();
+  }
+
+  // --- internals ---
+
+  Future<void> _setKind(WalletKind kind) async {
+    if (_kind == kind) return;
+    _kind = kind;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('wallet_backend', _kindToString(kind));
+    notifyListeners();
+  }
+
+  void _onBackendChanged() {
+    notifyListeners();
+  }
+
+  void _onBalanceTick() {
+    if (_kind == WalletKind.inapp && isConnected) {
+      refreshBalances();
+    }
+  }
+
+  // tryRestore / connectMwa / useLibwallet all fire-and-forget this and the
+  // bare `_auth.isAuthenticated` guard only blocks calls that arrive *after*
+  // a prior login has finished. Two concurrent callers both saw false,
+  // both did a full getTicket → sign → solLogin. Coalesce onto one future.
+  Future<void>? _authFuture;
+
+  Future<void> _authenticateWithServer() {
+    if (_auth.isAuthenticated) return Future.value();
+    return _authFuture ??= _runAuthenticate();
+  }
+
+  Future<void> _runAuthenticate() async {
+    try {
+      final addr = publicKey;
+      if (addr == null) return;
+      final (:message, :ticket) = await _auth.getTicket(addr);
+      final signature = await signMessage(Uint8List.fromList(utf8.encode(message)));
+      if (signature == null) return;
+      await _auth.login(ticket, signature);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('authenticateWithServer failed: $e');
+    } finally {
+      _authFuture = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _mwa.removeListener(_onBackendChanged);
+    _libwallet.removeListener(_onBackendChanged);
+    _libwallet.balanceTick.removeListener(_onBalanceTick);
+    super.dispose();
+  }
+}

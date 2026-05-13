@@ -1,0 +1,21 @@
+default_platform(:ios)
+
+# To pull current App Store metadata into ios/fastlane/metadata/:
+#   cd ios && fastlane deliver download_metadata --force
+# (no lane wrapper — `deliver` defaults to upload, the CLI subcommand is the
+# only clean way to download.)
+
+platform :ios do
+  desc "Upload metadata + screenshots to App Store Connect (no binary)"
+  lane :push_metadata do
+    deliver(
+      skip_binary_upload: true,
+      skip_screenshots: false,
+      skip_metadata: false,
+      force: true,
+      run_precheck_before_submit: false,
+      overwrite_screenshots: true,
+      screenshots_path: "../fastlane/screenshots"
+    )
+  end
+end
