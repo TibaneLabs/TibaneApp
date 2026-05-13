@@ -4,11 +4,12 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart'
     show
+        Account,
         AddNetworkRequest,
         ChainSwitchRequest,
         MessageSignRequest,
         Network,
-        Account;
+        WatchAssetRequest;
 
 import '../../theme/tibane_theme.dart';
 
