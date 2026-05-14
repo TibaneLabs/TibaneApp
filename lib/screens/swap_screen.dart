@@ -28,10 +28,23 @@ class SwapScreen extends StatefulWidget {
   /// default destination on the home screen Swap action).
   final String? initialOutputMint;
 
+  /// Optional output-token metadata supplied by the caller so the picker
+  /// can show the right symbol / name / image without making the user
+  /// re-pick. Used by the staking detail screen which knows the pool's
+  /// token already.
+  final String? initialOutputSymbol;
+  final String? initialOutputName;
+  final String? initialOutputImageUrl;
+  final int? initialOutputDecimals;
+
   const SwapScreen({
     super.key,
     this.initialInputMint,
     this.initialOutputMint,
+    this.initialOutputSymbol,
+    this.initialOutputName,
+    this.initialOutputImageUrl,
+    this.initialOutputDecimals,
   });
 
   @override
@@ -99,17 +112,22 @@ class _SwapScreenState extends State<SwapScreen> {
     super.initState();
     _amountController.addListener(_onAmountChanged);
 
-    // Default output: ChiefPussy unless caller overrode it. Decimals
-    // are inferred (SOL = 9, pump.fun tokens = 6); on the libwallet
-    // path the actual decimals come from the quote so the hint is just
-    // for the on-screen preview before the quote lands.
+    // Default output: ChiefPussy unless caller overrode it. Callers that
+    // know the token's metadata (staking detail, token-row tap, etc.)
+    // should pass it in so the picker displays the right name/icon
+    // immediately. The libwallet quote will replace decimals with the
+    // authoritative value once it lands.
     final initOutMint = widget.initialOutputMint ?? chiefPussyMint;
+    final isCp = initOutMint == chiefPussyMint;
     _selectedOutput = _SwapToken(
       mint: initOutMint,
-      symbol: initOutMint == chiefPussyMint ? 'ChiefPussy' : '',
-      name: initOutMint == chiefPussyMint ? 'Tibane Thecat' : '',
+      symbol: widget.initialOutputSymbol ?? (isCp ? 'ChiefPussy' : ''),
+      name: widget.initialOutputName ?? (isCp ? 'Tibane Thecat' : ''),
+      imageUrl: widget.initialOutputImageUrl,
     );
-    _outputDecimals = initOutMint == wsolMint ? 9 : 6;
+    _outputDecimals = widget.initialOutputDecimals ??
+        (initOutMint == wsolMint ? 9 : 6);
+    _outputImageUrl = widget.initialOutputImageUrl;
 
     final wallet = context.read<WalletService>();
     _wallet = wallet;

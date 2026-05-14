@@ -138,6 +138,10 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
                   body: SwapScreen(
                     initialInputMint: wsolMint,
                     initialOutputMint: pool.mint,
+                    initialOutputSymbol: pool.tokenSymbol,
+                    initialOutputName: pool.tokenName,
+                    initialOutputImageUrl: pool.tokenImage,
+                    initialOutputDecimals: pool.tokenDecimals,
                   ),
                 ),
               ),
