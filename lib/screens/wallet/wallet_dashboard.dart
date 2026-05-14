@@ -279,15 +279,15 @@ class _WalletDashboardState extends State<WalletDashboard> {
     );
   }
 
-  /// Extract the mint from a libwallet Asset.key. Format is
-  /// `<chain>:<id>`; for SPL tokens id is the base58 mint, for native
-  /// it's the symbol (`SOL`, `ETH`, …) and we map back to wSOL so the
-  /// swap screen can treat it as native.
+  /// Extract the mint from a libwallet Asset.key. The format has
+  /// evolved across libwallet releases (`ethereum:ETH` vs
+  /// `solana.mainnet.<mint>`), so take the last segment after either
+  /// `:` or `.`. Native symbols map to wSOL so the swap screen can
+  /// treat the token as native.
   String _mintFromAssetKey(String key) {
-    final i = key.lastIndexOf(':');
-    if (i < 0) return key;
-    final id = key.substring(i + 1);
-    if (id == 'SOL') return wsolMint;
+    final i = key.lastIndexOf(RegExp(r'[.:]'));
+    final id = i < 0 ? key : key.substring(i + 1);
+    if (id == 'SOL' || id == 'ETH' || id == 'BTC') return wsolMint;
     return id;
   }
 }

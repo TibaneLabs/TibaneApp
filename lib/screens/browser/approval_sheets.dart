@@ -119,6 +119,7 @@ String _verbForMethod(String method) {
 Widget _typedDataBody(MessageSignRequest req, String accountAddress) {
   final domain = req.structuredDomain ?? const <String, dynamic>{};
   final primary = req.structuredPrimaryType;
+  final contractLabel = req.verifyingContractLabel;
   final message =
       (req.structuredData?['message'] as Map?)?.cast<String, dynamic>() ??
           const <String, dynamic>{};
@@ -126,6 +127,10 @@ Widget _typedDataBody(MessageSignRequest req, String accountAddress) {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       _KeyValue('Account', accountAddress),
+      if (contractLabel.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        _KeyValue('Contract', contractLabel),
+      ],
       if (primary.isNotEmpty) ...[
         const SizedBox(height: 12),
         _KeyValue('Type', primary),
