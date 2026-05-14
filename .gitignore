@@ -55,3 +55,6 @@ android/fastlane/report.xml
 android/fastlane/README.md
 ios/fastlane/report.xml
 ios/fastlane/README.md
+
+# Local working drafts not meant for the public repo
+apple_review_response.txt
