@@ -207,12 +207,35 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
   // --- UI ---
 
   Future<void> _go() async {
-    var target = _urlCtrl.text.trim();
+    final target = _urlCtrl.text.trim();
     if (target.isEmpty) return;
-    if (!target.contains('://')) target = 'https://$target';
-    final uri = Uri.tryParse(target);
+    final uri = _resolveBarInput(target);
     if (uri == null) return;
     await _webview.loadRequest(uri);
+  }
+
+  /// Decide whether bar input is a URL or a search query. Chrome's rule
+  /// of thumb: any whitespace → search; a token with at least one dot →
+  /// hostname; everything else → search. Search routes to DuckDuckGo
+  /// (https://duckduckgo.com/?q=...).
+  Uri? _resolveBarInput(String raw) {
+    // Explicit scheme — use as-is.
+    if (raw.contains('://')) return Uri.tryParse(raw);
+    // Whitespace = search query.
+    final hasWhitespace = raw.contains(RegExp(r'\s'));
+    if (!hasWhitespace) {
+      // Looks like a host if it has a dot and no obvious "you mean a
+      // sentence" punctuation. Allow localhost / IPv4 / TLDs.
+      final looksLikeHost = raw.contains('.') ||
+          raw.startsWith('localhost') ||
+          raw.startsWith('127.0.0.1');
+      if (looksLikeHost) {
+        return Uri.tryParse('https://$raw');
+      }
+    }
+    // Otherwise search.
+    final q = Uri.encodeQueryComponent(raw);
+    return Uri.parse('https://duckduckgo.com/?q=$q');
   }
 
   @override
