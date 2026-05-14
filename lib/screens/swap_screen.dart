@@ -584,7 +584,21 @@ class _SwapScreenState extends State<SwapScreen> {
   }) async {
     final wallet = context.read<WalletService>();
     final net = wallet.libwallet.currentNetwork;
-    final explorerUrl = _buildExplorerUrl(net, signature, outputMint);
+    // libwallet 0.4.29: Network.transactionUrl handles per-chain URL
+    // composition (`?cluster=` for non-mainnet Solana, /tx/ vs /address/
+    // paths, "" when no explorer is resolvable). Falls back to Solscan
+    // when the active network has no resolved explorer.
+    String? explorerUrl;
+    if (net != null) {
+      final composed = net.transactionUrl(signature);
+      if (composed.isNotEmpty) {
+        explorerUrl = composed;
+      } else if (net.type == lw.NetworkType.solana) {
+        explorerUrl = 'https://solscan.io/tx/$signature';
+      }
+    } else {
+      explorerUrl = 'https://solscan.io/tx/$signature';
+    }
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
@@ -607,24 +621,6 @@ class _SwapScreenState extends State<SwapScreen> {
     );
   }
 
-  /// Best-effort URL on the active network's block explorer for [signature].
-  /// Solana always hits Solscan (the most reliable explorer + libwallet's
-  /// stored URL can carry `?cluster=` which breaks naïve concatenation).
-  /// EVM uses the network's explorer; bitcoin uses whatever libwallet has.
-  String? _buildExplorerUrl(lw.Network? net, String signature, String? _) {
-    if (net == null || net.type == lw.NetworkType.solana) {
-      return 'https://solscan.io/tx/$signature';
-    }
-    final raw = net.blockExplorer.trim();
-    if (raw.isEmpty) return null;
-    // Strip a trailing slash and any path so we always append /tx/$sig
-    // against the origin.
-    final uri = Uri.tryParse(raw);
-    if (uri == null) return null;
-    final origin =
-        '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
-    return '$origin/tx/$signature';
-  }
 
   Future<String> _executeSwapJupiter(WalletService wallet) async {
     final q = _jupiterQuote!;
