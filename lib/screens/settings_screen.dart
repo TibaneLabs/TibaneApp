@@ -934,7 +934,7 @@ class _UkComplianceTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final uk = context.watch<UkComplianceService>();
     final country = uk.detectedCountryCode ?? 'unknown';
-    final detected = country == 'GB';
+    final detected = country == 'GB' || country == 'GBR';
     final subtitle = detected
         ? 'Detected as United Kingdom. Swap and staking are hidden.'
         : (uk.isForced
