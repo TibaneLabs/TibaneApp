@@ -177,14 +177,14 @@ class _WalletDashboardState extends State<WalletDashboard> {
           const SizedBox(height: 24),
 
           // Token list — exclude the native asset (it's already shown as
-          // the headline balance) and zero-balance rows. The
-          // isNativeSolAsset() check is a fallback for libwallet builds
-          // that don't tag native SOL with `type: 'native'`.
-          if (_assets.where((a) => a.type != 'native' && !isNativeSolAsset(a) && !a.amount.isZero).isNotEmpty) ...[
+          // the headline balance) and zero-balance rows. isNativeAsset
+          // keys off the `.NATIVE` suffix in Asset.key, which is stable
+          // across libwallet releases even when Asset.type isn't.
+          if (_assets.where((a) => !isNativeAsset(a) && !a.amount.isZero).isNotEmpty) ...[
             Text('TOKENS', style: monoStyle(fontSize: 11, color: TibaneColors.textDim)),
             const SizedBox(height: 8),
             ..._assets
-                .where((a) => a.type != 'native' && !isNativeSolAsset(a) && !a.amount.isZero)
+                .where((a) => !isNativeAsset(a) && !a.amount.isZero)
                 .map((a) => Padding(
                       padding: const EdgeInsets.only(bottom: 6),
                       child: TibaneCard(

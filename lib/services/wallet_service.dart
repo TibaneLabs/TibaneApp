@@ -23,20 +23,13 @@ WalletKind _parseKind(String? s) => switch (s) {
 
 String _kindToString(WalletKind k) => k == WalletKind.inapp ? 'inapp' : 'mwa';
 
-/// True when [a] is the native SOL asset for the active Solana network.
-/// libwallet has varied the `type` value across releases (`native`, empty
-/// string, occasionally `''` while `key` is `solana.mainnet.SOL`), so we
-/// match on a combination of clues that all uniquely identify the native
-/// asset and explicitly reject wrapped-SOL SPL tokens (which carry the
-/// wSOL mint in their key).
-bool isNativeSolAsset(Asset a) {
-  if (a.symbol.toUpperCase() != 'SOL') return false;
-  // wSOL is an SPL token, not native — its key carries the mint.
-  if (a.key.contains(wsolMint)) return false;
-  if (a.type == 'native') return true;
-  // Native is the only SOL-symbol asset that isn't a wrapped SPL.
-  return true;
-}
+/// True when [a] is a chain's native asset (SOL, ETH, BTC, …). libwallet
+/// keys native assets as `<chain>.<id>.NATIVE` (e.g.
+/// `solana.mainnet.NATIVE`); the suffix is the reliable signal because
+/// `Asset.type` has drifted between releases. Wrapped-SOL SPL tokens
+/// carry the wSOL mint instead of the `.NATIVE` suffix, so they
+/// correctly return false.
+bool isNativeAsset(Asset a) => a.key.endsWith('.NATIVE');
 
 /// Façade that routes every wallet call to the active [WalletBackend]. Screens
 /// and auth flows continue to use this class; only the backends change.
@@ -178,7 +171,7 @@ class WalletService extends ChangeNotifier {
         double solFiat = 0;
         double cpFiat = 0;
         for (final a in assets) {
-          if (isNativeSolAsset(a)) {
+          if (isNativeAsset(a) && a.symbol.toUpperCase() == 'SOL') {
             sol = a.amount.value;
             solFiat = a.fiatAmount?.toDouble() ?? 0;
           } else if (a.symbol == 'ChiefPussy' ||
