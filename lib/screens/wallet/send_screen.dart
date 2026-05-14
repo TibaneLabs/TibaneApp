@@ -217,7 +217,11 @@ class _SendScreenState extends State<SendScreen> {
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: const Text('Send SOL')),
       body: SafeArea(
-        child: Padding(
+        child: GestureDetector(
+          // Tap outside any input to dismiss the iOS numeric keyboard.
+          onTap: () => FocusScope.of(context).unfocus(),
+          behavior: HitTestBehavior.translucent,
+          child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -337,6 +341,7 @@ class _SendScreenState extends State<SendScreen> {
                 ),
               ),
             ],
+          ),
           ),
         ),
       ),

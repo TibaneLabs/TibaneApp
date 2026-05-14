@@ -792,11 +792,18 @@ class _SwapScreenState extends State<SwapScreen> {
   Widget build(BuildContext context) {
     final wallet = context.watch<WalletService>();
 
-    return RefreshIndicator(
+    return GestureDetector(
+      // Tap anywhere outside the amount field to dismiss the iOS
+      // numeric keyboard (which has no Done key by default).
+      onTap: () => FocusScope.of(context).unfocus(),
+      behavior: HitTestBehavior.translucent,
+      child: RefreshIndicator(
       onRefresh: _loadHoldings,
       color: TibaneColors.orange,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        // Scrolling the list also dismisses the keyboard.
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         children: [
 
           if (!wallet.isConnected) ...[
@@ -896,6 +903,7 @@ class _SwapScreenState extends State<SwapScreen> {
           ],
         ],
       ),
+      ),
     );
   }
 
@@ -968,6 +976,8 @@ class _SwapScreenState extends State<SwapScreen> {
           TextField(
             controller: _amountController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => FocusScope.of(context).unfocus(),
             style: monoStyle(fontSize: 20),
             decoration: InputDecoration(
               hintText: '0.00',
