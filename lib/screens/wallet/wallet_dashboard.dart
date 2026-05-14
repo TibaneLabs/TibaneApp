@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants/solana_constants.dart';
+import '../../services/uk_compliance_service.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -150,30 +151,35 @@ class _WalletDashboardState extends State<WalletDashboard> {
           ),
           const SizedBox(height: 24),
 
-          // Action buttons
-          Row(
-            children: [
-              _ActionButton(
-                icon: Icons.arrow_downward,
-                label: 'Receive',
-                onTap: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const ReceiveScreen())),
-              ),
-              const SizedBox(width: 12),
-              _ActionButton(
-                icon: Icons.arrow_upward,
-                label: 'Send',
-                onTap: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const SendScreen())),
-              ),
-              const SizedBox(width: 12),
-              _ActionButton(
-                icon: Icons.swap_horiz,
-                label: 'Swap',
-                onTap: () => _openSwap(context),
-              ),
-            ],
-          ),
+          // Action buttons — swap entry hidden in UK mode.
+          Builder(builder: (context) {
+            final isUk = context.watch<UkComplianceService>().isUk;
+            return Row(
+              children: [
+                _ActionButton(
+                  icon: Icons.arrow_downward,
+                  label: 'Receive',
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const ReceiveScreen())),
+                ),
+                const SizedBox(width: 12),
+                _ActionButton(
+                  icon: Icons.arrow_upward,
+                  label: 'Send',
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const SendScreen())),
+                ),
+                if (!isUk) ...[
+                  const SizedBox(width: 12),
+                  _ActionButton(
+                    icon: Icons.swap_horiz,
+                    label: 'Swap',
+                    onTap: () => _openSwap(context),
+                  ),
+                ],
+              ],
+            );
+          }),
           const SizedBox(height: 24),
 
           // Token list — exclude the native asset (it's already shown as
@@ -189,11 +195,14 @@ class _WalletDashboardState extends State<WalletDashboard> {
                       padding: const EdgeInsets.only(bottom: 6),
                       child: TibaneCard(
                         padding: const EdgeInsets.all(12),
-                        onTap: () => _openSwap(
-                          context,
-                          inputMint: _mintFromAssetKey(a.key),
-                          outputMint: wsolMint,
-                        ),
+                        // Tap-to-swap suppressed in UK mode.
+                        onTap: context.read<UkComplianceService>().isUk
+                            ? null
+                            : () => _openSwap(
+                                  context,
+                                  inputMint: _mintFromAssetKey(a.key),
+                                  outputMint: wsolMint,
+                                ),
                         child: Row(
                           children: [
                             Expanded(

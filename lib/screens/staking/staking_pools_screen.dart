@@ -5,6 +5,7 @@ import '../../constants/solana_constants.dart';
 import '../../models/staking_pool.dart';
 import '../../services/chiefstaker_api.dart';
 import '../../services/favorites_service.dart';
+import '../../services/uk_compliance_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import 'staking_detail_screen.dart';
@@ -92,6 +93,9 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (context.watch<UkComplianceService>().isUk) {
+      return const _StakingUnavailableInRegion();
+    }
     return Column(
       children: [
         // Header
@@ -434,6 +438,46 @@ class _PoolStat extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Region-block screen for UK users in place of the staking pools list.
+/// Tibane's staking program is a financial promotion under FCA PS23/6,
+/// which we are not authorised to make to UK consumers.
+class _StakingUnavailableInRegion extends StatelessWidget {
+  const _StakingUnavailableInRegion();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.public_off,
+              color: TibaneColors.textDim,
+              size: 48,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Staking not available in your region',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Tibane does not offer in-app staking in the United Kingdom. '
+              'You can still use the in-app browser to access third-party '
+              'services directly.',
+              style: TextStyle(color: TibaneColors.textMuted, height: 1.5),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }

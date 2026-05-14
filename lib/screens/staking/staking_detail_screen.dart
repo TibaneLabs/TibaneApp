@@ -13,6 +13,7 @@ import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
+import '../../services/uk_compliance_service.dart';
 import '../swap_screen.dart';
 import '../wallet/inapp_unlock_screen.dart';
 import 'staking_members_screen.dart';
@@ -128,26 +129,27 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Swap SOL → ${pool.tokenSymbol ?? "token"}',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => Scaffold(
-                  backgroundColor: TibaneColors.black,
-                  appBar: AppBar(title: const Text('Swap')),
-                  body: SwapScreen(
-                    initialInputMint: wsolMint,
-                    initialOutputMint: pool.mint,
-                    initialOutputSymbol: pool.tokenSymbol,
-                    initialOutputName: pool.tokenName,
-                    initialOutputImageUrl: pool.tokenImage,
-                    initialOutputDecimals: pool.tokenDecimals,
+          if (!context.watch<UkComplianceService>().isUk)
+            IconButton(
+              tooltip: 'Swap SOL → ${pool.tokenSymbol ?? "token"}',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => Scaffold(
+                    backgroundColor: TibaneColors.black,
+                    appBar: AppBar(title: const Text('Swap')),
+                    body: SwapScreen(
+                      initialInputMint: wsolMint,
+                      initialOutputMint: pool.mint,
+                      initialOutputSymbol: pool.tokenSymbol,
+                      initialOutputName: pool.tokenName,
+                      initialOutputImageUrl: pool.tokenImage,
+                      initialOutputDecimals: pool.tokenDecimals,
+                    ),
                   ),
                 ),
               ),
+              icon: const Icon(Icons.swap_horiz, size: 20),
             ),
-            icon: const Icon(Icons.swap_horiz, size: 20),
-          ),
           IconButton(
             onPressed: () {
               Clipboard.setData(ClipboardData(text: pool.address));

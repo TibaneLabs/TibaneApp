@@ -12,6 +12,7 @@ import '../constants/solana_constants.dart';
 import '../services/favorites_service.dart';
 import '../services/jupiter_service.dart';
 import '../services/rpc_service.dart';
+import '../services/uk_compliance_service.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import 'wallet/inapp_unlock_screen.dart';
@@ -809,6 +810,9 @@ class _SwapScreenState extends State<SwapScreen> {
   @override
   Widget build(BuildContext context) {
     final wallet = context.watch<WalletService>();
+    if (context.watch<UkComplianceService>().isUk) {
+      return const _SwapUnavailableInRegion();
+    }
 
     return GestureDetector(
       // Tap anywhere outside the amount field to dismiss the iOS
@@ -1835,6 +1839,47 @@ class _SwapResultSheet extends StatelessWidget {
                 'Done',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Static "unavailable in your region" screen shown to UK users in place
+/// of the swap form. Reachable in case a UK user navigates here from a
+/// deep link or older shortcut. Points them to the browser tab for any
+/// third-party DEX they want to use directly.
+class _SwapUnavailableInRegion extends StatelessWidget {
+  const _SwapUnavailableInRegion();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.public_off,
+              color: TibaneColors.textDim,
+              size: 48,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Swap not available in your region',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Tibane does not offer in-app token exchange in the United '
+              'Kingdom. You can still use the in-app browser to access '
+              'third-party services directly.',
+              style: TextStyle(color: TibaneColors.textMuted, height: 1.5),
+              textAlign: TextAlign.center,
             ),
           ],
         ),

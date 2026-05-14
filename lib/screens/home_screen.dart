@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/favorites_service.dart';
+import '../services/uk_compliance_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/cat_logo.dart';
 import '../widgets/tibane_card.dart';
@@ -125,6 +126,7 @@ class _ToolsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isUk = context.watch<UkComplianceService>().isUk;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -157,32 +159,37 @@ class _ToolsSection extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 12),
-        FeatureCard(
-          icon: Icons.account_balance,
-          title: 'Staking',
-          description: 'Time-weighted staking pools with exponential decay rewards.',
-          badge: 'LIVE',
-          badgeColor: TibaneColors.cyan,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => Scaffold(
-                backgroundColor: TibaneColors.black,
-                appBar: AppBar(title: const Text('Staking pools')),
-                body: const SafeArea(child: StakingPoolsScreen()),
+        // Staking and Swap are regulated activities in the UK — hide
+        // their entry points for UK users. They remain reachable via
+        // third-party sites in the Browse tab if the user wants them.
+        if (!isUk) ...[
+          const SizedBox(height: 12),
+          FeatureCard(
+            icon: Icons.account_balance,
+            title: 'Staking',
+            description: 'Time-weighted staking pools with exponential decay rewards.',
+            badge: 'LIVE',
+            badgeColor: TibaneColors.cyan,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => Scaffold(
+                  backgroundColor: TibaneColors.black,
+                  appBar: AppBar(title: const Text('Staking pools')),
+                  body: const SafeArea(child: StakingPoolsScreen()),
+                ),
               ),
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        FeatureCard(
-          icon: Icons.swap_horiz,
-          title: 'Swap',
-          description: 'Swap tokens directly via Jupiter with minimal fees.',
-          badge: 'LIVE',
-          badgeColor: TibaneColors.cyan,
-          onTap: () => onNavigate(1),
-        ),
+          const SizedBox(height: 12),
+          FeatureCard(
+            icon: Icons.swap_horiz,
+            title: 'Swap',
+            description: 'Swap tokens directly via Jupiter with minimal fees.',
+            badge: 'LIVE',
+            badgeColor: TibaneColors.cyan,
+            onTap: () => onNavigate(1),
+          ),
+        ],
         const SizedBox(height: 12),
         FeatureCard(
           icon: Icons.analytics_outlined,
@@ -212,6 +219,12 @@ class _FavoritesSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // UK users: hide the favourites strip entirely. The pre-seeded
+    // ChiefPussy entry would qualify as directing UK consumers at a
+    // specific cryptoasset under FCA PS23/6.
+    if (context.watch<UkComplianceService>().isUk) {
+      return const SizedBox.shrink();
+    }
     return Consumer<FavoritesService>(
       builder: (context, favs, _) {
         if (favs.favorites.isEmpty) return const SizedBox.shrink();

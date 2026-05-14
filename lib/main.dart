@@ -17,6 +17,7 @@ import 'screens/token_info_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
 import 'services/favorites_service.dart';
 import 'services/mwa_detector.dart';
+import 'services/uk_compliance_service.dart';
 import 'services/wallet_service.dart';
 import 'theme/tibane_theme.dart';
 import 'widgets/cat_logo.dart';
@@ -55,6 +56,7 @@ class TibaneApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => WalletService()..tryRestore()),
         ChangeNotifierProvider(create: (_) => FavoritesService()..load()),
+        ChangeNotifierProvider(create: (_) => UkComplianceService()..init()),
       ],
       child: MaterialApp(
         title: 'Tibane',
@@ -190,7 +192,9 @@ class TibaneShellState extends State<TibaneShell> {
         index: _currentIndex,
         children: [
           HomeScreen(onNavigate: _navigateTo, onNavigateToToken: _openTokenInfo),
-          _isSeekerDevice
+          // UK users never see a Swap tab — they get the wallet view in
+          // its place. Non-UK users on Seeker keep the Swap default.
+          (_isSeekerDevice && !context.watch<UkComplianceService>().isUk)
               ? const SwapScreen(initialInputMint: wsolMint)
               : const WalletScreen(),
           const DAppBrowserScreen(),
@@ -203,32 +207,40 @@ class TibaneShellState extends State<TibaneShell> {
             top: BorderSide(color: TibaneColors.border),
           ),
         ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: _navigateTo,
-          items: [
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home),
-              label: 'Home',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(_isSeekerDevice ? Icons.swap_horiz_outlined : Icons.account_balance_wallet_outlined),
-              activeIcon: Icon(_isSeekerDevice ? Icons.swap_horiz : Icons.account_balance_wallet),
-              label: _isSeekerDevice ? 'Swap' : 'Wallet',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.travel_explore_outlined),
-              activeIcon: Icon(Icons.travel_explore),
-              label: 'Browse',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.settings_outlined),
-              activeIcon: Icon(Icons.settings),
-              label: 'Settings',
-            ),
-          ],
-        ),
+        child: Builder(builder: (context) {
+          final isUk = context.watch<UkComplianceService>().isUk;
+          final showSwap = _isSeekerDevice && !isUk;
+          return BottomNavigationBar(
+            currentIndex: _currentIndex,
+            onTap: _navigateTo,
+            items: [
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.home_outlined),
+                activeIcon: Icon(Icons.home),
+                label: 'Home',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(showSwap
+                    ? Icons.swap_horiz_outlined
+                    : Icons.account_balance_wallet_outlined),
+                activeIcon: Icon(showSwap
+                    ? Icons.swap_horiz
+                    : Icons.account_balance_wallet),
+                label: showSwap ? 'Swap' : 'Wallet',
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.travel_explore_outlined),
+                activeIcon: Icon(Icons.travel_explore),
+                label: 'Browse',
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.settings_outlined),
+                activeIcon: Icon(Icons.settings),
+                label: 'Settings',
+              ),
+            ],
+          );
+        }),
       ),
     );
   }

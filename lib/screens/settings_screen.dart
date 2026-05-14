@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../services/uk_compliance_service.dart';
 import '../services/wallet/libwallet_backend.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
@@ -147,6 +148,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 20),
+          _SectionLabel('Region'),
+          const SizedBox(height: 10),
+          const _UkComplianceTile(),
           const SizedBox(height: 20),
           _SectionLabel('App'),
           const SizedBox(height: 10),
@@ -918,6 +923,68 @@ class _CodeEntryDialogState extends State<_CodeEntryDialog> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _UkComplianceTile extends StatelessWidget {
+  const _UkComplianceTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final uk = context.watch<UkComplianceService>();
+    final country = uk.detectedCountryCode ?? 'unknown';
+    final detected = country == 'GB';
+    final subtitle = detected
+        ? 'Detected as United Kingdom. Swap and staking are hidden.'
+        : (uk.isForced
+            ? 'UK mode is forced ON. Swap and staking are hidden.'
+            : 'Detected region: $country. Swap and staking are available.');
+    return TibaneCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                uk.isUk ? Icons.shield_outlined : Icons.public,
+                color: uk.isUk ? TibaneColors.warning : TibaneColors.textMuted,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'UK compliance',
+                      style: TextStyle(
+                        color: TibaneColors.text,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: monoStyle(
+                        fontSize: 11,
+                        color: TibaneColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!detected)
+                Switch(
+                  value: uk.isForced,
+                  activeThumbColor: TibaneColors.orange,
+                  onChanged: (v) => uk.setForceUk(v),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

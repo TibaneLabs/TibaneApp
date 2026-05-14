@@ -9,12 +9,14 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../services/uk_compliance_service.dart';
 import '../../services/wallet/libwallet_request_bridge.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 
 const _kBridge = 'libwalletBridge';
-const _kHome = 'https://jup.ag';
+const _kHomeDefault = 'https://www.tibane.net';
+const _kHomeUk = 'https://duckduckgo.com';
 
 class DAppBrowserView extends StatefulWidget {
   const DAppBrowserView({super.key});
@@ -25,7 +27,7 @@ class DAppBrowserView extends StatefulWidget {
 
 class _DAppBrowserViewState extends State<DAppBrowserView> {
   late final WebViewController _webview;
-  final _urlCtrl = TextEditingController(text: _kHome);
+  final _urlCtrl = TextEditingController();
 
   LibwalletClient? _client;
   LibwalletRequestBridge? _bridge;
@@ -33,7 +35,8 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
   StreamSubscription? _pendingSub;
 
   String? _iconDataUrl;
-  String _currentUrl = _kHome;
+  String _homeUrl = _kHomeDefault;
+  String _currentUrl = _kHomeDefault;
   bool _loading = true;
   bool _canGoBack = false;
   bool _ready = false;
@@ -77,15 +80,23 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
 
   Future<void> _bootstrap() async {
     final wallet = context.read<WalletService>();
+    final uk = context.read<UkComplianceService>();
     final client = await wallet.libwallet.ensureClient();
     final iconData = await rootBundle.load('assets/app_icon.png');
     final iconB64 = base64Encode(iconData.buffer.asUint8List());
+
+    // UK users land on a neutral search page; everyone else gets
+    // tibane.net as the in-app browser home.
+    final home = uk.isUk ? _kHomeUk : _kHomeDefault;
 
     if (!mounted) return;
     setState(() {
       _client = client;
       _iconDataUrl = 'data:image/png;base64,$iconB64';
       _ready = true;
+      _homeUrl = home;
+      _currentUrl = home;
+      _urlCtrl.text = home;
     });
 
     _bridge = LibwalletRequestBridge(
@@ -96,7 +107,7 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
     _jsEventsSub = client.jsEvents.listen(_onJsEvent);
     _pendingSub = client.pendingRequests.listen((req) => _bridge?.handle(req));
 
-    await _webview.loadRequest(Uri.parse(_kHome));
+    await _webview.loadRequest(Uri.parse(home));
   }
 
   @override
@@ -278,6 +289,14 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
                         const BoxConstraints(minWidth: 28, minHeight: 14),
                   ),
                 ),
+              ),
+              IconButton(
+                tooltip: 'Home',
+                icon: const Icon(Icons.home_outlined, size: 20),
+                onPressed: () =>
+                    _webview.loadRequest(Uri.parse(_homeUrl)),
+                color: TibaneColors.textMuted,
+                visualDensity: VisualDensity.compact,
               ),
               IconButton(
                 icon: Icon(_loading ? Icons.close : Icons.refresh, size: 20),
