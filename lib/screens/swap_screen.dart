@@ -429,7 +429,11 @@ class _SwapScreenState extends State<SwapScreen> {
     final inputMint = _selectedInput!.mint;
     final outputMint = _selectedOutput!.mint;
     final client = await wallet.libwallet.ensureClient();
-    final quote = await client.swap.quote(
+    // libwallet 0.4.31 dropped the silent Jupiter→dFlow fallback from
+    // swap.quote(). Use swap.quotes() so we get an attempt from every
+    // provider and pick the one with the highest output. If none
+    // succeed we surface the first error's message.
+    final attempts = await client.swap.quotes(
       tokenIn: SwapTokenRef(
         address: inputMint == wsolMint ? 'NATIVE' : inputMint,
         decimals: _selectedInput!.decimals,
@@ -441,6 +445,27 @@ class _SwapScreenState extends State<SwapScreen> {
       amountIn: rawAmount.toString(),
     );
     if (!mounted) return;
+    lw.QuoteAttempt? best;
+    for (final a in attempts) {
+      if (!a.isOk) continue;
+      if (best == null ||
+          a.quote!.amountOut.toDouble() > best.quote!.amountOut.toDouble()) {
+        best = a;
+      }
+    }
+    if (best == null) {
+      // Every provider failed. Bubble up the most useful message.
+      final firstErr = attempts.firstWhere(
+        (a) => a.error != null,
+        orElse: () => attempts.isNotEmpty
+            ? attempts.first
+            : const lw.QuoteAttempt(provider: '', providerLabel: ''),
+      );
+      final code = firstErr.error?.code ?? 'no_route';
+      final msg = firstErr.error?.message ?? 'No provider could quote this pair';
+      throw Exception('$msg ($code)');
+    }
+    final quote = best.quote!;
     setState(() {
       _lwQuote = quote;
       _jupiterQuote = null;
