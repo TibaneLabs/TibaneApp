@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import 'inapp_create_screen.dart';
 
 /// Lists every chain account derived from libwallet wallets on this
 /// device. Shows the parent wallet, the chain type, the on-chain
@@ -64,23 +65,6 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
         _loading = false;
       });
     }
-  }
-
-  Future<void> _addAccount() async {
-    final wallets = _walletsById.values.toList();
-    if (wallets.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Create a wallet first.'),
-      ));
-      return;
-    }
-    final created = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: TibaneColors.card,
-      isScrollControlled: true,
-      builder: (_) => _AddAccountSheet(wallets: wallets),
-    );
-    if (created == true) _load();
   }
 
   Future<void> _setActive(lw.Account account) async {
@@ -146,9 +130,16 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: TibaneColors.orange,
         foregroundColor: TibaneColors.black,
-        onPressed: _addAccount,
+        // Adding a second account derived from the same wallet would
+        // expose two on-chain addresses backed by the same master key,
+        // which is rarely what the user wants (privacy + recovery
+        // ambiguity). Route the "more addresses" intent to a fresh
+        // wallet instead — each wallet has its own TSS shares.
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const InAppCreateScreen()),
+        ),
         icon: const Icon(Icons.add),
-        label: const Text('New account'),
+        label: const Text('New wallet'),
       ),
       body: SafeArea(
         child: Builder(builder: (context) {
@@ -324,160 +315,3 @@ class _AccountTile extends StatelessWidget {
   }
 }
 
-class _AddAccountSheet extends StatefulWidget {
-  final List<lw.Wallet> wallets;
-  const _AddAccountSheet({required this.wallets});
-
-  @override
-  State<_AddAccountSheet> createState() => _AddAccountSheetState();
-}
-
-class _AddAccountSheetState extends State<_AddAccountSheet> {
-  late lw.Wallet _wallet = widget.wallets.first;
-  String _type = '';
-  final _nameCtrl = TextEditingController();
-  final _indexCtrl = TextEditingController(text: '0');
-  bool _busy = false;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _type = _typesFor(_wallet).first;
-  }
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _indexCtrl.dispose();
-    super.dispose();
-  }
-
-  /// Curve → account types that can be derived from it.
-  List<String> _typesFor(lw.Wallet w) {
-    return w.curve == 'ed25519' ? const ['solana'] : const ['ethereum', 'bitcoin'];
-  }
-
-  Future<void> _create() async {
-    final name = _nameCtrl.text.trim();
-    final index = int.tryParse(_indexCtrl.text.trim());
-    if (name.isEmpty) {
-      setState(() => _error = 'Name is required');
-      return;
-    }
-    if (index == null || index < 0) {
-      setState(() => _error = 'Index must be a non-negative integer');
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      final client = await context.read<WalletService>().libwallet.ensureClient();
-      await client.accounts.create(
-        name: name,
-        wallet: _wallet.id,
-        type: _type,
-        index: index,
-      );
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _error = e.toString();
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final types = _typesFor(_wallet);
-    if (!types.contains(_type)) _type = types.first;
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'New account',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            initialValue: _wallet.id,
-            decoration: const InputDecoration(labelText: 'Parent wallet'),
-            items: [
-              for (final w in widget.wallets)
-                DropdownMenuItem(
-                  value: w.id,
-                  child: Text(
-                    '${w.name.isEmpty ? "(unnamed)" : w.name} · ${w.curve}',
-                  ),
-                ),
-            ],
-            onChanged: _busy
-                ? null
-                : (id) {
-                    if (id == null) return;
-                    setState(() {
-                      _wallet = widget.wallets.firstWhere((w) => w.id == id);
-                    });
-                  },
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _type,
-            decoration: const InputDecoration(labelText: 'Type'),
-            items: [
-              for (final t in types)
-                DropdownMenuItem(value: t, child: Text(t)),
-            ],
-            onChanged: _busy ? null : (t) => setState(() => _type = t ?? _type),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _nameCtrl,
-            enabled: !_busy,
-            decoration: const InputDecoration(labelText: 'Account name'),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _indexCtrl,
-            enabled: !_busy,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Derivation index',
-              helperText: 'BIP-44 account index (default 0)',
-            ),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: TibaneColors.error)),
-          ],
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: _busy ? null : _create,
-            style: FilledButton.styleFrom(
-              backgroundColor: TibaneColors.orange,
-              foregroundColor: TibaneColors.black,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-            child: Text(
-              _busy ? 'Creating…' : 'Create',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

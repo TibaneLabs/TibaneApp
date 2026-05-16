@@ -390,7 +390,10 @@ class _SwapScreenState extends State<SwapScreen> {
 
   Future<void> _fetchQuote() async {
     if (_selectedInput == null || _selectedOutput == null) return;
-    final amountStr = _amountController.text.trim();
+    // Accept both period and comma as the decimal separator — the iOS
+    // numeric keyboard adapts to the device locale, so European users
+    // get a comma key and Dart's parser would otherwise reject it.
+    final amountStr = _amountController.text.trim().replaceAll(',', '.');
     if (amountStr.isEmpty) return;
 
     final amountFloat = double.tryParse(amountStr);
@@ -557,7 +560,9 @@ class _SwapScreenState extends State<SwapScreen> {
     // sheet has names + amounts to display.
     final inputSymbol = _selectedInput?.symbol ?? '';
     final outputSymbol = _selectedOutput?.symbol ?? '';
-    final inputAmount = double.tryParse(_amountController.text.trim()) ?? 0;
+    final inputAmount = double.tryParse(
+            _amountController.text.trim().replaceAll(',', '.')) ??
+        0;
     final outputAmount = _quoteOutUi ?? 0;
     final outputMint = _selectedOutput?.mint;
 
@@ -583,9 +588,11 @@ class _SwapScreenState extends State<SwapScreen> {
         _amountController.clear();
       });
       // libwallet 0.4.27 handles both balance-refresh notification and
-      // auto-registration of unknown swap outputs server-side, so no
-      // client-side discover/create round-trip is needed here.
-      wallet.refreshBalances();
+      // auto-registration of unknown swap outputs server-side, but kick
+      // the wallet service explicitly so any dashboard view that's
+      // mounted in another tab reloads now instead of waiting for the
+      // txHistory stream to fire.
+      wallet.notifyTxCommitted();
       _loadHoldings();
       // Show the success sheet. Don't await — let it sit while we kick
       // off a few delayed balance refreshes for confirmation.
@@ -602,7 +609,7 @@ class _SwapScreenState extends State<SwapScreen> {
       for (final delay in const [Duration(seconds: 4), Duration(seconds: 10)]) {
         Future.delayed(delay, () {
           if (!mounted) return;
-          wallet.refreshBalances();
+          wallet.notifyTxCommitted();
           _loadHoldings();
         });
       }
@@ -1005,7 +1012,7 @@ class _SwapScreenState extends State<SwapScreen> {
               hintText: '0.00',
               hintStyle: monoStyle(fontSize: 20, color: TibaneColors.textDim),
               suffixText: _selectedInput != null && _selectedInput!.priceUsd != null
-                  ? '\$${(_formatUsd(double.tryParse(_amountController.text) ?? 0, _selectedInput!.priceUsd!))}'
+                  ? '\$${(_formatUsd(double.tryParse(_amountController.text.replaceAll(',', '.')) ?? 0, _selectedInput!.priceUsd!))}'
                   : null,
               suffixStyle: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
             ),

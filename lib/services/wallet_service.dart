@@ -156,6 +156,18 @@ class WalletService extends ChangeNotifier {
   double get solFiatUsd => _solFiatUsd;
   double get chiefPussyFiatUsd => _chiefPussyFiatUsd;
 
+  /// Bumped by the swap screen after every successful swap. Listened to by
+  /// the wallet dashboard so it reloads assets + tx history without waiting
+  /// for the txHistoryUpdates stream to fire.
+  final ValueNotifier<int> swapCommittedTick = ValueNotifier(0);
+
+  /// Call from any flow that knows a tx just committed (swap, send, …) to
+  /// kick downstream views into a refresh.
+  void notifyTxCommitted() {
+    swapCommittedTick.value++;
+    refreshBalances();
+  }
+
   Future<void> refreshBalances() async {
     final addr = publicKey;
     if (addr == null) return;
@@ -165,7 +177,18 @@ class WalletService extends ChangeNotifier {
     // RPC scan for MWA mode where libwallet has no account context.
     if (_kind == WalletKind.inapp && _libwallet.hasWallet) {
       try {
-        final assets = await _libwallet.getAssets();
+        var assets = await _libwallet.getAssets();
+        // libwallet 0.4.28 auto-discovers Solana fungibles on first
+        // Asset:list, but users who set up before 0.4.28 had the
+        // discovery gate flipped without success. If ChiefPussy isn't
+        // in the list yet, register it explicitly and re-fetch.
+        final hasCp = assets.any((a) =>
+            a.symbol == 'ChiefPussy' || a.key.contains(chiefPussyMint));
+        if (!hasCp) {
+          if (await _libwallet.ensureChiefPussyTracked()) {
+            assets = await _libwallet.getAssets();
+          }
+        }
         BigInt sol = BigInt.zero;
         BigInt cp = BigInt.zero;
         double solFiat = 0;

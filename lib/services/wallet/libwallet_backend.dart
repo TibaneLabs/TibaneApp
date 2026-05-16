@@ -7,6 +7,7 @@ import 'package:libwallet/libwallet.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../constants/solana_constants.dart';
 import '../relay_service.dart' show tibaneApi;
 import '../solana_common.dart';
 import 'secure_keystore.dart';
@@ -176,6 +177,37 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       notifyListeners();
     } catch (e) {
       debugPrint('ensureSolanaDefault failed: $e');
+    }
+  }
+
+  /// Defensive: make sure libwallet's Token table tracks $ChiefPussy on
+  /// the active Solana network. Returns true when a row was newly added
+  /// so the caller can re-fetch the asset list. No-op on non-Solana
+  /// networks. Users who set up before libwallet 0.4.28's Helius DAS
+  /// auto-discovery sometimes have an empty token list — this puts the
+  /// pool's headline asset back in their dashboard without forcing a
+  /// reinstall.
+  Future<bool> ensureChiefPussyTracked() async {
+    try {
+      final client = await _getClient();
+      final existing = await client.tokens.list();
+      if (existing.any((t) => t.address == chiefPussyMint)) return false;
+      final net = _currentNetwork ?? await client.networks.getCurrent();
+      _currentNetwork = net;
+      if (net.type != NetworkType.solana || net.testNet) return false;
+      final chainKey = '${net.type.name}.${net.chainId}';
+      await client.tokens.create(
+        name: 'Tibane Thecat',
+        symbol: 'ChiefPussy',
+        address: chiefPussyMint,
+        decimals: 6,
+        network: chainKey,
+        type: 'spl-token',
+      );
+      return true;
+    } catch (e) {
+      debugPrint('ensureChiefPussyTracked failed: $e');
+      return false;
     }
   }
 

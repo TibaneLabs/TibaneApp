@@ -27,12 +27,21 @@ class _WalletDashboardState extends State<WalletDashboard> {
   List<Transaction> _transactions = [];
   bool _loadingTxs = true;
   StreamSubscription<TxHistoryUpdatedEvent>? _txHistorySub;
+  WalletService? _walletRef;
 
   @override
   void initState() {
     super.initState();
     _loadData();
     _subscribeHistory();
+    // Reload on every "tx just committed" event from the swap/send flows.
+    _walletRef = context.read<WalletService>();
+    _walletRef!.swapCommittedTick.addListener(_onTxCommitted);
+  }
+
+  void _onTxCommitted() {
+    if (!mounted) return;
+    _loadData();
   }
 
   /// Listen for libwallet's tx-history backfill events. Fires whenever the
@@ -55,6 +64,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
   @override
   void dispose() {
     _txHistorySub?.cancel();
+    _walletRef?.swapCommittedTick.removeListener(_onTxCommitted);
     super.dispose();
   }
 
@@ -125,29 +135,42 @@ class _WalletDashboardState extends State<WalletDashboard> {
           ),
           const SizedBox(height: 24),
 
-          // SOL balance
+          // Total portfolio balance (sum of every asset's USD value) on
+          // top, with the native SOL amount underneath as a secondary
+          // line.
           Center(
-            child: Column(
-              children: [
-                Text(
-                  formatSol(wallet.solBalance),
-                  style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-                Text('SOL', style: monoStyle(fontSize: 14, color: TibaneColors.textDim)),
-                if (wallet.solFiatUsd > 0) ...[
-                  const SizedBox(height: 4),
+            child: Builder(builder: (context) {
+              final totalUsd = _assets.fold<double>(
+                0,
+                (sum, a) => sum + (a.fiatAmount?.toDouble() ?? 0),
+              );
+              return Column(
+                children: [
                   Text(
-                    '\$${wallet.solFiatUsd.toStringAsFixed(2)}',
+                    '\$${totalUsd.toStringAsFixed(2)}',
+                    style:
+                        Theme.of(context).textTheme.displaySmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                  ),
+                  Text(
+                    'TOTAL',
                     style: monoStyle(
-                      fontSize: 12,
+                      fontSize: 11,
+                      color: TibaneColors.textDim,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${formatSol(wallet.solBalance)} SOL',
+                    style: monoStyle(
+                      fontSize: 13,
                       color: TibaneColors.textMuted,
                     ),
                   ),
                 ],
-              ],
-            ),
+              );
+            }),
           ),
           const SizedBox(height: 24),
 
