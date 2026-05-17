@@ -85,9 +85,21 @@ class SecureKeystore {
   // Device share — always encrypted at rest, OS keystore preferred.
   // ---------------------------------------------------------------------
 
-  /// Persist the device-share private key. [password] is consulted only if
-  /// the OS keystore isn't usable (fallback path needs a key-derivation
-  /// secret). Throws on hard failures.
+  /// Persist the device-share private key in every available location.
+  ///
+  /// - When the OS keystore is usable, the plaintext value is written
+  ///   there (preferred read path).
+  /// - The password-encrypted AES-GCM blob is **always** written to
+  ///   SharedPreferences as a backup. This is the only copy that
+  ///   survives an iOS restore-from-iCloud-Backup on a new device
+  ///   (Keychain items with `unlocked_this_device` accessibility are
+  ///   excluded from iCloud Backup, but the app sandbox — including
+  ///   SharedPreferences — is included). The blob is unreadable
+  ///   without the wallet password, so storing both copies doesn't
+  ///   lower the security floor.
+  ///
+  /// Throws on hard failures of the OS keystore path when keystore is
+  /// supposed to be usable.
   Future<void> writeDeviceShare({
     required String value,
     required String password,
@@ -99,10 +111,6 @@ class SecureKeystore {
         iOptions: _iosPlain,
         aOptions: _androidPlain,
       );
-      // Clean up any prior fallback blob so we don't keep two copies.
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_spFallbackBlob);
-      return;
     }
     final blob = await _encryptWithPassword(value, password);
     final prefs = await SharedPreferences.getInstance();

@@ -456,12 +456,26 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         }
       }
       if (priv == null) {
-        _error = 'Device share missing — wallet must be re-created or imported';
+        // No keystore entry, no fallback blob, no legacy plaintext —
+        // the on-device share is genuinely gone. Common cause: a
+        // restore-from-iCloud-Backup on a new device (Keychain items
+        // tied to this_device are excluded from iCloud Backup). Point
+        // the user at the recovery paths instead of leaving them
+        // stuck on a cryptic message.
+        _error = 'Device share not found on this device. Restore the wallet '
+            'from your encrypted backup (Settings → Import wallet) or from '
+            'cloud backup if you enabled it.';
         notifyListeners();
         return false;
       }
       _storeKeyPriv = priv;
       _password = password;
+      // Backfill the password-encrypted fallback blob for users who
+      // installed before that backup path was unconditional. Without
+      // this, a future restore-from-iCloud-Backup on a new device
+      // would leave them with no recoverable device share. Safe to
+      // re-run — writeDeviceShare is idempotent.
+      unawaited(_keystore.writeDeviceShare(value: priv, password: password));
       notifyListeners();
       // Best-effort: refresh the cached current network so the chip and
       // any swap-availability checks reflect what libwallet thinks is
