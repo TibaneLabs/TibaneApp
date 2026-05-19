@@ -9,7 +9,7 @@ import '../widgets/cat_logo.dart';
 import '../widgets/tibane_card.dart';
 import 'incinerator_screen.dart';
 import 'staking/staking_pools_screen.dart';
-import 'token_info_screen.dart';
+import 'token_favorites_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   final void Function(int) onNavigate;
@@ -199,11 +199,7 @@ class _ToolsSection extends StatelessWidget {
           badgeColor: TibaneColors.cyan,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => Scaffold(
-                backgroundColor: TibaneColors.black,
-                appBar: AppBar(title: const Text('Token info')),
-                body: const TokenInfoScreen(),
-              ),
+              builder: (_) => const TokenFavoritesScreen(),
             ),
           ),
         ),

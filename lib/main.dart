@@ -13,7 +13,7 @@ import 'screens/clawdwallet/pairing_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/swap_screen.dart';
-import 'screens/token_info_screen.dart';
+import 'screens/token_detail_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
 import 'services/favorites_service.dart';
 import 'services/mwa_detector.dart';
@@ -150,13 +150,7 @@ class TibaneShellState extends State<TibaneShell> {
 
   void _openTokenInfo(String mint) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          backgroundColor: TibaneColors.black,
-          appBar: AppBar(title: const Text('Token info')),
-          body: TokenInfoScreen(initialMint: mint),
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => TokenDetailScreen(mint: mint)),
     );
   }
 

@@ -5,7 +5,7 @@
 /// .testInstance`, a stub `WalletService` + `LibwalletBackend`) and the
 /// rest of the app — `TibaneShell`, `HomeScreen`, `WalletDashboard`,
 /// `ReceiveScreen`, `StakingPoolsScreen`, `StakingDetailScreen`,
-/// `IncineratorScreen`, `TokenInfoScreen` — runs unchanged.
+/// `IncineratorScreen`, `TokenDetailScreen` — runs unchanged.
 ///
 /// Usage:
 ///   ./scripts/take_screenshots.sh              # iOS Simulator
@@ -27,7 +27,7 @@ import 'models/token_account.dart';
 import 'screens/incinerator_screen.dart';
 import 'screens/staking/staking_detail_screen.dart';
 import 'screens/staking/staking_pools_screen.dart';
-import 'screens/token_info_screen.dart';
+import 'screens/token_detail_screen.dart';
 import 'services/chiefstaker_api.dart';
 import 'services/favorites_service.dart';
 import 'services/rpc_service.dart';
@@ -214,11 +214,9 @@ class _ShellWithRunnerState extends State<_ShellWithRunner> {
     _pop();
     await _wait(400);
 
-    // 6) Token info — pushed with the $ChiefPussy mint (internal header)
-    _push(const Scaffold(
-      backgroundColor: TibaneColors.black,
-      body: SafeArea(child: TokenInfoScreen(initialMint: _chiefPussyMint)),
-    ));
+    // 6) Token info — pushed with the $ChiefPussy mint. TokenDetailScreen
+    // owns its own Scaffold + AppBar so no caller wrapping is needed.
+    _push(const TokenDetailScreen(mint: _chiefPussyMint));
     await _wait(1800);
     await _captureAt(6);
     _pop();
