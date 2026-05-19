@@ -13,7 +13,6 @@ import 'screens/clawdwallet/pairing_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/swap_screen.dart';
-import 'screens/token_detail_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
 import 'services/favorites_service.dart';
 import 'services/mwa_detector.dart';
@@ -148,12 +147,6 @@ class TibaneShellState extends State<TibaneShell> {
     setState(() => _currentIndex = index);
   }
 
-  void _openTokenInfo(String mint) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => TokenDetailScreen(mint: mint)),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -185,7 +178,7 @@ class TibaneShellState extends State<TibaneShell> {
       body: IndexedStack(
         index: _currentIndex,
         children: [
-          HomeScreen(onNavigate: _navigateTo, onNavigateToToken: _openTokenInfo),
+          HomeScreen(onNavigate: _navigateTo),
           // UK users never see a Swap tab — they get the wallet view in
           // its place. Non-UK users on Seeker keep the Swap default.
           (_isSeekerDevice && !context.watch<UkComplianceService>().isUk)
