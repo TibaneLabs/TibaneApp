@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
-import 'package:libwallet/libwallet.dart' show Asset;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/solana_constants.dart';
@@ -22,14 +21,6 @@ WalletKind _parseKind(String? s) => switch (s) {
     };
 
 String _kindToString(WalletKind k) => k == WalletKind.inapp ? 'inapp' : 'mwa';
-
-/// True when [a] is a chain's native asset (SOL, ETH, BTC, …). libwallet
-/// keys native assets as `<chain>.<id>.NATIVE` (e.g.
-/// `solana.mainnet.NATIVE`); the suffix is the reliable signal because
-/// `Asset.type` has drifted between releases. Wrapped-SOL SPL tokens
-/// carry the wSOL mint instead of the `.NATIVE` suffix, so they
-/// correctly return false.
-bool isNativeAsset(Asset a) => a.key.endsWith('.NATIVE');
 
 /// Façade that routes every wallet call to the active [WalletBackend]. Screens
 /// and auth flows continue to use this class; only the backends change.
@@ -194,7 +185,7 @@ class WalletService extends ChangeNotifier {
         double solFiat = 0;
         double cpFiat = 0;
         for (final a in assets) {
-          if (isNativeAsset(a) && a.symbol.toUpperCase() == 'SOL') {
+          if (a.isNative && a.symbol.toUpperCase() == 'SOL') {
             sol = a.amount.value;
             solFiat = a.fiatAmount?.toDouble() ?? 0;
           } else if (a.symbol == 'ChiefPussy' ||
