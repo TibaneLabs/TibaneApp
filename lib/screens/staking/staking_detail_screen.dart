@@ -826,6 +826,46 @@ class _ActionsSection extends StatelessWidget {
     return BigInt.from(v * BigInt.from(10).pow(pool.tokenDecimals).toDouble());
   }
 
+  /// Modal confirmation for the two destructive, single-tap unstake
+  /// paths: `Unstake` on no-cooldown pools (tokens leave the stake
+  /// account immediately) and `Complete Unstake` on cooldown pools
+  /// (the tx that actually releases the requested tokens). The
+  /// reversible actions — `Request Unstake` and `Cancel` — are not
+  /// guarded; cancelling a request keeps the stake intact, and a
+  /// request can itself be cancelled before the cooldown elapses.
+  Future<bool> _confirmDestructive(
+    BuildContext context, {
+    required String title,
+    required String body,
+    required String confirmLabel,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: TibaneColors.card,
+        title: Text(title),
+        content: Text(
+          body,
+          style: const TextStyle(color: TibaneColors.textMuted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              confirmLabel,
+              style: const TextStyle(color: TibaneColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    return result == true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasCooldown = pool.unstakeCooldownSeconds > BigInt.zero;
@@ -863,7 +903,23 @@ class _ActionsSection extends StatelessWidget {
                         child: SecondaryButton(
                           label: cooldownDone ? 'Complete Unstake' : 'Cooling down...',
                           icon: cooldownDone ? Icons.lock_open : Icons.hourglass_top,
-                          onPressed: cooldownDone ? () => onAction('completeUnstake') : null,
+                          onPressed: cooldownDone
+                              ? () async {
+                                  final amountStr = formatTokenAmount(
+                                    userStake.unstakeRequestAmount,
+                                    pool.tokenDecimals,
+                                  );
+                                  final symbol = pool.tokenSymbol ?? 'tokens';
+                                  final ok = await _confirmDestructive(
+                                    context,
+                                    title: 'Complete unstake?',
+                                    body:
+                                        'This will release $amountStr $symbol from your stake account back to your wallet in a single on-chain transaction. You cannot undo it from the app.',
+                                    confirmLabel: 'Complete Unstake',
+                                  );
+                                  if (ok) onAction('completeUnstake');
+                                }
+                              : null,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -987,7 +1043,25 @@ class _ActionsSection extends StatelessWidget {
                         icon: isLocked ? Icons.lock : Icons.lock_open,
                         expanded: true,
                         onPressed: !isLocked && amount != null
-                            ? () => onAction(hasCooldown ? 'requestUnstake' : 'unstake', amount: amount)
+                            ? () async {
+                                if (hasCooldown) {
+                                  // Reversible — can be cancelled before
+                                  // cooldown elapses. No confirmation.
+                                  onAction('requestUnstake', amount: amount);
+                                  return;
+                                }
+                                final amountStr = formatTokenAmount(
+                                    amount, pool.tokenDecimals);
+                                final symbol = pool.tokenSymbol ?? 'tokens';
+                                final ok = await _confirmDestructive(
+                                  context,
+                                  title: 'Unstake?',
+                                  body:
+                                      'This will withdraw $amountStr $symbol from the pool and return them to your wallet in a single on-chain transaction. You cannot undo it from the app.',
+                                  confirmLabel: 'Unstake',
+                                );
+                                if (ok) onAction('unstake', amount: amount);
+                              }
                             : null,
                       );
                     },
