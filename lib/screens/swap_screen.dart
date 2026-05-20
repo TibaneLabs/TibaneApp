@@ -133,11 +133,24 @@ class _SwapScreenState extends State<SwapScreen> {
     final wallet = context.read<WalletService>();
     _wallet = wallet;
     wallet.addListener(_onWalletChanged);
+    // Reload holdings whenever the chain state changes — covers swaps
+    // from other surfaces, sends, and libwallet's 60s background poller.
+    // Without this the From-section balance and token picker values keep
+    // showing the pre-swap numbers until the user navigates away and back.
+    wallet.libwallet.balanceTick.addListener(_onBalanceTick);
+    wallet.swapCommittedTick.addListener(_onBalanceTick);
     if (wallet.isConnected) {
       _walletWasConnected = true;
       _loadHoldings();
     }
     _checkAvailability();
+  }
+
+  void _onBalanceTick() {
+    if (!mounted) return;
+    final wallet = _wallet;
+    if (wallet == null || !wallet.isConnected) return;
+    _loadHoldings();
   }
 
   void _onWalletChanged() {
@@ -169,6 +182,8 @@ class _SwapScreenState extends State<SwapScreen> {
   @override
   void dispose() {
     _wallet?.removeListener(_onWalletChanged);
+    _wallet?.libwallet.balanceTick.removeListener(_onBalanceTick);
+    _wallet?.swapCommittedTick.removeListener(_onBalanceTick);
     _amountController.dispose();
     _quoteDebounce?.cancel();
     _jupiter.dispose();
@@ -501,8 +516,8 @@ class _SwapScreenState extends State<SwapScreen> {
     if (_selectedInput == null) return;
     // For 100% with both tokens picked, ask libwallet for the true
     // maxSpendable — it reserves gas and accounts for ATA-creation rent
-    // on the output mint. Falls back to raw balance × percent in any
-    // failure path so the Max button never appears broken.
+    // on the output mint. Falls back to raw balance × percent on hard
+    // errors (network etc.) so the Max button never appears broken.
     double amount;
     if (percent == 100 && _selectedOutput != null) {
       try {
@@ -530,6 +545,20 @@ class _SwapScreenState extends State<SwapScreen> {
           ),
           from: wallet.publicKey,
         );
+        if (!mounted) return;
+        // libwallet 0.4.35: soft failures (balance_too_small / no_route)
+        // no longer throw — maxSpendable returns a non-executable quote
+        // with a human-readable statusMessage. Surface it instead of
+        // silently filling the field with an amount that won't actually
+        // swap.
+        if (!quote.isExecutable) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(quote.statusMessage.isNotEmpty
+                ? quote.statusMessage
+                : 'Max amount unavailable for this pair'),
+          ));
+          return;
+        }
         final raw = quote.amountIn.value;
         final divisor = BigInt.from(10).pow(_selectedInput!.decimals);
         amount = raw / divisor;
@@ -594,6 +623,24 @@ class _SwapScreenState extends State<SwapScreen> {
       // txHistory stream to fire.
       wallet.notifyTxCommitted();
       _loadHoldings();
+      // libwallet's auto-discovery doesn't always pick up a brand-new
+      // mint before the next Asset:list call. Register the swap output
+      // explicitly with the metadata we already have so the token row
+      // appears on the dashboard the moment the balance lands. We have
+      // to nudge again once it's in so the dashboard reloads after the
+      // first registration completes.
+      if (outputMint != null && outputMint != wsolMint) {
+        unawaited(wallet.libwallet
+            .ensureTokenTracked(
+          mint: outputMint,
+          name: _selectedOutput?.name,
+          symbol: outputSymbol,
+          decimals: _outputDecimals,
+        )
+            .then((added) {
+          if (added && mounted) wallet.notifyTxCommitted();
+        }));
+      }
       // Show the success sheet. Don't await — let it sit while we kick
       // off a few delayed balance refreshes for confirmation.
       unawaited(_showSwapResultSheet(

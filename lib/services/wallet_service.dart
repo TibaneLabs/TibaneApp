@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
-import 'package:libwallet/libwallet.dart' show Asset;
+import 'package:libwallet/libwallet.dart' show NetworkType;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/solana_constants.dart';
@@ -22,14 +22,6 @@ WalletKind _parseKind(String? s) => switch (s) {
     };
 
 String _kindToString(WalletKind k) => k == WalletKind.inapp ? 'inapp' : 'mwa';
-
-/// True when [a] is a chain's native asset (SOL, ETH, BTC, …). libwallet
-/// keys native assets as `<chain>.<id>.NATIVE` (e.g.
-/// `solana.mainnet.NATIVE`); the suffix is the reliable signal because
-/// `Asset.type` has drifted between releases. Wrapped-SOL SPL tokens
-/// carry the wSOL mint instead of the `.NATIVE` suffix, so they
-/// correctly return false.
-bool isNativeAsset(Asset a) => a.key.endsWith('.NATIVE');
 
 /// Façade that routes every wallet call to the active [WalletBackend]. Screens
 /// and auth flows continue to use this class; only the backends change.
@@ -168,6 +160,93 @@ class WalletService extends ChangeNotifier {
     refreshBalances();
   }
 
+  /// Scan the user's on-chain SPL token accounts (legacy + Token-2022) and
+  /// register any mints that aren't yet in libwallet's Token table. Needed
+  /// because libwallet's Asset:list only surfaces tracked tokens — a user
+  /// whose wallet predates Helius DAS auto-discovery (or whose discovery
+  /// gate flipped without success) has rows on-chain that never appear in
+  /// the dashboard. After registration the dashboard reloads via
+  /// [swapCommittedTick] so the new rows render without a manual refresh.
+  Future<void> discoverHoldings() async {
+    final addr = publicKey;
+    if (addr == null) {
+      debugPrint('[holdings] skip: no publicKey');
+      return;
+    }
+    if (_kind != WalletKind.inapp || !_libwallet.hasWallet) {
+      debugPrint('[holdings] skip: kind=$_kind hasWallet=${_libwallet.hasWallet}');
+      return;
+    }
+    final net = _libwallet.currentNetwork;
+    if (net == null || net.type != NetworkType.solana || net.testNet) {
+      debugPrint(
+        '[holdings] skip: network=${net?.id} type=${net?.type} '
+        'testNet=${net?.testNet}',
+      );
+      return;
+    }
+
+    debugPrint('[holdings] scanning on-chain SPL accounts for $addr');
+    final rpc = RpcService();
+    try {
+      final results = await Future.wait([
+        rpc.getTokenAccountsByOwner(addr),
+        rpc.getTokenAccountsByOwner(addr, token2022: true),
+      ]);
+      debugPrint(
+        '[holdings] RPC returned ${results[0].length} SPL + '
+        '${results[1].length} Token-2022 accounts',
+      );
+      final onChain =
+          <String, ({int decimals, String type})>{};
+      for (final acc in [...results[0], ...results[1]]) {
+        if (acc.amount <= BigInt.zero) continue;
+        onChain[acc.mint] = (
+          decimals: acc.decimals,
+          type: acc.isToken2022 ? 'spl-token-2022' : 'spl-token',
+        );
+      }
+      debugPrint(
+        '[holdings] non-zero on-chain mints: ${onChain.length} '
+        '${onChain.keys.toList()}',
+      );
+      if (onChain.isEmpty) return;
+
+      final client = await _libwallet.ensureClient();
+      final tracked = await client.tokens.list();
+      final trackedAddrs = tracked.map((t) => t.address).toSet();
+      debugPrint(
+        '[holdings] libwallet currently tracks ${trackedAddrs.length} tokens',
+      );
+
+      var anyAdded = false;
+      for (final entry in onChain.entries) {
+        if (trackedAddrs.contains(entry.key)) {
+          debugPrint('[holdings]   already tracked: ${entry.key}');
+          continue;
+        }
+        debugPrint(
+          '[holdings]   missing: ${entry.key} '
+          '(decimals=${entry.value.decimals} type=${entry.value.type}) — '
+          'registering…',
+        );
+        final added = await _libwallet.ensureTokenTracked(
+          mint: entry.key,
+          decimals: entry.value.decimals,
+          type: entry.value.type,
+        );
+        debugPrint('[holdings]   ensureTokenTracked(${entry.key}) → $added');
+        if (added) anyAdded = true;
+      }
+      debugPrint('[holdings] done. anyAdded=$anyAdded');
+      if (anyAdded) swapCommittedTick.value++;
+    } catch (e) {
+      debugPrint('[holdings] discoverHoldings failed: $e');
+    } finally {
+      rpc.dispose();
+    }
+  }
+
   Future<void> refreshBalances() async {
     final addr = publicKey;
     if (addr == null) return;
@@ -194,7 +273,7 @@ class WalletService extends ChangeNotifier {
         double solFiat = 0;
         double cpFiat = 0;
         for (final a in assets) {
-          if (isNativeAsset(a) && a.symbol.toUpperCase() == 'SOL') {
+          if (a.isNative && a.symbol.toUpperCase() == 'SOL') {
             sol = a.amount.value;
             solFiat = a.fiatAmount?.toDouble() ?? 0;
           } else if (a.symbol == 'ChiefPussy' ||

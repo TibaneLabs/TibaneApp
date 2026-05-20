@@ -37,6 +37,11 @@ class _WalletDashboardState extends State<WalletDashboard> {
     // Reload on every "tx just committed" event from the swap/send flows.
     _walletRef = context.read<WalletService>();
     _walletRef!.swapCommittedTick.addListener(_onTxCommitted);
+    // Register any on-chain tokens libwallet's auto-discovery missed so
+    // they appear in the TOKENS section. Runs concurrently with the
+    // initial _loadData; if any new mints land, it bumps
+    // swapCommittedTick to trigger a second reload that sees them.
+    unawaited(_walletRef!.discoverHoldings());
   }
 
   void _onTxCommitted() {
@@ -77,12 +82,29 @@ class _WalletDashboardState extends State<WalletDashboard> {
         lw.getTransactions(limit: 50),
       ]);
       if (!mounted) return;
+      final assets = results[0] as List<Asset>;
+      debugPrint('[assets] getAssets returned ${assets.length} entries');
+      for (final a in assets) {
+        debugPrint(
+          '[assets]   key=${a.key} symbol=${a.symbol} name=${a.name} '
+          'amount=${a.amount} zero=${a.amount.isZero} '
+          'native=${a.isNative} fiat=${a.fiatAmount}',
+        );
+      }
+      final visible = assets
+          .where((a) => !a.isNative && !a.amount.isZero)
+          .toList();
+      debugPrint(
+        '[assets] dashboard TOKENS section will render ${visible.length} rows '
+        '(filtered out native + zero-balance)',
+      );
       setState(() {
-        _assets = results[0] as List<Asset>;
+        _assets = assets;
         _transactions = results[1] as List<Transaction>;
         _loadingTxs = false;
       });
     } catch (e) {
+      debugPrint('[assets] getAssets failed: $e');
       if (!mounted) return;
       setState(() => _loadingTxs = false);
     }
@@ -206,24 +228,25 @@ class _WalletDashboardState extends State<WalletDashboard> {
           const SizedBox(height: 24),
 
           // Token list — exclude the native asset (it's already shown as
-          // the headline balance) and zero-balance rows. isNativeAsset
-          // keys off the `.NATIVE` suffix in Asset.key, which is stable
-          // across libwallet releases even when Asset.type isn't.
-          if (_assets.where((a) => !isNativeAsset(a) && !a.amount.isZero).isNotEmpty) ...[
+          // the headline balance) and zero-balance rows.
+          if (_assets.where((a) => !a.isNative && !a.amount.isZero).isNotEmpty) ...[
             Text('TOKENS', style: monoStyle(fontSize: 11, color: TibaneColors.textDim)),
             const SizedBox(height: 8),
             ..._assets
-                .where((a) => !isNativeAsset(a) && !a.amount.isZero)
+                .where((a) => !a.isNative && !a.amount.isZero)
                 .map((a) => Padding(
                       padding: const EdgeInsets.only(bottom: 6),
                       child: TibaneCard(
                         padding: const EdgeInsets.all(12),
-                        // Tap-to-swap suppressed in UK mode.
+                        // Tap-to-swap suppressed in UK mode. tokenAddress
+                        // is non-null here because the filter above
+                        // already excludes native assets; the ?? wsolMint
+                        // is just belt-and-braces.
                         onTap: context.read<UkComplianceService>().isUk
                             ? null
                             : () => _openSwap(
                                   context,
-                                  inputMint: _mintFromAssetKey(a.key),
+                                  inputMint: a.tokenAddress ?? wsolMint,
                                   outputMint: wsolMint,
                                 ),
                         child: Row(
@@ -314,17 +337,6 @@ class _WalletDashboardState extends State<WalletDashboard> {
     );
   }
 
-  /// Extract the mint from a libwallet Asset.key. The format has
-  /// evolved across libwallet releases (`ethereum:ETH` vs
-  /// `solana.mainnet.<mint>`), so take the last segment after either
-  /// `:` or `.`. Native symbols map to wSOL so the swap screen can
-  /// treat the token as native.
-  String _mintFromAssetKey(String key) {
-    final i = key.lastIndexOf(RegExp(r'[.:]'));
-    final id = i < 0 ? key : key.substring(i + 1);
-    if (id == 'SOL' || id == 'ETH' || id == 'BTC') return wsolMint;
-    return id;
-  }
 }
 
 class _ActionButton extends StatelessWidget {

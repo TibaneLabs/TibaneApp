@@ -2,20 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../services/favorites_service.dart';
 import '../services/uk_compliance_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/cat_logo.dart';
 import '../widgets/tibane_card.dart';
 import 'incinerator_screen.dart';
 import 'staking/staking_pools_screen.dart';
-import 'token_info_screen.dart';
+import 'token_favorites_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   final void Function(int) onNavigate;
-  final void Function(String mint) onNavigateToToken;
 
-  const HomeScreen({super.key, required this.onNavigate, required this.onNavigateToToken});
+  const HomeScreen({super.key, required this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
@@ -24,15 +22,10 @@ class HomeScreen extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 16),
-          // Hero section
           _HeroSection(onNavigate: onNavigate),
           const SizedBox(height: 48),
-          // Favorites section
-          _FavoritesSection(onNavigateToToken: onNavigateToToken),
-          // Tools grid
           _ToolsSection(onNavigate: onNavigate),
           const SizedBox(height: 48),
-          // About section
           const _AboutSection(),
           const SizedBox(height: 40),
         ],
@@ -193,121 +186,17 @@ class _ToolsSection extends StatelessWidget {
         const SizedBox(height: 12),
         FeatureCard(
           icon: Icons.analytics_outlined,
-          title: 'Token Info',
+          title: 'Token info & Favorites',
           description: 'Real-time token analytics, holder distribution, and transaction history.',
           badge: 'LIVE',
           badgeColor: TibaneColors.cyan,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => Scaffold(
-                backgroundColor: TibaneColors.black,
-                appBar: AppBar(title: const Text('Token info')),
-                body: const TokenInfoScreen(),
-              ),
+              builder: (_) => const TokenFavoritesScreen(),
             ),
           ),
         ),
       ],
-    );
-  }
-}
-
-class _FavoritesSection extends StatelessWidget {
-  final void Function(String mint) onNavigateToToken;
-
-  const _FavoritesSection({required this.onNavigateToToken});
-
-  @override
-  Widget build(BuildContext context) {
-    // UK users: hide the favourites strip entirely. The pre-seeded
-    // ChiefPussy entry would qualify as directing UK consumers at a
-    // specific cryptoasset under FCA PS23/6.
-    if (context.watch<UkComplianceService>().isUk) {
-      return const SizedBox.shrink();
-    }
-    return Consumer<FavoritesService>(
-      builder: (context, favs, _) {
-        if (favs.favorites.isEmpty) return const SizedBox.shrink();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.star, size: 14, color: TibaneColors.gold),
-                const SizedBox(width: 6),
-                Text(
-                  'FAVORITES',
-                  style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Container(height: 1, color: TibaneColors.border),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            for (final fav in favs.favorites) ...[
-              TibaneCard(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                onTap: () => onNavigateToToken(fav.mint),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: TibaneColors.darker,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: fav.imageUrl != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: Image.network(
-                                fav.imageUrl!,
-                                width: 36,
-                                height: 36,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, e, s) => const Icon(
-                                  Icons.token,
-                                  size: 18,
-                                  color: TibaneColors.textDim,
-                                ),
-                              ),
-                            )
-                          : const Icon(Icons.token, size: 18, color: TibaneColors.textDim),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            fav.name ?? fav.symbol ?? 'Unknown',
-                            style: const TextStyle(
-                              color: TibaneColors.text,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (fav.symbol != null)
-                            Text(
-                              '\$${fav.symbol}',
-                              style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const Icon(Icons.chevron_right, size: 18, color: TibaneColors.textDim),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            const SizedBox(height: 40),
-          ],
-        );
-      },
     );
   }
 }
