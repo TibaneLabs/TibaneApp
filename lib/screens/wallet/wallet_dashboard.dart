@@ -37,6 +37,11 @@ class _WalletDashboardState extends State<WalletDashboard> {
     // Reload on every "tx just committed" event from the swap/send flows.
     _walletRef = context.read<WalletService>();
     _walletRef!.swapCommittedTick.addListener(_onTxCommitted);
+    // Register any on-chain tokens libwallet's auto-discovery missed so
+    // they appear in the TOKENS section. Runs concurrently with the
+    // initial _loadData; if any new mints land, it bumps
+    // swapCommittedTick to trigger a second reload that sees them.
+    unawaited(_walletRef!.discoverHoldings());
   }
 
   void _onTxCommitted() {
@@ -77,12 +82,29 @@ class _WalletDashboardState extends State<WalletDashboard> {
         lw.getTransactions(limit: 50),
       ]);
       if (!mounted) return;
+      final assets = results[0] as List<Asset>;
+      debugPrint('[assets] getAssets returned ${assets.length} entries');
+      for (final a in assets) {
+        debugPrint(
+          '[assets]   key=${a.key} symbol=${a.symbol} name=${a.name} '
+          'amount=${a.amount} zero=${a.amount.isZero} '
+          'native=${a.isNative} fiat=${a.fiatAmount}',
+        );
+      }
+      final visible = assets
+          .where((a) => !a.isNative && !a.amount.isZero)
+          .toList();
+      debugPrint(
+        '[assets] dashboard TOKENS section will render ${visible.length} rows '
+        '(filtered out native + zero-balance)',
+      );
       setState(() {
-        _assets = results[0] as List<Asset>;
+        _assets = assets;
         _transactions = results[1] as List<Transaction>;
         _loadingTxs = false;
       });
     } catch (e) {
+      debugPrint('[assets] getAssets failed: $e');
       if (!mounted) return;
       setState(() => _loadingTxs = false);
     }

@@ -180,36 +180,102 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
   }
 
-  /// Defensive: make sure libwallet's Token table tracks $ChiefPussy on
-  /// the active Solana network. Returns true when a row was newly added
-  /// so the caller can re-fetch the asset list. No-op on non-Solana
-  /// networks. Users who set up before libwallet 0.4.28's Helius DAS
-  /// auto-discovery sometimes have an empty token list — this puts the
-  /// pool's headline asset back in their dashboard without forcing a
-  /// reinstall.
-  Future<bool> ensureChiefPussyTracked() async {
+  /// Defensive: make sure libwallet's Token table tracks the given mint on
+  /// the active Solana network. Returns true when a row was newly added so
+  /// the caller can re-fetch the asset list. No-op when the token is
+  /// already tracked or the active network isn't Solana mainnet.
+  ///
+  /// Pass [name]/[symbol]/[decimals] when the caller already has them
+  /// cached (swap output, deep-link payload, etc.). When any are missing,
+  /// libwallet's on-chain `tokens.discover` probe fills them in. Used to
+  /// surface freshly-acquired tokens in the dashboard immediately rather
+  /// than waiting on the next Helius DAS auto-discovery cycle.
+  Future<bool> ensureTokenTracked({
+    required String mint,
+    String? name,
+    String? symbol,
+    int? decimals,
+    String type = 'spl-token',
+  }) async {
     try {
       final client = await _getClient();
       final existing = await client.tokens.list();
-      if (existing.any((t) => t.address == chiefPussyMint)) return false;
+      if (existing.any((t) => t.address == mint)) {
+        debugPrint('[track] $mint: already in tokens table');
+        return false;
+      }
       final net = _currentNetwork ?? await client.networks.getCurrent();
       _currentNetwork = net;
-      if (net.type != NetworkType.solana || net.testNet) return false;
+      if (net.type != NetworkType.solana || net.testNet) {
+        debugPrint(
+          '[track] $mint: skip, network=${net.id} type=${net.type} '
+          'testNet=${net.testNet}',
+        );
+        return false;
+      }
       final chainKey = '${net.type.name}.${net.chainId}';
+
+      var resolvedName = name ?? '';
+      var resolvedSymbol = symbol ?? '';
+      var resolvedDecimals = decimals ?? -1;
+      var resolvedType = type;
+      debugPrint(
+        '[track] $mint: incoming name="$resolvedName" symbol="$resolvedSymbol" '
+        'decimals=$resolvedDecimals type=$resolvedType',
+      );
+      if (resolvedSymbol.isEmpty || resolvedDecimals < 0) {
+        try {
+          final d = await client.tokens
+              .discover(network: chainKey, address: mint);
+          debugPrint(
+            '[track] $mint: discover → name="${d.name}" symbol="${d.symbol}" '
+            'decimals=${d.decimals} type="${d.type}"',
+          );
+          if (resolvedName.isEmpty) resolvedName = d.name;
+          if (resolvedSymbol.isEmpty) resolvedSymbol = d.symbol;
+          if (resolvedDecimals < 0) resolvedDecimals = d.decimals;
+          if (d.type.isNotEmpty) resolvedType = d.type;
+        } catch (e) {
+          debugPrint('[track] $mint: discover failed: $e');
+        }
+      }
+      if (resolvedDecimals < 0) {
+        debugPrint('[track] $mint: bail, decimals unresolved');
+        return false;
+      }
       await client.tokens.create(
-        name: 'Tibane Thecat',
-        symbol: 'ChiefPussy',
-        address: chiefPussyMint,
-        decimals: 6,
-        network: chainKey,
-        type: 'spl-token',
+        name: resolvedName.isNotEmpty
+            ? resolvedName
+            : (resolvedSymbol.isNotEmpty ? resolvedSymbol : mint),
+        symbol: resolvedSymbol.isNotEmpty ? resolvedSymbol : 'UNK',
+        address: mint,
+        decimals: resolvedDecimals,
+        // tokens.create wants the network UUID, not the "<type>.<chainId>"
+        // string that tokens.discover accepts — passing chainKey here
+        // returns "invalid UUID length" 500s.
+        network: net.id,
+        type: resolvedType,
+      );
+      debugPrint(
+        '[track] $mint: created on network ${net.id} '
+        'symbol="$resolvedSymbol" decimals=$resolvedDecimals '
+        'type=$resolvedType',
       );
       return true;
     } catch (e) {
-      debugPrint('ensureChiefPussyTracked failed: $e');
+      debugPrint('[track] $mint: ensureTokenTracked failed: $e');
       return false;
     }
   }
+
+  /// Backwards-compatible shim for the hard-coded ChiefPussy path used
+  /// during refreshBalances. Same contract as [ensureTokenTracked].
+  Future<bool> ensureChiefPussyTracked() => ensureTokenTracked(
+        mint: chiefPussyMint,
+        name: 'Tibane Thecat',
+        symbol: 'ChiefPussy',
+        decimals: 6,
+      );
 
   Future<LibwalletClient> _getClient() async {
     if (_client != null) return _client!;

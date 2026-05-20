@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+import 'package:libwallet/libwallet.dart' show NetworkType;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/solana_constants.dart';
@@ -157,6 +158,93 @@ class WalletService extends ChangeNotifier {
   void notifyTxCommitted() {
     swapCommittedTick.value++;
     refreshBalances();
+  }
+
+  /// Scan the user's on-chain SPL token accounts (legacy + Token-2022) and
+  /// register any mints that aren't yet in libwallet's Token table. Needed
+  /// because libwallet's Asset:list only surfaces tracked tokens — a user
+  /// whose wallet predates Helius DAS auto-discovery (or whose discovery
+  /// gate flipped without success) has rows on-chain that never appear in
+  /// the dashboard. After registration the dashboard reloads via
+  /// [swapCommittedTick] so the new rows render without a manual refresh.
+  Future<void> discoverHoldings() async {
+    final addr = publicKey;
+    if (addr == null) {
+      debugPrint('[holdings] skip: no publicKey');
+      return;
+    }
+    if (_kind != WalletKind.inapp || !_libwallet.hasWallet) {
+      debugPrint('[holdings] skip: kind=$_kind hasWallet=${_libwallet.hasWallet}');
+      return;
+    }
+    final net = _libwallet.currentNetwork;
+    if (net == null || net.type != NetworkType.solana || net.testNet) {
+      debugPrint(
+        '[holdings] skip: network=${net?.id} type=${net?.type} '
+        'testNet=${net?.testNet}',
+      );
+      return;
+    }
+
+    debugPrint('[holdings] scanning on-chain SPL accounts for $addr');
+    final rpc = RpcService();
+    try {
+      final results = await Future.wait([
+        rpc.getTokenAccountsByOwner(addr),
+        rpc.getTokenAccountsByOwner(addr, token2022: true),
+      ]);
+      debugPrint(
+        '[holdings] RPC returned ${results[0].length} SPL + '
+        '${results[1].length} Token-2022 accounts',
+      );
+      final onChain =
+          <String, ({int decimals, String type})>{};
+      for (final acc in [...results[0], ...results[1]]) {
+        if (acc.amount <= BigInt.zero) continue;
+        onChain[acc.mint] = (
+          decimals: acc.decimals,
+          type: acc.isToken2022 ? 'spl-token-2022' : 'spl-token',
+        );
+      }
+      debugPrint(
+        '[holdings] non-zero on-chain mints: ${onChain.length} '
+        '${onChain.keys.toList()}',
+      );
+      if (onChain.isEmpty) return;
+
+      final client = await _libwallet.ensureClient();
+      final tracked = await client.tokens.list();
+      final trackedAddrs = tracked.map((t) => t.address).toSet();
+      debugPrint(
+        '[holdings] libwallet currently tracks ${trackedAddrs.length} tokens',
+      );
+
+      var anyAdded = false;
+      for (final entry in onChain.entries) {
+        if (trackedAddrs.contains(entry.key)) {
+          debugPrint('[holdings]   already tracked: ${entry.key}');
+          continue;
+        }
+        debugPrint(
+          '[holdings]   missing: ${entry.key} '
+          '(decimals=${entry.value.decimals} type=${entry.value.type}) — '
+          'registering…',
+        );
+        final added = await _libwallet.ensureTokenTracked(
+          mint: entry.key,
+          decimals: entry.value.decimals,
+          type: entry.value.type,
+        );
+        debugPrint('[holdings]   ensureTokenTracked(${entry.key}) → $added');
+        if (added) anyAdded = true;
+      }
+      debugPrint('[holdings] done. anyAdded=$anyAdded');
+      if (anyAdded) swapCommittedTick.value++;
+    } catch (e) {
+      debugPrint('[holdings] discoverHoldings failed: $e');
+    } finally {
+      rpc.dispose();
+    }
   }
 
   Future<void> refreshBalances() async {
