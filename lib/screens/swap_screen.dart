@@ -516,8 +516,8 @@ class _SwapScreenState extends State<SwapScreen> {
     if (_selectedInput == null) return;
     // For 100% with both tokens picked, ask libwallet for the true
     // maxSpendable — it reserves gas and accounts for ATA-creation rent
-    // on the output mint. Falls back to raw balance × percent in any
-    // failure path so the Max button never appears broken.
+    // on the output mint. Falls back to raw balance × percent on hard
+    // errors (network etc.) so the Max button never appears broken.
     double amount;
     if (percent == 100 && _selectedOutput != null) {
       try {
@@ -545,6 +545,20 @@ class _SwapScreenState extends State<SwapScreen> {
           ),
           from: wallet.publicKey,
         );
+        if (!mounted) return;
+        // libwallet 0.4.35: soft failures (balance_too_small / no_route)
+        // no longer throw — maxSpendable returns a non-executable quote
+        // with a human-readable statusMessage. Surface it instead of
+        // silently filling the field with an amount that won't actually
+        // swap.
+        if (!quote.isExecutable) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(quote.statusMessage.isNotEmpty
+                ? quote.statusMessage
+                : 'Max amount unavailable for this pair'),
+          ));
+          return;
+        }
         final raw = quote.amountIn.value;
         final divisor = BigInt.from(10).pow(_selectedInput!.decimals);
         amount = raw / divisor;
