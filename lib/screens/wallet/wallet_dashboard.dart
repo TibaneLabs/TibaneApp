@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants/solana_constants.dart';
+import '../../services/jupiter_service.dart';
 import '../../services/uk_compliance_service.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
@@ -24,10 +25,13 @@ class WalletDashboard extends StatefulWidget {
 
 class _WalletDashboardState extends State<WalletDashboard> {
   List<Asset> _assets = [];
+  List<TokenHolding> _holdings = [];
   List<Transaction> _transactions = [];
   bool _loadingTxs = true;
+  bool _kickedHistoryBackfill = false;
   StreamSubscription<TxHistoryUpdatedEvent>? _txHistorySub;
   WalletService? _walletRef;
+  final JupiterService _jupiter = JupiterService();
 
   @override
   void initState() {
@@ -57,12 +61,17 @@ class _WalletDashboardState extends State<WalletDashboard> {
     try {
       final wallet = context.read<WalletService>();
       final client = await wallet.libwallet.ensureClient();
-      _txHistorySub = client.txHistoryUpdates.listen((_) {
+      debugPrint('[txhist] subscribed to txHistoryUpdates');
+      _txHistorySub = client.txHistoryUpdates.listen((e) {
+        debugPrint(
+          '[txhist] event: account=${e.accountId} network=${e.networkId} '
+          'count=${e.count}',
+        );
         if (!mounted) return;
         _loadData();
       });
     } catch (e) {
-      debugPrint('txHistoryUpdates subscribe failed: $e');
+      debugPrint('[txhist] txHistoryUpdates subscribe failed: $e');
     }
   }
 
@@ -70,41 +79,53 @@ class _WalletDashboardState extends State<WalletDashboard> {
   void dispose() {
     _txHistorySub?.cancel();
     _walletRef?.swapCommittedTick.removeListener(_onTxCommitted);
+    _jupiter.dispose();
     super.dispose();
   }
 
   Future<void> _loadData() async {
     final wallet = context.read<WalletService>();
     final lw = wallet.libwallet;
+    final addr = wallet.publicKey;
+    // libwallet supplies SOL's fiat conversion and the transaction history;
+    // the SPL-token list comes straight from on-chain RPC so any non-zero
+    // balance shows up regardless of whether libwallet has tracked the
+    // mint yet.
     try {
       final results = await Future.wait([
         lw.getAssets(),
         lw.getTransactions(limit: 50),
+        if (addr != null)
+          _jupiter.fetchHoldings(addr, excludeMint: wsolMint)
+        else
+          Future.value(const <TokenHolding>[]),
       ]);
       if (!mounted) return;
       final assets = results[0] as List<Asset>;
-      debugPrint('[assets] getAssets returned ${assets.length} entries');
-      for (final a in assets) {
-        debugPrint(
-          '[assets]   key=${a.key} symbol=${a.symbol} name=${a.name} '
-          'amount=${a.amount} zero=${a.amount.isZero} '
-          'native=${a.isNative} fiat=${a.fiatAmount}',
-        );
-      }
-      final visible = assets
-          .where((a) => !a.isNative && !a.amount.isZero)
-          .toList();
+      final txs = results[1] as List<Transaction>;
+      final holdings = results[2] as List<TokenHolding>;
       debugPrint(
-        '[assets] dashboard TOKENS section will render ${visible.length} rows '
-        '(filtered out native + zero-balance)',
+        '[dashboard] _loadData: addr=$addr account=${lw.accountId} '
+        'network=${lw.currentNetwork?.id} '
+        'assets=${assets.length} holdings=${holdings.length} '
+        'txs=${txs.length}',
       );
       setState(() {
         _assets = assets;
-        _transactions = results[1] as List<Transaction>;
+        _transactions = txs;
+        _holdings = holdings;
         _loadingTxs = false;
       });
+      // First load came back with an empty tx list — libwallet's
+      // background backfill may have silently failed on env init. Re-fire
+      // it once per dashboard mount; results land via txHistoryUpdates.
+      if (txs.isEmpty && !_kickedHistoryBackfill) {
+        _kickedHistoryBackfill = true;
+        debugPrint('[dashboard] tx list empty on first load — kicking backfill');
+        unawaited(lw.kickHistoryBackfill());
+      }
     } catch (e) {
-      debugPrint('[assets] getAssets failed: $e');
+      debugPrint('[dashboard] _loadData failed: $e');
       if (!mounted) return;
       setState(() => _loadingTxs = false);
     }
@@ -157,15 +178,22 @@ class _WalletDashboardState extends State<WalletDashboard> {
           ),
           const SizedBox(height: 24),
 
-          // Total portfolio balance (sum of every asset's USD value) on
-          // top, with the native SOL amount underneath as a secondary
-          // line.
+          // Total portfolio balance (SOL fiat from libwallet + sum of
+          // every on-chain SPL holding's USD value) on top, with the
+          // native SOL amount underneath as a secondary line.
           Center(
             child: Builder(builder: (context) {
-              final totalUsd = _assets.fold<double>(
+              final solFiat = _assets
+                  .where((a) => a.isNative)
+                  .fold<double>(
+                    0,
+                    (sum, a) => sum + (a.fiatAmount?.toDouble() ?? 0),
+                  );
+              final tokensFiat = _holdings.fold<double>(
                 0,
-                (sum, a) => sum + (a.fiatAmount?.toDouble() ?? 0),
+                (sum, h) => sum + (h.valueUsd ?? 0),
               );
+              final totalUsd = solFiat + tokensFiat;
               return Column(
                 children: [
                   Text(
@@ -227,65 +255,61 @@ class _WalletDashboardState extends State<WalletDashboard> {
           }),
           const SizedBox(height: 24),
 
-          // Token list — exclude the native asset (it's already shown as
-          // the headline balance) and zero-balance rows.
-          if (_assets.where((a) => !a.isNative && !a.amount.isZero).isNotEmpty) ...[
+          // Token list — every non-zero on-chain SPL holding (legacy +
+          // Token-2022), scanned directly via RPC so a token appears the
+          // moment its balance lands, without waiting on libwallet's
+          // auto-discovery to register the mint.
+          if (_holdings.isNotEmpty) ...[
             Text('TOKENS', style: monoStyle(fontSize: 11, color: TibaneColors.textDim)),
             const SizedBox(height: 8),
-            ..._assets
-                .where((a) => !a.isNative && !a.amount.isZero)
-                .map((a) => Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: TibaneCard(
-                        padding: const EdgeInsets.all(12),
-                        // Tap-to-swap suppressed in UK mode. tokenAddress
-                        // is non-null here because the filter above
-                        // already excludes native assets; the ?? wsolMint
-                        // is just belt-and-braces.
-                        onTap: context.read<UkComplianceService>().isUk
-                            ? null
-                            : () => _openSwap(
-                                  context,
-                                  inputMint: a.tokenAddress ?? wsolMint,
-                                  outputMint: wsolMint,
-                                ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    a.symbol.isNotEmpty ? a.symbol : a.name,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w600, fontSize: 14),
-                                  ),
-                                  if (a.name.isNotEmpty && a.name != a.symbol)
-                                    Text(a.name,
-                                        style: monoStyle(
-                                            fontSize: 11, color: TibaneColors.textMuted)),
-                                ],
+            ..._holdings.map((h) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: TibaneCard(
+                    padding: const EdgeInsets.all(12),
+                    onTap: context.read<UkComplianceService>().isUk
+                        ? null
+                        : () => _openSwap(
+                              context,
+                              inputMint: h.mint,
+                              outputMint: wsolMint,
+                            ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                h.symbol.isNotEmpty ? h.symbol : h.name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600, fontSize: 14),
                               ),
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  a.amount.toString(),
-                                  style: monoStyle(fontSize: 13),
-                                ),
-                                if (a.fiatAmount != null && !a.fiatAmount!.isZero)
-                                  Text(
-                                    '\$${a.fiatAmount!.toDouble().toStringAsFixed(2)}',
+                              if (h.name.isNotEmpty && h.name != h.symbol)
+                                Text(h.name,
                                     style: monoStyle(
-                                        fontSize: 11, color: TibaneColors.textMuted),
-                                  ),
-                              ],
+                                        fontSize: 11, color: TibaneColors.textMuted)),
+                            ],
+                          ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              formatTokenAmount(h.balance, h.decimals, displayDecimals: 4),
+                              style: monoStyle(fontSize: 13),
                             ),
+                            if (h.valueUsd != null)
+                              Text(
+                                '\$${h.valueUsd!.toStringAsFixed(2)}',
+                                style: monoStyle(
+                                    fontSize: 11, color: TibaneColors.textMuted),
+                              ),
                           ],
                         ),
-                      ),
-                    )),
+                      ],
+                    ),
+                  ),
+                )),
             const SizedBox(height: 16),
           ],
 

@@ -130,8 +130,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
         ),
         actions: [
           if (!context.watch<UkComplianceService>().isUk)
-            IconButton(
-              tooltip: 'Swap SOL → ${pool.tokenSymbol ?? "token"}',
+            TextButton(
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => Scaffold(
@@ -148,7 +147,10 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
                   ),
                 ),
               ),
-              icon: const Icon(Icons.swap_horiz, size: 20),
+              child: Text(
+                'SWAP',
+                style: monoStyle(fontSize: 11, color: TibaneColors.orange),
+              ),
             ),
           IconButton(
             onPressed: () {
