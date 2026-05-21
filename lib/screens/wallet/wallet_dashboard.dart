@@ -118,6 +118,10 @@ class _WalletDashboardState extends State<WalletDashboard> {
     return RefreshIndicator(
       onRefresh: () async {
         wallet.refreshBalances();
+        // Re-run on-chain SPL discovery so tokens acquired since the last
+        // load (or missed on first launch if the network cache wasn't
+        // ready) show up after a pull-to-refresh.
+        unawaited(wallet.discoverHoldings());
         await _loadData();
       },
       color: TibaneColors.orange,
