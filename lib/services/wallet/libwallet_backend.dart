@@ -965,10 +965,20 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   }
 
   /// List recent transactions for the current account, newest first.
+  ///
+  /// The `From` filter on `transactions.list` matches Transaction.From,
+  /// which holds the on-chain sender ADDRESS — not the account UUID.
+  /// Passing `_accountId` returns zero rows even when libwallet's
+  /// Solana history backfill (0.4.38+) has landed activity. libwallet
+  /// already scopes the local table to the current (wallet, account,
+  /// network) per the `Transaction:backfill` flow, so a bare list
+  /// without `from:` is the canonical pattern (matches the example
+  /// in `TransactionApi.list`'s docstring). Sent/Received direction
+  /// is computed client-side from `tx.from == myAddr` in
+  /// `_TransactionRow`.
   Future<List<Transaction>> getTransactions({int limit = 50}) async {
     final client = await _getClient();
     return client.transactions.list(
-      from: _accountId,
       convert: 'USD',
       limit: limit,
     );
