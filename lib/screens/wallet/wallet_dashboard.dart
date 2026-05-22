@@ -260,6 +260,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                         children: [
                           TokenIcon(
                             imageUrl: h.imageUrl,
+                            mint: h.mint,
                             symbol: h.symbol.isNotEmpty ? h.symbol : h.name,
                             size: 32,
                           ),

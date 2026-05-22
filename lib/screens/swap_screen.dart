@@ -1019,7 +1019,7 @@ class _SwapScreenState extends State<SwapScreen> {
                     child: Row(
                       children: [
                         if (_selectedInput != null) ...[
-                          TokenIcon(imageUrl: _selectedInput!.imageUrl, symbol: _selectedInput!.symbol, size: 24),
+                          TokenIcon(imageUrl: _selectedInput!.imageUrl, mint: _selectedInput!.mint, symbol: _selectedInput!.symbol, size: 24),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -1107,7 +1107,7 @@ class _SwapScreenState extends State<SwapScreen> {
               child: Row(
                 children: [
                   if (_selectedOutput != null) ...[
-                    TokenIcon(imageUrl: _outputImageUrl ?? _selectedOutput!.imageUrl, symbol: _selectedOutput!.symbol, size: 24),
+                    TokenIcon(imageUrl: _outputImageUrl ?? _selectedOutput!.imageUrl, mint: _selectedOutput!.mint, symbol: _selectedOutput!.symbol, size: 24),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -1368,7 +1368,7 @@ class _InputTokenPicker extends StatelessWidget {
               itemBuilder: (context, index) {
                 final h = holdings[index];
                 return ListTile(
-                  leading: TokenIcon(imageUrl: h.imageUrl, symbol: h.symbol, size: 36),
+                  leading: TokenIcon(imageUrl: h.imageUrl, mint: h.mint, symbol: h.symbol, size: 36),
                   title: Text(h.symbol, style: const TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: Text(h.name, style: TextStyle(color: TibaneColors.textMuted, fontSize: 12)),
                   trailing: Column(
@@ -1522,7 +1522,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
                 ),
                 for (final token in commonTokens)
                   ListTile(
-                    leading: TokenIcon(imageUrl: token.imageUrl, symbol: token.symbol, size: 36),
+                    leading: TokenIcon(imageUrl: token.imageUrl, mint: token.mint, symbol: token.symbol, size: 36),
                     title: Text(token.symbol, style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(token.name, style: TextStyle(color: TibaneColors.textMuted, fontSize: 12)),
                     onTap: () {
@@ -1541,7 +1541,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
                     // Skip if already in common tokens
                     if (!commonTokens.any((c) => c.mint == fav.mint))
                       ListTile(
-                        leading: TokenIcon(imageUrl: fav.imageUrl, symbol: fav.symbol ?? '?', size: 36),
+                        leading: TokenIcon(imageUrl: fav.imageUrl, mint: fav.mint, symbol: fav.symbol ?? '?', size: 36),
                         title: Text(fav.symbol ?? shortenAddress(fav.mint), style: const TextStyle(fontWeight: FontWeight.w600)),
                         subtitle: Text(fav.name ?? fav.mint, style: TextStyle(color: TibaneColors.textMuted, fontSize: 12)),
                         onTap: () {
