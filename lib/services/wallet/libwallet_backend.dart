@@ -76,6 +76,13 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// True when a wallet exists on this device (but may be locked).
   bool get hasWallet => _walletId != null;
 
+  /// True when the local SecureKeystore (or its password-encrypted
+  /// fallback blob) holds the device-share private. False after a
+  /// cross-device backup import, or any time the device share has
+  /// gone missing — used by the unlock screen to route between the
+  /// normal password prompt and the 2FA recovery flow.
+  Future<bool> hasLocalDeviceShare() => _keystore.hasDeviceShare();
+
   /// Wallet handle on the libwallet backend; null until a wallet exists.
   String? get walletId => _walletId;
 
@@ -531,15 +538,12 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         }
       }
       if (priv == null) {
-        // No keystore entry, no fallback blob, no legacy plaintext —
-        // the on-device share is genuinely gone. Common cause: a
-        // restore-from-iCloud-Backup on a new device (Keychain items
-        // tied to this_device are excluded from iCloud Backup). Point
-        // the user at the recovery paths instead of leaving them
-        // stuck on a cryptic message.
-        _error = 'Device share not found on this device. Restore the wallet '
-            'from your encrypted backup (Settings → Import wallet) or from '
-            'cloud backup if you enabled it.';
+        // No local device share — the unlock UI is responsible for
+        // routing the user through the 2FA recovery flow before
+        // calling unlock again. We surface the absence as a typed
+        // signal so the host can branch cleanly.
+        _error = 'Device share not found on this device. '
+            'Recover via 2FA from the unlock screen.';
         notifyListeners();
         return false;
       }
@@ -657,16 +661,33 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// session descriptor so the UI can prompt for the code; complete by
   /// calling [completeRemoteKeyReshare] with the user-typed digits.
   Future<RemoteKeySession?> startRemoteKeyReshare() async {
-    if (_remoteKeyId == null || _walletId == null) {
-      _error = 'No remote key configured on this wallet';
+    if (_walletId == null) {
+      _error = 'No in-app wallet';
       notifyListeners();
       return null;
     }
     try {
       final client = await _getClient();
       final wallet = await client.wallets.get(_walletId!);
+      // RemoteKey:reshare expects the RemoteKey resource identifier
+      // (`crws-…:crwsv-…`), which lives in the WalletKey's `key` field —
+      // NOT the wallet-key id (`wkey-…`). The two are distinct: id
+      // identifies the share within this wallet; key is the
+      // server-side handle for the RemoteKey resource.
+      WalletKey? remoteKey;
+      for (final k in wallet.keys) {
+        if (k.type == 'RemoteKey') {
+          remoteKey = k;
+          break;
+        }
+      }
+      if (remoteKey == null || remoteKey.key.isEmpty) {
+        _error = 'No remote key configured on this wallet';
+        notifyListeners();
+        return null;
+      }
       return await client.remoteKeys.reshare(
-        key: _remoteKeyId!,
+        key: remoteKey.key,
         curve: wallet.curve,
       );
     } catch (e) {
@@ -697,6 +718,67 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       return true;
     } catch (e) {
       _error = 'Reshare validation failed: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Cross-device recovery: validate the 2FA verification code to
+  /// authorize the RemoteKey share, then auto-rotate the device share
+  /// so this device has its own StoreKey going forward. Caller has
+  /// already collected the password (validated upstream via
+  /// [startRemoteKeyReshare] succeeding) and the verification code.
+  /// On success, the wallet ends up fully unlocked (`isUnlocked` true)
+  /// — no second call to [unlock] needed.
+  Future<bool> recoverDeviceShareVia2fa({
+    required String sessionToken,
+    required String code,
+    required String password,
+  }) async {
+    if (!hasWallet) {
+      _error = 'No in-app wallet';
+      notifyListeners();
+      return false;
+    }
+    try {
+      final client = await _getClient();
+      // Validate the SMS/email code. We need the freshly-minted
+      // RemoteKey resource id back from validate — the stored
+      // `WalletKey.key` is the original keygen session which the
+      // server has marked `done`, and using it in the subsequent
+      // Wallet:reshare causes `invalid status for wallet sign
+      // session: done`. Per libwallet 0.4.37 device_share.md, the
+      // validate result's `remoteKey` field replaces it on both
+      // old and new committee RemoteKey KeyDescriptions.
+      final validation = await client.remoteKeys
+          .validate(session: sessionToken, code: code);
+      if (validation.remoteKey.isEmpty) {
+        _error = '2FA validation returned no remote key';
+        notifyListeners();
+        return false;
+      }
+      if (validation.remoteKey != _remoteKeyId) {
+        _remoteKeyId = validation.remoteKey;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_prefsRemoteKeyId, _remoteKeyId!);
+      }
+      // Mint a fresh device share locally and run the Wallet:reshare
+      // ceremony using the fresh RemoteKey session id.
+      final wallet = await client.wallets.get(_walletId!);
+      final priv = await _resharedDeviceShare(
+        client: client,
+        wallet: wallet,
+        password: password,
+        freshRemoteKeyResource: validation.remoteKey,
+      );
+      _storeKeyPriv = priv;
+      _password = password;
+      notifyListeners();
+      unawaited(ensureSolanaDefault());
+      return true;
+    } catch (e) {
+      _error = '2FA recovery failed: $e';
       debugPrint(_error);
       notifyListeners();
       return false;
@@ -1225,6 +1307,13 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _password = password;
       _storeKeyPriv = null;
 
+      // Cross-device imports leave _storeKeyPriv null intentionally —
+      // the device-share Keychain/Keystore entry from the source
+      // device doesn't transfer. First unlock on this device will
+      // detect the gap and route the user through the 2FA recovery
+      // screen, which runs `_resharedDeviceShare` to mint a fresh
+      // device share locally.
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_prefsWalletId, _walletId!);
       await prefs.setString(_prefsAccountId, _accountId!);
@@ -1342,6 +1431,112 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       keys.add({'Id': _passwordKeyId, 'Key': _password, 'Type': 'Password'});
     }
     return keys;
+  }
+
+  /// Auto-rotate the device share on a wallet that exists locally but
+  /// has no SecureKeystore entry for its StoreKey private. Per
+  /// libwallet's device-share docs
+  /// (https://github.com/KarpelesLab/libwallet/blob/master/dart/doc/device_share.md),
+  /// the wallet has T+1 shares available on a fresh device (RemoteKey
+  /// via the authenticated WalletSign session + Password from the user)
+  /// — enough to authorize the reshare ceremony. Mints a new StoreKey,
+  /// reshares to swap it in, and persists the private half locally.
+  ///
+  /// Caller is responsible for using the returned private key (set
+  /// `_storeKeyPriv = …`). Throws on any failure; surrounding code
+  /// should surface a clear error.
+  Future<String> _resharedDeviceShare({
+    required LibwalletClient client,
+    required Wallet wallet,
+    required String password,
+    String? freshRemoteKeyResource,
+  }) async {
+    // Find the existing shares we'll reference in oldKeys.
+    final oldStoreKey = wallet.keys.firstWhere(
+      (k) => k.type == 'StoreKey',
+      orElse: () => throw StateError('Wallet has no StoreKey share'),
+    );
+    final oldPasswordKey = wallet.keys.firstWhere(
+      (k) => k.type == 'Password',
+      orElse: () => throw StateError('Wallet has no Password share'),
+    );
+    WalletKey? oldRemoteKey;
+    for (final k in wallet.keys) {
+      if (k.type == 'RemoteKey') {
+        oldRemoteKey = k;
+        break;
+      }
+    }
+
+    // Per libwallet 0.4.37 device_share.md: the stored
+    // `WalletKey.key` for the RemoteKey share is the original keygen
+    // session id which the server marked `done`. Reshare against it
+    // produces `invalid status for wallet sign session: done`.
+    // Callers in the cross-device recovery flow must run
+    // RemoteKey:reshare + :validate first and pass the fresh
+    // `RemoteKeyValidation.remoteKey` here. The fresh id replaces
+    // the stored one on BOTH the old and new RemoteKey
+    // KeyDescriptions.
+    final remoteKeyForReshare =
+        freshRemoteKeyResource ?? oldRemoteKey?.key;
+
+    final newStorePair = await client.storeKeys.create();
+    final reshareOld = <KeyDescription>[
+      KeyDescription(
+        type: 'StoreKey',
+        key: oldStoreKey.key,
+        id: oldStoreKey.id,
+      ),
+      if (oldRemoteKey != null && remoteKeyForReshare != null)
+        KeyDescription(
+          type: 'RemoteKey',
+          key: remoteKeyForReshare,
+          id: oldRemoteKey.id,
+        ),
+      KeyDescription(
+        type: 'Password',
+        key: password,
+        id: oldPasswordKey.id,
+      ),
+    ];
+    final reshareNew = <KeyDescription>[
+      KeyDescription.storeKey(newStorePair.publicKey),
+      if (oldRemoteKey != null && remoteKeyForReshare != null)
+        KeyDescription(
+          type: 'RemoteKey',
+          key: remoteKeyForReshare,
+        ),
+      KeyDescription.password(password),
+    ];
+    Wallet? afterReshare;
+    await for (final ev in client.wallets.reshare(
+      wallet.id,
+      oldKeys: reshareOld,
+      newKeys: reshareNew,
+    )) {
+      if (ev is Complete<Wallet>) afterReshare = ev.value;
+    }
+    if (afterReshare == null) {
+      throw StateError('Device-share reshare did not return a wallet');
+    }
+    final freshKeyIds = _extractKeyIdsByType(afterReshare);
+    final freshStoreKeyId = freshKeyIds['StoreKey'];
+    if (freshStoreKeyId == null) {
+      throw StateError('Post-reshare wallet is missing its StoreKey');
+    }
+
+    // Persist new metadata + private key. Reshare didn't touch the
+    // RemoteKey or Password slot, so their IDs stay the same (we
+    // only refresh StoreKey-related state).
+    _storeKeyId = freshStoreKeyId;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefsStorePub, newStorePair.publicKey);
+    await prefs.setString(_prefsStoreKeyId, freshStoreKeyId);
+    await _keystore.writeDeviceShare(
+      value: newStorePair.privateKey,
+      password: password,
+    );
+    return newStorePair.privateKey;
   }
 
   Future<void> _persist({required String storeKeyPublic}) async {

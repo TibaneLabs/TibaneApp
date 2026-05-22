@@ -142,6 +142,28 @@ class SecureKeystore {
     return _decryptWithPassword(blob, password);
   }
 
+  /// True when a device-share entry exists in either the OS keystore
+  /// or the password-encrypted fallback blob. Cheap probe — does not
+  /// decrypt, does not require the password. Hosts use this to decide
+  /// whether to render the normal password unlock UI or route into the
+  /// 2FA recovery flow first.
+  Future<bool> hasDeviceShare() async {
+    if (await isSecureStorageUsable()) {
+      try {
+        final v = await _storage.read(
+          key: _ksDeviceShare,
+          iOptions: _iosPlain,
+          aOptions: _androidPlain,
+        );
+        if (v != null) return true;
+      } catch (e) {
+        debugPrint('hasDeviceShare keystore read failed: $e');
+      }
+    }
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_spFallbackBlob) != null;
+  }
+
   Future<void> deleteDeviceShare() async {
     try {
       await _storage.delete(

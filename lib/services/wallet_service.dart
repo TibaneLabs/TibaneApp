@@ -177,7 +177,12 @@ class WalletService extends ChangeNotifier {
       debugPrint('[holdings] skip: kind=$_kind hasWallet=${_libwallet.hasWallet}');
       return;
     }
-    final net = _libwallet.currentNetwork;
+    // The dashboard fires this from initState before NetworkChip /
+    // ensureSolanaDefault populate the cached network, so `currentNetwork`
+    // is null on first launch and the discovery would silently skip.
+    // Resolve it now so the gate uses the actual libwallet state.
+    final net =
+        _libwallet.currentNetwork ?? await _libwallet.refreshCurrentNetwork();
     if (net == null || net.type != NetworkType.solana || net.testNet) {
       debugPrint(
         '[holdings] skip: network=${net?.id} type=${net?.type} '
