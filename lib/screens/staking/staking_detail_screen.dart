@@ -73,7 +73,22 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
         _userStake = results[0] as UserStake?;
         _walletBalance = results[1] as BigInt;
         final refreshedPool = results[2] as StakingPool?;
-        if (refreshedPool != null) _pool = refreshedPool;
+        if (refreshedPool != null) {
+          // getStakingPool returns a freshly deserialized on-chain pool —
+          // it carries the live Pool_Data fields but loses the API
+          // enrichment (name, symbol, logo, decimals, members, price,
+          // supply) since those don't live on chain. Carry those over
+          // from the previous _pool so the screen title doesn't flicker
+          // from the real token name back to the bare 'Pool' fallback.
+          refreshedPool.tokenName = _pool.tokenName;
+          refreshedPool.tokenSymbol = _pool.tokenSymbol;
+          refreshedPool.tokenImage = _pool.tokenImage;
+          refreshedPool.tokenDecimals = _pool.tokenDecimals;
+          refreshedPool.memberCount = _pool.memberCount;
+          refreshedPool.tokenPrice = _pool.tokenPrice;
+          refreshedPool.tokenSupply = _pool.tokenSupply;
+          _pool = refreshedPool;
+        }
         _loadingStake = false;
       });
     } catch (e) {
@@ -130,8 +145,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
         ),
         actions: [
           if (!context.watch<UkComplianceService>().isUk)
-            IconButton(
-              tooltip: 'Swap SOL → ${pool.tokenSymbol ?? "token"}',
+            TextButton(
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => Scaffold(
@@ -148,7 +162,10 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
                   ),
                 ),
               ),
-              icon: const Icon(Icons.swap_horiz, size: 20),
+              child: Text(
+                'SWAP',
+                style: monoStyle(fontSize: 11, color: TibaneColors.orange),
+              ),
             ),
           IconButton(
             onPressed: () {

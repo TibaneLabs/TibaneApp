@@ -38,6 +38,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   LibwalletClient? _client;
   bool _infoRegistered = false;
   StreamSubscription<BalancesChangedEvent>? _balanceSub;
+  StreamSubscription<LogEvent>? _logSub;
 
   /// Increments each time libwallet's background poller reports a balance
   /// change. `WalletService` listens and triggers `refreshBalances()`.
@@ -289,6 +290,13 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     _balanceSub ??= _client!.balanceChanges.listen((_) {
       balanceTick.value++;
     });
+    // On Flutter+iOS the Go runtime's stderr is dropped, so libwallet's
+    // internal logs only surface via this stream. Pipe them to
+    // debugPrint so backfill / RPC / poller activity is visible when
+    // diagnosing "empty tx list" type issues.
+    _logSub ??= _client!.logs.listen((e) {
+      debugPrint('[libwallet:${e.level}] ${e.message}');
+    });
     return _client!;
   }
 
@@ -298,6 +306,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       await client.info.setWalletInfo(
         clientId: tibaneApi.appId,
         name: 'Tibane',
+        logLevel: kDebugMode ? 'debug' : '',
       );
       _infoRegistered = true;
     } catch (e) {
@@ -974,6 +983,29 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     );
   }
 
+  /// Re-fire libwallet's background tx-history backfill for the active
+  /// account. The backfill is normally triggered automatically on env
+  /// init / Account:setCurrent / Network:setCurrent — but if the original
+  /// init-time attempt failed silently (RPC hiccup, daemon offline at
+  /// that instant) `transactions.list` keeps returning the empty local
+  /// table until the next setCurrent. Calling this re-fires the trigger;
+  /// new rows arrive via the `txHistoryUpdates` stream.
+  Future<void> kickHistoryBackfill() async {
+    final accountId = _accountId;
+    if (accountId == null) {
+      debugPrint('[txhist] kickHistoryBackfill: no accountId, skipping');
+      return;
+    }
+    debugPrint('[txhist] kickHistoryBackfill: calling accounts.setCurrent($accountId)');
+    try {
+      final client = await _getClient();
+      await client.accounts.setCurrent(accountId);
+      debugPrint('[txhist] kickHistoryBackfill: setCurrent returned — backfill triggered');
+    } catch (e) {
+      debugPrint('[txhist] kickHistoryBackfill failed: $e');
+    }
+  }
+
   /// Compute the max sendable amount (accounting for fees + rent).
   Future<MaxSendableResult> maxSendable({String? asset, String? to}) async {
     final client = await _getClient();
@@ -1268,6 +1300,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   @override
   void dispose() {
     _balanceSub?.cancel();
+    _logSub?.cancel();
     balanceTick.dispose();
     super.dispose();
   }
