@@ -49,9 +49,24 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
         client.accounts.list(wallet: id),
       ]);
       if (!mounted) return;
+      final allAccounts = results[1] as List<lw.Account>;
+      // Defensive client-side filter — `client.accounts.list(wallet: id)`
+      // sends `Wallet=<id>` to the backend but has been observed to
+      // return accounts belonging to other wallets too. Filter here so
+      // the screen only ever shows accounts whose parent wallet field
+      // matches the wallet being viewed.
+      final scoped =
+          allAccounts.where((a) => a.wallet == id).toList(growable: false);
+      if (scoped.length != allAccounts.length) {
+        debugPrint(
+          '[wallet-details] accounts.list(wallet: $id) returned '
+          '${allAccounts.length} rows; ${scoped.length} matched this '
+          'wallet. Server-side filter likely broken — verify upstream.',
+        );
+      }
       setState(() {
         _wallet = results[0] as lw.Wallet;
-        _accounts = results[1] as List<lw.Account>;
+        _accounts = scoped;
         _loading = false;
       });
     } catch (e) {
