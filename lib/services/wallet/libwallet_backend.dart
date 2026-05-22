@@ -1055,24 +1055,56 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     return client.assets.list(convert: convert);
   }
 
-  /// List recent transactions for the current account, newest first.
+  /// List recent transactions, newest first. When [forAddress] is
+  /// provided, only rows where the address appears as sender OR
+  /// recipient are returned — libwallet's local transaction table is
+  /// shared across every wallet ever created on this device, and the
+  /// `from:` server filter on `transactions.list` is a sender-address
+  /// match (so it loses incoming txs). Filtering client-side here is
+  /// the only way to scope the dashboard to the active wallet.
   ///
-  /// The `From` filter on `transactions.list` matches Transaction.From,
-  /// which holds the on-chain sender ADDRESS — not the account UUID.
-  /// Passing `_accountId` returns zero rows even when libwallet's
-  /// Solana history backfill (0.4.38+) has landed activity. libwallet
-  /// already scopes the local table to the current (wallet, account,
-  /// network) per the `Transaction:backfill` flow, so a bare list
-  /// without `from:` is the canonical pattern (matches the example
-  /// in `TransactionApi.list`'s docstring). Sent/Received direction
-  /// is computed client-side from `tx.from == myAddr` in
-  /// `_TransactionRow`.
-  Future<List<Transaction>> getTransactions({int limit = 50}) async {
+  /// If the first page comes back with zero matches but is full (the
+  /// active wallet's history sits past the newest 50 rows of the
+  /// shared table — e.g. another wallet on this device has generated
+  /// a flood of recent activity), we walk back up to [maxPages] more
+  /// pages via the `before:` cursor before giving up. Each call still
+  /// terminates: pagination stops as soon as a page returns fewer
+  /// than [limit] rows.
+  Future<List<Transaction>> getTransactions({
+    int limit = 50,
+    String? forAddress,
+    int maxPages = 5,
+  }) async {
     final client = await _getClient();
-    return client.transactions.list(
+    final firstPage = await client.transactions.list(
       convert: 'USD',
       limit: limit,
     );
+    if (forAddress == null || forAddress.isEmpty) return firstPage;
+
+    bool isMine(Transaction t) => t.from == forAddress || t.to == forAddress;
+    final matches = firstPage.where(isMine).toList();
+    if (matches.isNotEmpty || firstPage.length < limit) return matches;
+
+    // Cold start for an underused wallet: nothing on the first page
+    // matched, but the page was full — walk back through older pages
+    // until we find some matches or run out of history.
+    var lastPage = firstPage;
+    for (var i = 0; i < maxPages; i++) {
+      final before = lastPage.last.created?.toIso8601String();
+      if (before == null) break;
+      final next = await client.transactions.list(
+        convert: 'USD',
+        limit: limit,
+        before: before,
+      );
+      if (next.isEmpty) break;
+      matches.addAll(next.where(isMine));
+      if (matches.isNotEmpty) return matches;
+      if (next.length < limit) break;
+      lastPage = next;
+    }
+    return matches;
   }
 
   /// Re-fire libwallet's background tx-history backfill for the active

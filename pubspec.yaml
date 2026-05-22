@@ -20,7 +20,7 @@ dependencies:
   crypto: ^3.0.0
   solana_mobile_client: ^0.1.2
   atonline_api: ^0.5.1
-  libwallet: ^0.4.38
+  libwallet: ^0.4.39
   path_provider: ^2.1.0
   webview_flutter: ^4.10.0
   qr_flutter: ^4.1.0
@@ -49,3 +49,4 @@ flutter:
 
   assets:
     - assets/
+    - assets/icons/

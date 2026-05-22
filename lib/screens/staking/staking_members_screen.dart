@@ -126,8 +126,12 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
                 padding: const EdgeInsets.only(right: 10),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(6),
-                  child: Image.network(pool.tokenImage!, width: 24, height: 24,
-                    errorBuilder: (_, e, s) => const SizedBox.shrink()),
+                  child: Image.network(
+                    pool.tokenImage!,
+                    width: 24,
+                    height: 24,
+                    errorBuilder: (_, e, s) => const SizedBox.shrink(),
+                  ),
                 ),
               ),
             Expanded(
@@ -147,21 +151,33 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: TibaneColors.orange))
+          ? const Center(
+              child: CircularProgressIndicator(color: TibaneColors.orange),
+            )
           : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline, size: 48, color: TibaneColors.error),
-                      const SizedBox(height: 16),
-                      Text(_error!, style: const TextStyle(color: TibaneColors.textMuted)),
-                      const SizedBox(height: 16),
-                      OutlinedButton(onPressed: _loadMembers, child: const Text('Retry')),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    size: 48,
+                    color: TibaneColors.error,
                   ),
-                )
-              : _buildContent(),
+                  const SizedBox(height: 16),
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                  ),
+                  const SizedBox(height: 16),
+                  OutlinedButton(
+                    onPressed: _loadMembers,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            )
+          : _buildContent(),
     );
   }
 
@@ -169,7 +185,10 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
     final members = _members;
     if (members == null || members.isEmpty) {
       return const Center(
-        child: Text('No members found', style: TextStyle(color: TibaneColors.textMuted)),
+        child: Text(
+          'No members found',
+          style: TextStyle(color: TibaneColors.textMuted),
+        ),
       );
     }
 
@@ -183,7 +202,10 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
               Expanded(
                 child: StatCard(
                   label: 'Total Staked',
-                  value: formatTokenAmount(pool.totalStaked, pool.tokenDecimals),
+                  value: formatTokenAmount(
+                    pool.totalStaked,
+                    pool.tokenDecimals,
+                  ),
                   icon: Icons.lock,
                 ),
               ),
@@ -213,7 +235,12 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
             children: [
               _sortChip('#', _SortField.rank, width: 32),
               const SizedBox(width: 4),
-              Expanded(child: Text('Address', style: monoStyle(fontSize: 10, color: TibaneColors.textDim))),
+              Expanded(
+                child: Text(
+                  'Address',
+                  style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+                ),
+              ),
               _sortChip('Amount', _SortField.amount),
               _sortChip('Wt%', _SortField.weight),
               _sortChip('Pending', _SortField.pending),
@@ -223,23 +250,28 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
         const SizedBox(height: 4),
         // Members list
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            itemCount: members.length,
-            itemBuilder: (context, index) {
-              final m = members[index];
-              return _MemberTile(
-                rank: index + 1,
-                member: m,
-                pool: pool,
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: m.owner));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Address copied')),
-                  );
-                },
-              );
-            },
+          child: RefreshIndicator(
+            color: TibaneColors.orange,
+            onRefresh: _loadMembers,
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              physics: const AlwaysScrollableScrollPhysics(),
+              itemCount: members.length,
+              itemBuilder: (context, index) {
+                final m = members[index];
+                return _MemberTile(
+                  rank: index + 1,
+                  member: m,
+                  pool: pool,
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: m.owner));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Address copied')),
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ),
       ],
@@ -331,18 +363,27 @@ class _MemberTile extends StatelessWidget {
                 children: [
                   Text(
                     shortenAddress(member.owner, chars: 4),
-                    style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
+                    style: monoStyle(
+                      fontSize: 12,
+                      color: TibaneColors.textMuted,
+                    ),
                   ),
                   Row(
                     children: [
                       Text(
                         formatTokenAmount(member.amount, pool.tokenDecimals),
-                        style: monoStyle(fontSize: 10, color: TibaneColors.text),
+                        style: monoStyle(
+                          fontSize: 10,
+                          color: TibaneColors.text,
+                        ),
                       ),
                       const SizedBox(width: 8),
                       Text(
                         _formatStakeAge(member.stakeTime),
-                        style: monoStyle(fontSize: 9, color: TibaneColors.textDim),
+                        style: monoStyle(
+                          fontSize: 9,
+                          color: TibaneColors.textDim,
+                        ),
                       ),
                     ],
                   ),
@@ -359,8 +400,8 @@ class _MemberTile extends StatelessWidget {
                     color: member.weightPercent > 90
                         ? TibaneColors.cyan
                         : member.weightPercent > 50
-                            ? TibaneColors.gold
-                            : TibaneColors.orange,
+                        ? TibaneColors.gold
+                        : TibaneColors.orange,
                   ),
                 ),
                 if (member.pending > BigInt.zero)

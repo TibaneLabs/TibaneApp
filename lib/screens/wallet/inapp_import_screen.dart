@@ -142,99 +142,125 @@ class _InAppImportScreenState extends State<InAppImportScreen> {
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: const Text('Import wallet')),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+        // Tap anywhere outside an input to drop the keyboard. Without this
+        // the multiline JSON field has no other way to unfocus, since the
+        // surrounding ScrollView doesn't consume taps by default.
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => FocusScope.of(context).unfocus(),
+          // Outer column splits the screen into a scrollable body and a
+          // pinned bottom bar so the Restore button is always reachable —
+          // it stays just above the keyboard when one is open.
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                'Open the backup file exported from another device, or paste '
-                'the backup JSON. Then enter the same password used when the '
-                'wallet was created.',
-                style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
-              ),
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: _busy ? null : _pickFile,
-                icon: const Icon(Icons.folder_open, size: 18),
-                label: Text(_busy ? 'Working…' : 'Open backup file'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: TibaneColors.orange,
-                  foregroundColor: TibaneColors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-              if (_loadedFilename != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Loaded: $_loadedFilename',
-                  style: const TextStyle(
-                    color: TibaneColors.textMuted,
-                    fontSize: 12,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-              const SizedBox(height: 24),
-              Row(
-                children: const [
-                  Expanded(child: Divider(color: TibaneColors.border)),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child: Text(
-                      'Or paste JSON',
-                      style: TextStyle(
-                        color: TibaneColors.textDim,
-                        fontSize: 11,
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Open the backup file exported from another device, or paste '
+                        'the backup JSON. Then enter the same password used when the '
+                        'wallet was created.',
+                        style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
                       ),
+                      const SizedBox(height: 16),
+                      FilledButton.icon(
+                        onPressed: _busy ? null : _pickFile,
+                        icon: const Icon(Icons.folder_open, size: 18),
+                        label: Text(_busy ? 'Working…' : 'Open backup file'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: TibaneColors.orange,
+                          foregroundColor: TibaneColors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                      if (_loadedFilename != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Loaded: $_loadedFilename',
+                          style: const TextStyle(
+                            color: TibaneColors.textMuted,
+                            fontSize: 12,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                      Row(
+                        children: const [
+                          Expanded(child: Divider(color: TibaneColors.border)),
+                          Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              'Or paste JSON',
+                              style: TextStyle(
+                                color: TibaneColors.textDim,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                          Expanded(child: Divider(color: TibaneColors.border)),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // Bounded multi-line field — internal scroll handles
+                      // long JSON payloads. A fill-remaining Expanded here
+                      // fights the keyboard inset and squeezes itself to
+                      // zero height when resizeToAvoidBottomInset kicks in.
+                      TextField(
+                        controller: _jsonCtrl,
+                        enabled: !_busy,
+                        minLines: 4,
+                        maxLines: 8,
+                        keyboardType: TextInputType.multiline,
+                        textAlignVertical: TextAlignVertical.top,
+                        style: monoStyle(fontSize: 11, color: TibaneColors.text),
+                        decoration: const InputDecoration(
+                          labelText: 'Backup JSON',
+                          alignLabelWithHint: true,
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (_) {
+                          if (_loadedFilename != null) {
+                            setState(() => _loadedFilename = null);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _pwCtrl,
+                        obscureText: true,
+                        enabled: !_busy,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _busy ? null : _restore(),
+                        decoration: const InputDecoration(labelText: 'Password'),
+                      ),
+                      if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(_error!, style: const TextStyle(color: TibaneColors.error)),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _busy ? null : _restore,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: TibaneColors.orange,
+                      foregroundColor: TibaneColors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: Text(
+                      _busy ? 'Restoring…' : 'Restore wallet',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
-                  Expanded(child: Divider(color: TibaneColors.border)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: TextField(
-                  controller: _jsonCtrl,
-                  enabled: !_busy,
-                  maxLines: null,
-                  expands: true,
-                  textAlignVertical: TextAlignVertical.top,
-                  style: monoStyle(fontSize: 11, color: TibaneColors.text),
-                  decoration: const InputDecoration(
-                    labelText: 'Backup JSON',
-                    alignLabelWithHint: true,
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (_) {
-                    if (_loadedFilename != null) {
-                      setState(() => _loadedFilename = null);
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _pwCtrl,
-                obscureText: true,
-                enabled: !_busy,
-                decoration: const InputDecoration(labelText: 'Password'),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!, style: const TextStyle(color: TibaneColors.error)),
-              ],
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: _busy ? null : _restore,
-                style: FilledButton.styleFrom(
-                  backgroundColor: TibaneColors.orange,
-                  foregroundColor: TibaneColors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                child: Text(
-                  _busy ? 'Restoring…' : 'Restore wallet',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
             ],

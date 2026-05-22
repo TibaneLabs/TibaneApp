@@ -359,7 +359,11 @@ class _StubLibwallet extends LibwalletBackend {
   }
 
   @override
-  Future<List<lw.Transaction>> getTransactions({int limit = 50}) async {
+  Future<List<lw.Transaction>> getTransactions({
+    int limit = 50,
+    String? forAddress,
+    int maxPages = 5,
+  }) async {
     final now = DateTime.now();
     DateTime ago(Duration d) => now.subtract(d);
     return [

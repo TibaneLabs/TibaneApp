@@ -31,6 +31,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
     initialValue: const PhoneNumber(isoCode: IsoCode.US, nsn: ''),
   );
   final _codeCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController(text: 'My wallet');
   final _pwCtrl = TextEditingController();
   final _pwCtrl2 = TextEditingController();
 
@@ -54,6 +55,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
     _codeCtrl.dispose();
+    _nameCtrl.dispose();
     _pwCtrl.dispose();
     _pwCtrl2.dispose();
     super.dispose();
@@ -137,6 +139,11 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
   Future<void> _createWallet() async {
     final pw = _pwCtrl.text;
     final remoteKey = _remoteKey;
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) {
+      setState(() => _error = 'Enter a wallet name');
+      return;
+    }
     if (pw.length < 8) {
       setState(() => _error = 'Password must be at least 8 characters');
       return;
@@ -164,7 +171,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
     };
     try {
       await for (final fraction in wallet.libwallet.create(
-        name: 'Tibane',
+        name: name,
         password: pw,
         remoteKey: remoteKey,
         curves: curves,
@@ -342,6 +349,16 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
           style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         const SizedBox(height: 24),
+        TextField(
+          controller: _nameCtrl,
+          enabled: !creating,
+          textInputAction: TextInputAction.next,
+          decoration: const InputDecoration(
+            labelText: 'Wallet name',
+            helperText: 'Shown in the wallet picker — purely for your reference.',
+          ),
+        ),
+        const SizedBox(height: 12),
         TextField(
           controller: _pwCtrl,
           obscureText: true,

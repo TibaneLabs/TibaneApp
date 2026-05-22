@@ -105,27 +105,32 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
               child: CircularProgressIndicator(color: TibaneColors.orange),
             )
           : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.search_off,
-                          size: 48, color: TibaneColors.textDim),
-                      const SizedBox(height: 16),
-                      Text(_error!,
-                          style:
-                              const TextStyle(color: TibaneColors.textMuted)),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.search_off,
+                    size: 48,
+                    color: TibaneColors.textDim,
                   ),
-                )
-              : _token == null
-                  ? const SizedBox.shrink()
-                  : _TokenDetails(
-                      token: _token!,
-                      holders: _holders,
-                      transactions: _transactions,
-                      stakingPool: _stakingPool,
-                    ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                  ),
+                ],
+              ),
+            )
+          : _token == null
+          ? const SizedBox.shrink()
+          : _TokenDetails(
+              token: _token!,
+              holders: _holders,
+              transactions: _transactions,
+              stakingPool: _stakingPool,
+              onRefresh: _loadToken,
+            ),
     );
   }
 }
@@ -135,110 +140,133 @@ class _TokenDetails extends StatelessWidget {
   final List<TokenHolder> holders;
   final List<Map<String, dynamic>> transactions;
   final StakingPool? stakingPool;
+  final Future<void> Function() onRefresh;
 
   const _TokenDetails({
     required this.token,
     required this.holders,
     required this.transactions,
+    required this.onRefresh,
     this.stakingPool,
   });
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _TokenHeader(token: token),
-          const SizedBox(height: 20),
+    return RefreshIndicator(
+      color: TibaneColors.orange,
+      onRefresh: onRefresh,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _TokenHeader(token: token),
+            const SizedBox(height: 20),
 
-          _SupplySection(token: token),
-          const SizedBox(height: 20),
+            _SupplySection(token: token),
+            const SizedBox(height: 20),
 
-          if (stakingPool != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: TibaneCard(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          StakingDetailScreen(pool: stakingPool!),
-                    ),
-                  );
-                },
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: TibaneColors.cyan.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
+            if (stakingPool != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: TibaneCard(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => StakingDetailScreen(pool: stakingPool!),
                       ),
-                      child: const Icon(Icons.account_balance,
-                          size: 16, color: TibaneColors.cyan),
-                    ),
-                    const SizedBox(width: 10),
-                    const Expanded(
-                      child: Text('Staking Pool',
+                    );
+                  },
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: TibaneColors.cyan.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Icon(
+                          Icons.account_balance,
+                          size: 16,
+                          color: TibaneColors.cyan,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Staking Pool',
                           style: TextStyle(
-                              color: TibaneColors.text,
-                              fontWeight: FontWeight.w500)),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: TibaneColors.cyan.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(4),
+                            color: TibaneColors.text,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                       ),
-                      child: Text('Active',
-                          style:
-                              monoStyle(fontSize: 10, color: TibaneColors.cyan)),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.chevron_right,
-                        size: 16, color: TibaneColors.textDim),
-                  ],
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: TibaneColors.cyan.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'Active',
+                          style: monoStyle(
+                            fontSize: 10,
+                            color: TibaneColors.cyan,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.chevron_right,
+                        size: 16,
+                        color: TibaneColors.textDim,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
 
-          if (token.mint.endsWith('pump'))
-            Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: SecondaryButton(
-                label: 'Fee Sharing',
-                icon: Icons.payments,
-                expanded: true,
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => FeeSharingScreen(
-                        mint: token.mint,
-                        tokenName: token.name,
+            if (token.mint.endsWith('pump'))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 20),
+                child: SecondaryButton(
+                  label: 'Fee Sharing',
+                  icon: Icons.payments,
+                  expanded: true,
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => FeeSharingScreen(
+                          mint: token.mint,
+                          tokenName: token.name,
+                        ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
 
-          if (holders.isNotEmpty) ...[
-            _HoldersSection(holders: holders, token: token),
-            const SizedBox(height: 20),
-          ],
+            if (holders.isNotEmpty) ...[
+              _HoldersSection(holders: holders, token: token),
+              const SizedBox(height: 20),
+            ],
 
-          if (transactions.isNotEmpty) ...[
-            _TransactionsSection(transactions: transactions),
-            const SizedBox(height: 20),
+            if (transactions.isNotEmpty) ...[
+              _TransactionsSection(transactions: transactions),
+              const SizedBox(height: 20),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -281,8 +309,11 @@ class _TokenHeader extends StatelessWidget {
                           ),
                         ),
                       )
-                    : const Icon(Icons.token,
-                        size: 28, color: TibaneColors.textDim),
+                    : const Icon(
+                        Icons.token,
+                        size: 28,
+                        color: TibaneColors.textDim,
+                      ),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -292,8 +323,8 @@ class _TokenHeader extends StatelessWidget {
                     Text(
                       token.name ?? 'Unknown Token',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     if (token.symbol != null)
                       Text(
@@ -335,7 +366,9 @@ class _TokenHeader extends StatelessWidget {
                     Text(
                       'per token',
                       style: monoStyle(
-                          fontSize: 10, color: TibaneColors.textDim),
+                        fontSize: 10,
+                        color: TibaneColors.textDim,
+                      ),
                     ),
                   ],
                 ],
@@ -358,8 +391,10 @@ class _SupplySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('SUPPLY',
-            style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+        Text(
+          'SUPPLY',
+          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+        ),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -424,8 +459,11 @@ class _SupplySection extends StatelessWidget {
           },
           child: Row(
             children: [
-              const Icon(Icons.fingerprint,
-                  size: 16, color: TibaneColors.textDim),
+              const Icon(
+                Icons.fingerprint,
+                size: 16,
+                color: TibaneColors.textDim,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -465,15 +503,16 @@ class _HoldersSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('TOP HOLDERS',
-            style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+        Text(
+          'TOP HOLDERS',
+          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+        ),
         const SizedBox(height: 12),
         TibaneCard(
           child: Column(
             children: [
               for (var i = 0; i < holders.length; i++) ...[
-                if (i > 0)
-                  const Divider(height: 1, color: TibaneColors.border),
+                if (i > 0) const Divider(height: 1, color: TibaneColors.border),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   child: Row(
@@ -495,7 +534,9 @@ class _HoldersSection extends StatelessWidget {
                         child: Text(
                           shortenAddress(holders[i].address, chars: 6),
                           style: monoStyle(
-                              fontSize: 12, color: TibaneColors.textMuted),
+                            fontSize: 12,
+                            color: TibaneColors.textMuted,
+                          ),
                         ),
                       ),
                       Text(
@@ -529,15 +570,16 @@ class _TransactionsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('RECENT TRANSACTIONS',
-            style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+        Text(
+          'RECENT TRANSACTIONS',
+          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+        ),
         const SizedBox(height: 12),
         TibaneCard(
           child: Column(
             children: [
               for (var i = 0; i < transactions.length; i++) ...[
-                if (i > 0)
-                  const Divider(height: 1, color: TibaneColors.border),
+                if (i > 0) const Divider(height: 1, color: TibaneColors.border),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   child: Row(
@@ -555,8 +597,9 @@ class _TransactionsSection extends StatelessWidget {
                       Expanded(
                         child: Text(
                           shortenAddress(
-                              transactions[i]['signature'] as String,
-                              chars: 8),
+                            transactions[i]['signature'] as String,
+                            chars: 8,
+                          ),
                           style: monoStyle(fontSize: 12),
                         ),
                       ),
@@ -564,7 +607,9 @@ class _TransactionsSection extends StatelessWidget {
                         Text(
                           _formatTime(transactions[i]['blockTime'] as int),
                           style: monoStyle(
-                              fontSize: 10, color: TibaneColors.textDim),
+                            fontSize: 10,
+                            color: TibaneColors.textDim,
+                          ),
                         ),
                     ],
                   ),

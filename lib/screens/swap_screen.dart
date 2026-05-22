@@ -18,6 +18,7 @@ import '../theme/tibane_theme.dart';
 import 'wallet/inapp_unlock_screen.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
+import '../widgets/token_icon.dart';
 
 class SwapScreen extends StatefulWidget {
   /// Optional input mint to pre-select once holdings finish loading. Pass
@@ -1018,7 +1019,7 @@ class _SwapScreenState extends State<SwapScreen> {
                     child: Row(
                       children: [
                         if (_selectedInput != null) ...[
-                          _TokenIcon(imageUrl: _selectedInput!.imageUrl, symbol: _selectedInput!.symbol, size: 24),
+                          TokenIcon(imageUrl: _selectedInput!.imageUrl, mint: _selectedInput!.mint, symbol: _selectedInput!.symbol, size: 24),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -1106,7 +1107,7 @@ class _SwapScreenState extends State<SwapScreen> {
               child: Row(
                 children: [
                   if (_selectedOutput != null) ...[
-                    _TokenIcon(imageUrl: _outputImageUrl ?? _selectedOutput!.imageUrl, symbol: _selectedOutput!.symbol, size: 24),
+                    TokenIcon(imageUrl: _outputImageUrl ?? _selectedOutput!.imageUrl, mint: _selectedOutput!.mint, symbol: _selectedOutput!.symbol, size: 24),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -1297,53 +1298,6 @@ class _SwapToken {
   _SwapToken({required this.mint, required this.symbol, required this.name, this.imageUrl});
 }
 
-// Token icon widget with fallback
-class _TokenIcon extends StatelessWidget {
-  final String? imageUrl;
-  final String symbol;
-  final double size;
-
-  const _TokenIcon({this.imageUrl, required this.symbol, this.size = 32});
-
-  @override
-  Widget build(BuildContext context) {
-    if (imageUrl != null && imageUrl!.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(size / 2),
-        child: Image.network(
-          imageUrl!,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, e, s) => _fallback(),
-        ),
-      );
-    }
-    return _fallback();
-  }
-
-  Widget _fallback() {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: TibaneColors.orange.withValues(alpha: 0.15),
-        shape: BoxShape.circle,
-      ),
-      child: Center(
-        child: Text(
-          symbol.isNotEmpty ? symbol[0].toUpperCase() : '?',
-          style: TextStyle(
-            color: TibaneColors.orange,
-            fontWeight: FontWeight.w700,
-            fontSize: size * 0.45,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 // Percent button
 class _PercentButton extends StatelessWidget {
   final String label;
@@ -1414,7 +1368,7 @@ class _InputTokenPicker extends StatelessWidget {
               itemBuilder: (context, index) {
                 final h = holdings[index];
                 return ListTile(
-                  leading: _TokenIcon(imageUrl: h.imageUrl, symbol: h.symbol, size: 36),
+                  leading: TokenIcon(imageUrl: h.imageUrl, mint: h.mint, symbol: h.symbol, size: 36),
                   title: Text(h.symbol, style: const TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: Text(h.name, style: TextStyle(color: TibaneColors.textMuted, fontSize: 12)),
                   trailing: Column(
@@ -1568,7 +1522,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
                 ),
                 for (final token in commonTokens)
                   ListTile(
-                    leading: _TokenIcon(imageUrl: token.imageUrl, symbol: token.symbol, size: 36),
+                    leading: TokenIcon(imageUrl: token.imageUrl, mint: token.mint, symbol: token.symbol, size: 36),
                     title: Text(token.symbol, style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(token.name, style: TextStyle(color: TibaneColors.textMuted, fontSize: 12)),
                     onTap: () {
@@ -1587,7 +1541,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
                     // Skip if already in common tokens
                     if (!commonTokens.any((c) => c.mint == fav.mint))
                       ListTile(
-                        leading: _TokenIcon(imageUrl: fav.imageUrl, symbol: fav.symbol ?? '?', size: 36),
+                        leading: TokenIcon(imageUrl: fav.imageUrl, mint: fav.mint, symbol: fav.symbol ?? '?', size: 36),
                         title: Text(fav.symbol ?? shortenAddress(fav.mint), style: const TextStyle(fontWeight: FontWeight.w600)),
                         subtitle: Text(fav.name ?? fav.mint, style: TextStyle(color: TibaneColors.textMuted, fontSize: 12)),
                         onTap: () {

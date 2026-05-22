@@ -105,7 +105,10 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
           final bd = ByteData.sublistView(info);
           final lo = bd.getUint32(64, Endian.little);
           final hi = bd.getUint32(68, Endian.little);
-          setState(() => _pumpswapVaultBalance = BigInt.from(lo) + (BigInt.from(hi) << 32));
+          setState(
+            () => _pumpswapVaultBalance =
+                BigInt.from(lo) + (BigInt.from(hi) << 32),
+          );
         }
       } catch (_) {}
     } catch (_) {}
@@ -113,7 +116,9 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
 
   bool get _isAdmin {
     final wallet = context.read<WalletService>();
-    return _config != null && wallet.publicKey == _config!.admin && !_config!.adminRevoked;
+    return _config != null &&
+        wallet.publicKey == _config!.admin &&
+        !_config!.adminRevoked;
   }
 
   Future<void> _createConfig() async {
@@ -125,17 +130,27 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
     setState(() => _executing = true);
     try {
       final blockhash = await _rpc.getLatestBlockhash();
-      final ix = createFeeSharingConfigIx(payer: wallet.publicKey!, mint: widget.mint);
-      final tx = buildTransaction(recentBlockhash: blockhash, feePayer: wallet.publicKey!, instructions: [ix]);
+      final ix = createFeeSharingConfigIx(
+        payer: wallet.publicKey!,
+        mint: widget.mint,
+      );
+      final tx = buildTransaction(
+        recentBlockhash: blockhash,
+        feePayer: wallet.publicKey!,
+        instructions: [ix],
+      );
       final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
       if (!mounted) return;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Config created: ${sig.substring(0, 8)}...')));
+          SnackBar(content: Text('Config created: ${sig.substring(0, 8)}...')),
+        );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _executing = false);
       _loadConfig();
@@ -157,21 +172,32 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
       instructions.add(transferCreatorFeesToPumpIx(mint: widget.mint));
 
       // Then distribute from pump creator vault to shareholders
-      instructions.add(distributeCreatorFeesIx(
-        mint: widget.mint,
-        shareholders: _config!.shareholders,
-      ));
+      instructions.add(
+        distributeCreatorFeesIx(
+          mint: widget.mint,
+          shareholders: _config!.shareholders,
+        ),
+      );
 
-      final tx = buildTransaction(recentBlockhash: blockhash, feePayer: wallet.publicKey!, instructions: instructions);
+      final tx = buildTransaction(
+        recentBlockhash: blockhash,
+        feePayer: wallet.publicKey!,
+        instructions: instructions,
+      );
       final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
       if (!mounted) return;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Fees distributed: ${sig.substring(0, 8)}...')));
+          SnackBar(
+            content: Text('Fees distributed: ${sig.substring(0, 8)}...'),
+          ),
+        );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _executing = false);
       _loadConfig();
@@ -193,16 +219,23 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         newShareholders: _editedShareholders,
         currentShareholders: _config!.shareholders,
       );
-      final tx = buildTransaction(recentBlockhash: blockhash, feePayer: wallet.publicKey!, instructions: [ix]);
+      final tx = buildTransaction(
+        recentBlockhash: blockhash,
+        feePayer: wallet.publicKey!,
+        instructions: [ix],
+      );
       final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
       if (!mounted) return;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Shares updated: ${sig.substring(0, 8)}...')));
+          SnackBar(content: Text('Shares updated: ${sig.substring(0, 8)}...')),
+        );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _executing = false);
       _loadConfig();
@@ -227,17 +260,26 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         newAdmin: newAdmin,
         mint: widget.mint,
       );
-      final tx = buildTransaction(recentBlockhash: blockhash, feePayer: wallet.publicKey!, instructions: [ix]);
+      final tx = buildTransaction(
+        recentBlockhash: blockhash,
+        feePayer: wallet.publicKey!,
+        instructions: [ix],
+      );
       final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
       if (!mounted) return;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Authority transferred: ${sig.substring(0, 8)}...')));
+          SnackBar(
+            content: Text('Authority transferred: ${sig.substring(0, 8)}...'),
+          ),
+        );
         _newAdminController.clear();
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _executing = false);
       _loadConfig();
@@ -259,10 +301,16 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
           style: TextStyle(color: TibaneColors.textMuted),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Revoke', style: TextStyle(color: TibaneColors.error)),
+            child: const Text(
+              'Revoke',
+              style: TextStyle(color: TibaneColors.error),
+            ),
           ),
         ],
       ),
@@ -276,17 +324,29 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
     setState(() => _executing = true);
     try {
       final blockhash = await _rpc.getLatestBlockhash();
-      final ix = revokeFeeSharingAuthorityIx(admin: wallet.publicKey!, mint: widget.mint);
-      final tx = buildTransaction(recentBlockhash: blockhash, feePayer: wallet.publicKey!, instructions: [ix]);
+      final ix = revokeFeeSharingAuthorityIx(
+        admin: wallet.publicKey!,
+        mint: widget.mint,
+      );
+      final tx = buildTransaction(
+        recentBlockhash: blockhash,
+        feePayer: wallet.publicKey!,
+        instructions: [ix],
+      );
       final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
       if (!mounted) return;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Authority revoked: ${sig.substring(0, 8)}...')));
+          SnackBar(
+            content: Text('Authority revoked: ${sig.substring(0, 8)}...'),
+          ),
+        );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _executing = false);
       _loadConfig();
@@ -321,7 +381,9 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
           onPressed: () => Navigator.pop(context),
           icon: const Icon(Icons.arrow_back),
         ),
-        title: Text(widget.tokenName != null ? '${widget.tokenName} Fees' : 'Fee Sharing'),
+        title: Text(
+          widget.tokenName != null ? '${widget.tokenName} Fees' : 'Fee Sharing',
+        ),
         actions: [
           IconButton(
             onPressed: _loading ? null : _loadConfig,
@@ -331,24 +393,43 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: TibaneColors.orange))
+          ? const Center(
+              child: CircularProgressIndicator(color: TibaneColors.orange),
+            )
           : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline, size: 48, color: TibaneColors.error),
-                      const SizedBox(height: 16),
-                      Text(_error!, style: const TextStyle(color: TibaneColors.textMuted)),
-                      const SizedBox(height: 16),
-                      OutlinedButton(onPressed: _loadConfig, child: const Text('Retry')),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    size: 48,
+                    color: TibaneColors.error,
                   ),
-                )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(20),
-                  child: _config == null ? _buildNoConfig(wallet) : _buildConfig(wallet),
-                ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                  ),
+                  const SizedBox(height: 16),
+                  OutlinedButton(
+                    onPressed: _loadConfig,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            )
+          : RefreshIndicator(
+              color: TibaneColors.orange,
+              onRefresh: _loadConfig,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: _config == null
+                    ? _buildNoConfig(wallet)
+                    : _buildConfig(wallet),
+              ),
+            ),
     );
   }
 
@@ -362,7 +443,9 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
               const SizedBox(height: 12),
               Text(
                 'No fee sharing config exists for this token',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
@@ -384,7 +467,10 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
             onPressed: _createConfig,
           )
         else
-          const Text('Connect wallet to create config', style: TextStyle(color: TibaneColors.textMuted)),
+          const Text(
+            'Connect wallet to create config',
+            style: TextStyle(color: TibaneColors.textMuted),
+          ),
       ],
     );
   }
@@ -396,21 +482,35 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Config info
-        Text('CONFIG', style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+        Text(
+          'CONFIG',
+          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+        ),
         const SizedBox(height: 12),
         TibaneCard(
           child: Column(
             children: [
               _InfoRow(label: 'Mint', value: shortenAddress(config.mint)),
-              _InfoRow(label: 'Admin', value: config.adminRevoked ? 'Revoked' : shortenAddress(config.admin)),
-              _InfoRow(label: 'Status', value: config.status == 0 ? 'Active' : 'Status ${config.status}'),
+              _InfoRow(
+                label: 'Admin',
+                value: config.adminRevoked
+                    ? 'Revoked'
+                    : shortenAddress(config.admin),
+              ),
+              _InfoRow(
+                label: 'Status',
+                value: config.status == 0
+                    ? 'Active'
+                    : 'Status ${config.status}',
+              ),
               _InfoRow(label: 'Version', value: '${config.version}'),
             ],
           ),
         ),
         const SizedBox(height: 12),
         // Vault balances
-        if (_creatorVaultBalance > BigInt.zero || _pumpswapVaultBalance > BigInt.zero)
+        if (_creatorVaultBalance > BigInt.zero ||
+            _pumpswapVaultBalance > BigInt.zero)
           Padding(
             padding: const EdgeInsets.only(bottom: 20),
             child: Row(
@@ -424,7 +524,8 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
                       icon: Icons.account_balance,
                     ),
                   ),
-                if (_creatorVaultBalance > BigInt.zero && _pumpswapVaultBalance > BigInt.zero)
+                if (_creatorVaultBalance > BigInt.zero &&
+                    _pumpswapVaultBalance > BigInt.zero)
                   const SizedBox(width: 8),
                 if (_pumpswapVaultBalance > BigInt.zero)
                   Expanded(
@@ -440,49 +541,79 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
           ),
 
         // Shareholders
-        Text('SHAREHOLDERS', style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+        Text(
+          'SHAREHOLDERS',
+          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+        ),
         const SizedBox(height: 12),
         if (config.shareholders.isEmpty)
           TibaneCard(
-            child: Text('No shareholders configured',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted)),
+            child: Text(
+              'No shareholders configured',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
+            ),
           )
         else
           TibaneCard(
             child: Column(
               children: [
                 for (var i = 0; i < config.shareholders.length; i++) ...[
-                  if (i > 0) const Divider(height: 1, color: TibaneColors.border),
+                  if (i > 0)
+                    const Divider(height: 1, color: TibaneColors.border),
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     child: Row(
                       children: [
                         SizedBox(
                           width: 24,
-                          child: Text('#${i + 1}',
-                            style: monoStyle(fontSize: 11, color: TibaneColors.textDim)),
+                          child: Text(
+                            '#${i + 1}',
+                            style: monoStyle(
+                              fontSize: 11,
+                              color: TibaneColors.textDim,
+                            ),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: GestureDetector(
                             onTap: () {
-                              Clipboard.setData(ClipboardData(text: config.shareholders[i].address));
+                              Clipboard.setData(
+                                ClipboardData(
+                                  text: config.shareholders[i].address,
+                                ),
+                              );
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Address copied')));
+                                const SnackBar(content: Text('Address copied')),
+                              );
                             },
                             child: Text(
-                              shortenAddress(config.shareholders[i].address, chars: 6),
-                              style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
+                              shortenAddress(
+                                config.shareholders[i].address,
+                                chars: 6,
+                              ),
+                              style: monoStyle(
+                                fontSize: 12,
+                                color: TibaneColors.textMuted,
+                              ),
                             ),
                           ),
                         ),
                         Text(
                           '${config.shareholders[i].percent.toStringAsFixed(1)}%',
-                          style: monoStyle(fontSize: 12, color: TibaneColors.gold),
+                          style: monoStyle(
+                            fontSize: 12,
+                            color: TibaneColors.gold,
+                          ),
                         ),
                         Text(
                           ' (${config.shareholders[i].bps} bps)',
-                          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+                          style: monoStyle(
+                            fontSize: 10,
+                            color: TibaneColors.textDim,
+                          ),
                         ),
                       ],
                     ),
@@ -494,7 +625,10 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         const SizedBox(height: 20),
 
         // Permissionless actions (anyone can do these)
-        Text('ACTIONS', style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+        Text(
+          'ACTIONS',
+          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+        ),
         const SizedBox(height: 12),
         if (wallet.isConnected && config.shareholders.isNotEmpty)
           GradientButton(
@@ -508,7 +642,10 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
 
         // Admin actions
         if (_isAdmin) ...[
-          Text('ADMIN', style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+          Text(
+            'ADMIN',
+            style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+          ),
           const SizedBox(height: 12),
 
           // Edit shareholders
@@ -516,7 +653,13 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Update Shares', style: TextStyle(color: TibaneColors.text, fontWeight: FontWeight.w600)),
+                const Text(
+                  'Update Shares',
+                  style: TextStyle(
+                    color: TibaneColors.text,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 // Current edited list
                 for (var i = 0; i < _editedShareholders.length; i++)
@@ -525,15 +668,32 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: Text(shortenAddress(_editedShareholders[i].address, chars: 6),
-                            style: monoStyle(fontSize: 11, color: TibaneColors.textMuted)),
+                          child: Text(
+                            shortenAddress(
+                              _editedShareholders[i].address,
+                              chars: 6,
+                            ),
+                            style: monoStyle(
+                              fontSize: 11,
+                              color: TibaneColors.textMuted,
+                            ),
+                          ),
                         ),
-                        Text('${_editedShareholders[i].bps} bps',
-                          style: monoStyle(fontSize: 11, color: TibaneColors.gold)),
+                        Text(
+                          '${_editedShareholders[i].bps} bps',
+                          style: monoStyle(
+                            fontSize: 11,
+                            color: TibaneColors.gold,
+                          ),
+                        ),
                         const SizedBox(width: 8),
                         GestureDetector(
                           onTap: () => _removeShareholder(i),
-                          child: const Icon(Icons.close, size: 16, color: TibaneColors.error),
+                          child: const Icon(
+                            Icons.close,
+                            size: 16,
+                            color: TibaneColors.error,
+                          ),
                         ),
                       ],
                     ),
@@ -546,7 +706,10 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
                       flex: 3,
                       child: TextField(
                         controller: _newShareholderController,
-                        decoration: const InputDecoration(hintText: 'Address', isDense: true),
+                        decoration: const InputDecoration(
+                          hintText: 'Address',
+                          isDense: true,
+                        ),
                         style: monoStyle(fontSize: 12),
                       ),
                     ),
@@ -555,15 +718,24 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
                       child: TextField(
                         controller: _newBpsController,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(hintText: 'BPS', isDense: true),
+                        decoration: const InputDecoration(
+                          hintText: 'BPS',
+                          isDense: true,
+                        ),
                         style: monoStyle(fontSize: 12),
                       ),
                     ),
                     const SizedBox(width: 8),
                     IconButton(
                       onPressed: _addShareholder,
-                      icon: const Icon(Icons.add_circle, color: TibaneColors.orange),
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                      icon: const Icon(
+                        Icons.add_circle,
+                        color: TibaneColors.orange,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
                       padding: EdgeInsets.zero,
                     ),
                   ],
@@ -585,11 +757,19 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Transfer Authority', style: TextStyle(color: TibaneColors.text, fontWeight: FontWeight.w600)),
+                const Text(
+                  'Transfer Authority',
+                  style: TextStyle(
+                    color: TibaneColors.text,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _newAdminController,
-                  decoration: const InputDecoration(hintText: 'New admin address'),
+                  decoration: const InputDecoration(
+                    hintText: 'New admin address',
+                  ),
                   style: monoStyle(fontSize: 12),
                 ),
                 const SizedBox(height: 12),
@@ -630,7 +810,10 @@ class _InfoRow extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13)),
+          Text(
+            label,
+            style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+          ),
           Text(value, style: monoStyle(fontSize: 12)),
         ],
       ),
