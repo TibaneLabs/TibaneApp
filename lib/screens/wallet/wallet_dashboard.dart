@@ -31,6 +31,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
   StreamSubscription<TxHistoryUpdatedEvent>? _txHistorySub;
   WalletService? _walletRef;
   final JupiterService _jupiter = JupiterService();
+  int _selectedTab = 0; // 0 = Tokens, 1 = Activity
 
   @override
   void initState() {
@@ -225,84 +226,91 @@ class _WalletDashboardState extends State<WalletDashboard> {
           }),
           const SizedBox(height: 24),
 
-          // Token list — every non-zero on-chain SPL holding (legacy +
-          // Token-2022), scanned directly via RPC so a token appears the
-          // moment its balance lands, without waiting on libwallet's
-          // auto-discovery to register the mint.
-          if (_holdings.isNotEmpty) ...[
-            Text('TOKENS', style: monoStyle(fontSize: 11, color: TibaneColors.textDim)),
-            const SizedBox(height: 8),
-            ..._holdings.map((h) => Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: TibaneCard(
-                    padding: const EdgeInsets.all(12),
-                    onTap: context.read<UkComplianceService>().isUk
-                        ? null
-                        : () => _openSwap(
-                              context,
-                              inputMint: h.mint,
-                              outputMint: wsolMint,
+          // Tabs: Tokens / Activity. Only one list is rendered at a time
+          // so each gets the dashboard's full width.
+          _TabSwitcher(
+            selected: _selectedTab,
+            labels: const ['Tokens', 'Activity'],
+            onChanged: (i) => setState(() => _selectedTab = i),
+          ),
+          const SizedBox(height: 12),
+          if (_selectedTab == 0) ...[
+            if (_holdings.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: Text('No tokens yet',
+                      style: TextStyle(color: TibaneColors.textMuted)),
+                ),
+              )
+            else
+              ..._holdings.map((h) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: TibaneCard(
+                      padding: const EdgeInsets.all(12),
+                      onTap: context.read<UkComplianceService>().isUk
+                          ? null
+                          : () => _openSwap(
+                                context,
+                                inputMint: h.mint,
+                                outputMint: wsolMint,
+                              ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  h.symbol.isNotEmpty ? h.symbol : h.name,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600, fontSize: 14),
+                                ),
+                                if (h.name.isNotEmpty && h.name != h.symbol)
+                                  Text(h.name,
+                                      style: monoStyle(
+                                          fontSize: 11, color: TibaneColors.textMuted)),
+                              ],
                             ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                h.symbol.isNotEmpty ? h.symbol : h.name,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600, fontSize: 14),
+                                formatTokenAmount(h.balance, h.decimals, displayDecimals: 4),
+                                style: monoStyle(fontSize: 13),
                               ),
-                              if (h.name.isNotEmpty && h.name != h.symbol)
-                                Text(h.name,
-                                    style: monoStyle(
-                                        fontSize: 11, color: TibaneColors.textMuted)),
+                              if (h.valueUsd != null)
+                                Text(
+                                  '\$${h.valueUsd!.toStringAsFixed(2)}',
+                                  style: monoStyle(
+                                      fontSize: 11, color: TibaneColors.textMuted),
+                                ),
                             ],
                           ),
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              formatTokenAmount(h.balance, h.decimals, displayDecimals: 4),
-                              style: monoStyle(fontSize: 13),
-                            ),
-                            if (h.valueUsd != null)
-                              Text(
-                                '\$${h.valueUsd!.toStringAsFixed(2)}',
-                                style: monoStyle(
-                                    fontSize: 11, color: TibaneColors.textMuted),
-                              ),
-                          ],
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                )),
-            const SizedBox(height: 16),
+                  )),
+          ] else ...[
+            if (_loadingTxs)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: CircularProgressIndicator(color: TibaneColors.orange),
+                ),
+              )
+            else if (_transactions.isEmpty)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Text('No transactions yet',
+                      style: TextStyle(color: TibaneColors.textMuted)),
+                ),
+              )
+            else
+              ..._transactions.map((tx) => _TransactionRow(tx: tx, myAddr: addr)),
           ],
-
-          // Transaction history
-          Text('RECENT ACTIVITY', style: monoStyle(fontSize: 11, color: TibaneColors.textDim)),
-          const SizedBox(height: 8),
-          if (_loadingTxs)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: CircularProgressIndicator(color: TibaneColors.orange),
-              ),
-            )
-          else if (_transactions.isEmpty)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Text('No transactions yet',
-                    style: TextStyle(color: TibaneColors.textMuted)),
-              ),
-            )
-          else
-            ..._transactions.map((tx) => _TransactionRow(tx: tx, myAddr: addr)),
         ],
       ),
     );
@@ -377,6 +385,59 @@ class _ActionButton extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _TabSwitcher extends StatelessWidget {
+  final int selected;
+  final List<String> labels;
+  final ValueChanged<int> onChanged;
+
+  const _TabSwitcher({
+    required this.selected,
+    required this.labels,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: TibaneColors.card,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: TibaneColors.border),
+      ),
+      child: Row(
+        children: [
+          for (int i = 0; i < labels.length; i++)
+            Expanded(
+              child: Material(
+                color: i == selected ? TibaneColors.orange : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => onChanged(i),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Text(
+                      labels[i],
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: i == selected
+                            ? TibaneColors.black
+                            : TibaneColors.textMuted,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
