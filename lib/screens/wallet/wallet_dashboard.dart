@@ -11,6 +11,7 @@ import '../../services/uk_compliance_service.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../widgets/token_icon.dart';
 import '../swap_screen.dart';
 import 'receive_screen.dart';
 import 'send_screen.dart';
@@ -257,6 +258,12 @@ class _WalletDashboardState extends State<WalletDashboard> {
                               ),
                       child: Row(
                         children: [
+                          TokenIcon(
+                            imageUrl: h.imageUrl,
+                            symbol: h.symbol.isNotEmpty ? h.symbol : h.name,
+                            size: 32,
+                          ),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -264,7 +271,10 @@ class _WalletDashboardState extends State<WalletDashboard> {
                                 Text(
                                   h.symbol.isNotEmpty ? h.symbol : h.name,
                                   style: const TextStyle(
-                                      fontWeight: FontWeight.w600, fontSize: 14),
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                    color: TibaneColors.text,
+                                  ),
                                 ),
                                 if (h.name.isNotEmpty && h.name != h.symbol)
                                   Text(h.name,
