@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' show Asset, Transaction, TxHistoryUpdatedEvent;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -149,39 +148,6 @@ class _WalletDashboardState extends State<WalletDashboard> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Address bar
-          InkWell(
-            onTap: () async {
-              await Clipboard.setData(ClipboardData(text: addr));
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Address copied'), duration: Duration(seconds: 1)),
-              );
-            },
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: TibaneColors.darker,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      addr,
-                      overflow: TextOverflow.ellipsis,
-                      style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(Icons.copy, size: 14, color: TibaneColors.textDim),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
           // Total portfolio balance (SOL fiat from libwallet + sum of
           // every on-chain SPL holding's USD value) on top, with the
           // native SOL amount underneath as a secondary line.

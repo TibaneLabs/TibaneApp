@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/solana_constants.dart';
@@ -343,6 +344,32 @@ class _ConnectedButton extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  final addr = wallet.publicKey ?? '';
+                  final messenger = ScaffoldMessenger.of(context);
+                  await Clipboard.setData(ClipboardData(text: addr));
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('Address copied'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.copy, size: 18),
+                label: const Text('Copy address'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: TibaneColors.text,
+                  side: const BorderSide(color: TibaneColors.borderHover),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             if (wallet.kind == WalletKind.inapp) ...[
               SizedBox(
                 width: double.infinity,
