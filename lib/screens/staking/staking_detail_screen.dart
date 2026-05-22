@@ -179,126 +179,158 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Error
-            if (_error != null) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: TibaneColors.error.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: TibaneColors.error.withValues(alpha: 0.2)),
-                ),
-                child: Text(_error!, style: const TextStyle(color: TibaneColors.error, fontSize: 13)),
-              ),
-              const SizedBox(height: 16),
-            ],
-            // Pool stats
-            _PoolStatsSection(pool: pool),
-            const SizedBox(height: 20),
-
-            // User stake section
-            if (wallet.isConnected) ...[
-              _UserStakeSection(
-                pool: pool,
-                userStake: _userStake,
-                loading: _loadingStake,
-                pendingRewards: _pendingRewards,
-                weightPercent: _weightPercent,
-              ),
-              const SizedBox(height: 20),
-
-              // Weight milestones
-              if (_userStake != null && _userStake!.amount > BigInt.zero) ...[
-                _WeightMilestonesSection(pool: pool, weightPercent: _weightPercent),
-                const SizedBox(height: 20),
-
-                // Actions
-                _ActionsSection(
-                  pool: pool,
-                  userStake: _userStake!,
-                  pendingRewards: _pendingRewards,
-                  unstakeController: _unstakeController,
-                  onAction: (action, {BigInt? amount}) => _handleAction(action, unstakeAmount: amount),
-                ),
-                const SizedBox(height: 20),
-              ],
-
-              // Close stake account (empty stake, no pending unstake)
-              if (_userStake != null &&
-                  _userStake!.amount == BigInt.zero &&
-                  !_userStake!.hasUnstakeRequest) ...[
-                SecondaryButton(
-                  label: 'Close Stake Account',
-                  icon: Icons.delete_outline,
-                  expanded: true,
-                  onPressed: _staking ? null : () => _handleAction('closeAccount'),
-                ),
-                const SizedBox(height: 20),
-              ],
-
-              // Stake input
-              _StakeInputSection(
-                controller: _stakeController,
-                beneficiaryController: _beneficiaryController,
-                pool: pool,
-                walletBalance: _walletBalance,
-                staking: _staking,
-                onStake: () => _handleAction('stake'),
-              ),
-            ] else
-              TibaneCard(
-                child: Column(
-                  children: [
-                    const Icon(Icons.account_balance_wallet_outlined, size: 40, color: TibaneColors.textDim),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Connect your wallet to stake',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: TibaneColors.textMuted,
-                      ),
+      body: RefreshIndicator(
+        color: TibaneColors.orange,
+        onRefresh: _loadUserStake,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Error
+              if (_error != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: TibaneColors.error.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: TibaneColors.error.withValues(alpha: 0.2),
                     ),
-                  ],
-                ),
-              ),
-
-            const SizedBox(height: 20),
-
-            // View Members button
-            SecondaryButton(
-              label: 'View Members',
-              icon: Icons.people,
-              expanded: true,
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => StakingMembersScreen(pool: pool),
                   ),
-                );
-              },
-            ),
-            const SizedBox(height: 20),
-
-            // Pool info
-            _PoolInfoSection(pool: pool),
-
-            // Admin panel (pool authority only)
-            if (wallet.isConnected && wallet.publicKey == pool.authority) ...[
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(
+                      color: TibaneColors.error,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              // Pool stats
+              _PoolStatsSection(pool: pool),
               const SizedBox(height: 20),
-              _AdminSection(
-                pool: pool,
-                staking: _staking,
-                onDepositRewards: (amount) => _handleAdminAction('depositRewards', amount),
-                onUpdateSettings: ({BigInt? minStake, BigInt? lockDuration, BigInt? cooldown}) =>
-                    _handleUpdateSettings(minStake: minStake, lockDuration: lockDuration, cooldown: cooldown),
+
+              // User stake section
+              if (wallet.isConnected) ...[
+                _UserStakeSection(
+                  pool: pool,
+                  userStake: _userStake,
+                  loading: _loadingStake,
+                  pendingRewards: _pendingRewards,
+                  weightPercent: _weightPercent,
+                ),
+                const SizedBox(height: 20),
+
+                // Weight milestones
+                if (_userStake != null && _userStake!.amount > BigInt.zero) ...[
+                  _WeightMilestonesSection(
+                    pool: pool,
+                    weightPercent: _weightPercent,
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Actions
+                  _ActionsSection(
+                    pool: pool,
+                    userStake: _userStake!,
+                    pendingRewards: _pendingRewards,
+                    unstakeController: _unstakeController,
+                    onAction: (action, {BigInt? amount}) =>
+                        _handleAction(action, unstakeAmount: amount),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+
+                // Close stake account (empty stake, no pending unstake)
+                if (_userStake != null &&
+                    _userStake!.amount == BigInt.zero &&
+                    !_userStake!.hasUnstakeRequest) ...[
+                  SecondaryButton(
+                    label: 'Close Stake Account',
+                    icon: Icons.delete_outline,
+                    expanded: true,
+                    onPressed: _staking
+                        ? null
+                        : () => _handleAction('closeAccount'),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+
+                // Stake input
+                _StakeInputSection(
+                  controller: _stakeController,
+                  beneficiaryController: _beneficiaryController,
+                  pool: pool,
+                  walletBalance: _walletBalance,
+                  staking: _staking,
+                  onStake: () => _handleAction('stake'),
+                ),
+              ] else
+                TibaneCard(
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.account_balance_wallet_outlined,
+                        size: 40,
+                        color: TibaneColors.textDim,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Connect your wallet to stake',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: TibaneColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              const SizedBox(height: 20),
+
+              // View Members button
+              SecondaryButton(
+                label: 'View Members',
+                icon: Icons.people,
+                expanded: true,
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StakingMembersScreen(pool: pool),
+                    ),
+                  );
+                },
               ),
+              const SizedBox(height: 20),
+
+              // Pool info
+              _PoolInfoSection(pool: pool),
+
+              // Admin panel (pool authority only)
+              if (wallet.isConnected && wallet.publicKey == pool.authority) ...[
+                const SizedBox(height: 20),
+                _AdminSection(
+                  pool: pool,
+                  staking: _staking,
+                  onDepositRewards: (amount) =>
+                      _handleAdminAction('depositRewards', amount),
+                  onUpdateSettings:
+                      ({
+                        BigInt? minStake,
+                        BigInt? lockDuration,
+                        BigInt? cooldown,
+                      }) => _handleUpdateSettings(
+                        minStake: minStake,
+                        lockDuration: lockDuration,
+                        cooldown: cooldown,
+                      ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -309,7 +341,10 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
     try {
       // Check both SPL Token and Token2022
       final splAccounts = await _rpc.getTokenAccountsByOwner(owner);
-      final t22Accounts = await _rpc.getTokenAccountsByOwner(owner, token2022: true);
+      final t22Accounts = await _rpc.getTokenAccountsByOwner(
+        owner,
+        token2022: true,
+      );
       final allAccounts = [...splAccounts, ...t22Accounts];
       var total = BigInt.zero;
       for (final account in allAccounts) {
@@ -343,11 +378,13 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
 
       switch (action) {
         case 'depositRewards':
-          instructions.add(createDepositRewardsIx(
-            pool: pool.address,
-            depositor: wallet.publicKey!,
-            amount: amount,
-          ));
+          instructions.add(
+            createDepositRewardsIx(
+              pool: pool.address,
+              depositor: wallet.publicKey!,
+              amount: amount,
+            ),
+          );
         default:
           return;
       }
@@ -361,12 +398,16 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
       if (!mounted) return;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$action confirmed: ${sig.substring(0, 8)}...')),
+          SnackBar(
+            content: Text('$action confirmed: ${sig.substring(0, 8)}...'),
+          ),
         );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _staking = false);
       _loadUserStake();
@@ -374,7 +415,11 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
     }
   }
 
-  Future<void> _handleUpdateSettings({BigInt? minStake, BigInt? lockDuration, BigInt? cooldown}) async {
+  Future<void> _handleUpdateSettings({
+    BigInt? minStake,
+    BigInt? lockDuration,
+    BigInt? cooldown,
+  }) async {
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
     if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
@@ -399,12 +444,16 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
       if (!mounted) return;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Settings updated: ${sig.substring(0, 8)}...')),
+          SnackBar(
+            content: Text('Settings updated: ${sig.substring(0, 8)}...'),
+          ),
         );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _staking = false);
       _loadUserStake();
@@ -433,65 +482,85 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
           if (amountText.isEmpty) return;
           final amountDouble = double.tryParse(amountText);
           if (amountDouble == null || amountDouble <= 0) return;
-          final amount = BigInt.from(amountDouble * BigInt.from(10).pow(pool.tokenDecimals).toDouble());
+          final amount = BigInt.from(
+            amountDouble * BigInt.from(10).pow(pool.tokenDecimals).toDouble(),
+          );
           if (amount < pool.minStakeAmount) {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(
-                  'Below pool minimum: ${formatTokenAmount(pool.minStakeAmount, pool.tokenDecimals)} ${pool.tokenSymbol ?? ''}',
-                )),
+                SnackBar(
+                  content: Text(
+                    'Below pool minimum: ${formatTokenAmount(pool.minStakeAmount, pool.tokenDecimals)} ${pool.tokenSymbol ?? ''}',
+                  ),
+                ),
               );
             }
             return;
           }
           final beneficiary = _beneficiaryController.text.trim();
           if (beneficiary.length >= 32) {
-            instructions.add(createStakeOnBehalfIx(
-              pool: pool.address,
-              mint: pool.mint,
-              staker: user,
-              beneficiary: beneficiary,
-              amount: amount,
-              tokenProgramId: tokenProgramId,
-            ));
+            instructions.add(
+              createStakeOnBehalfIx(
+                pool: pool.address,
+                mint: pool.mint,
+                staker: user,
+                beneficiary: beneficiary,
+                amount: amount,
+                tokenProgramId: tokenProgramId,
+              ),
+            );
           } else {
-            instructions.add(createStakeIx(
+            instructions.add(
+              createStakeIx(
+                pool: pool.address,
+                mint: pool.mint,
+                user: user,
+                amount: amount,
+                tokenProgramId: tokenProgramId,
+              ),
+            );
+          }
+        case 'claim':
+          instructions.add(
+            createClaimRewardsIx(pool: pool.address, user: user),
+          );
+        case 'requestUnstake':
+          if (_userStake == null || unstakeAmount == null) return;
+          instructions.add(
+            createRequestUnstakeIx(
+              pool: pool.address,
+              user: user,
+              amount: unstakeAmount,
+            ),
+          );
+        case 'unstake':
+          if (_userStake == null || unstakeAmount == null) return;
+          instructions.add(
+            createUnstakeIx(
               pool: pool.address,
               mint: pool.mint,
               user: user,
-              amount: amount,
+              amount: unstakeAmount,
               tokenProgramId: tokenProgramId,
-            ));
-          }
-        case 'claim':
-          instructions.add(createClaimRewardsIx(pool: pool.address, user: user));
-        case 'requestUnstake':
-          if (_userStake == null || unstakeAmount == null) return;
-          instructions.add(createRequestUnstakeIx(
-            pool: pool.address,
-            user: user,
-            amount: unstakeAmount,
-          ));
-        case 'unstake':
-          if (_userStake == null || unstakeAmount == null) return;
-          instructions.add(createUnstakeIx(
-            pool: pool.address,
-            mint: pool.mint,
-            user: user,
-            amount: unstakeAmount,
-            tokenProgramId: tokenProgramId,
-          ));
+            ),
+          );
         case 'completeUnstake':
-          instructions.add(createCompleteUnstakeIx(
-            pool: pool.address,
-            mint: pool.mint,
-            user: user,
-            tokenProgramId: tokenProgramId,
-          ));
+          instructions.add(
+            createCompleteUnstakeIx(
+              pool: pool.address,
+              mint: pool.mint,
+              user: user,
+              tokenProgramId: tokenProgramId,
+            ),
+          );
         case 'cancelUnstake':
-          instructions.add(createCancelUnstakeRequestIx(pool: pool.address, user: user));
+          instructions.add(
+            createCancelUnstakeRequestIx(pool: pool.address, user: user),
+          );
         case 'closeAccount':
-          instructions.add(createCloseStakeAccountIx(pool: pool.address, user: user));
+          instructions.add(
+            createCloseStakeAccountIx(pool: pool.address, user: user),
+          );
         default:
           return;
       }
@@ -507,22 +576,24 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
       if (!mounted) return;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$action confirmed: ${sig.substring(0, 8)}...')),
+          SnackBar(
+            content: Text('$action confirmed: ${sig.substring(0, 8)}...'),
+          ),
         );
         _stakeController.clear();
         _beneficiaryController.clear();
         _unstakeController.clear();
       } else if (wallet.error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(wallet.error!)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(wallet.error!)));
         wallet.clearError();
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _staking = false);
       _loadUserStake();
@@ -541,7 +612,10 @@ class _PoolStatsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('POOL STATS', style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+        Text(
+          'POOL STATS',
+          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+        ),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -643,13 +717,17 @@ class _UserStakeSection extends StatelessWidget {
       return TibaneCard(
         child: Column(
           children: [
-            const Icon(Icons.account_balance, size: 32, color: TibaneColors.textDim),
+            const Icon(
+              Icons.account_balance,
+              size: 32,
+              color: TibaneColors.textDim,
+            ),
             const SizedBox(height: 8),
             Text(
               'You have no stake in this pool',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: TibaneColors.textMuted,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
             ),
           ],
         ),
@@ -659,7 +737,10 @@ class _UserStakeSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('YOUR STAKE', style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+        Text(
+          'YOUR STAKE',
+          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+        ),
         const SizedBox(height: 12),
         TibaneCard(
           child: Column(
@@ -668,7 +749,10 @@ class _UserStakeSection extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Staked', style: TextStyle(color: TibaneColors.textMuted)),
+                  const Text(
+                    'Staked',
+                    style: TextStyle(color: TibaneColors.textMuted),
+                  ),
                   Text(
                     '${formatTokenAmount(userStake!.amount, pool.tokenDecimals)} ${pool.tokenSymbol ?? ''}',
                     style: const TextStyle(
@@ -683,15 +767,18 @@ class _UserStakeSection extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Weight', style: TextStyle(color: TibaneColors.textMuted)),
+                  const Text(
+                    'Weight',
+                    style: TextStyle(color: TibaneColors.textMuted),
+                  ),
                   Text(
                     '${weightPercent.toStringAsFixed(1)}%',
                     style: TextStyle(
                       color: weightPercent > 90
                           ? TibaneColors.cyan
                           : weightPercent > 50
-                              ? TibaneColors.gold
-                              : TibaneColors.orange,
+                          ? TibaneColors.gold
+                          : TibaneColors.orange,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -707,8 +794,8 @@ class _UserStakeSection extends StatelessWidget {
                   color: weightPercent > 90
                       ? TibaneColors.cyan
                       : weightPercent > 50
-                          ? TibaneColors.gold
-                          : TibaneColors.orange,
+                      ? TibaneColors.gold
+                      : TibaneColors.orange,
                   minHeight: 6,
                 ),
               ),
@@ -717,7 +804,10 @@ class _UserStakeSection extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Pending Rewards', style: TextStyle(color: TibaneColors.textMuted)),
+                  const Text(
+                    'Pending Rewards',
+                    style: TextStyle(color: TibaneColors.textMuted),
+                  ),
                   Text(
                     '${formatSol(pendingRewards)} SOL',
                     style: const TextStyle(
@@ -730,76 +820,94 @@ class _UserStakeSection extends StatelessWidget {
               // Unstake request with cooldown status
               if (userStake!.hasUnstakeRequest) ...[
                 const SizedBox(height: 12),
-                Builder(builder: (context) {
-                  final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-                  final elapsed = now - userStake!.unstakeRequestTime.toInt();
-                  final required = pool.unstakeCooldownSeconds.toInt();
-                  final cooldownDone = required == 0 || elapsed >= required;
-                  final progress = required > 0
-                      ? (elapsed / required).clamp(0.0, 1.0)
-                      : 1.0;
+                Builder(
+                  builder: (context) {
+                    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+                    final elapsed = now - userStake!.unstakeRequestTime.toInt();
+                    final required = pool.unstakeCooldownSeconds.toInt();
+                    final cooldownDone = required == 0 || elapsed >= required;
+                    final progress = required > 0
+                        ? (elapsed / required).clamp(0.0, 1.0)
+                        : 1.0;
 
-                  final badgeColor = cooldownDone ? const Color(0xFF4CAF50) : TibaneColors.orange;
-                  final bgColor = cooldownDone
-                      ? const Color(0xFF4CAF50).withValues(alpha: 0.08)
-                      : TibaneColors.orange.withValues(alpha: 0.08);
-                  final borderColor = cooldownDone
-                      ? const Color(0xFF4CAF50).withValues(alpha: 0.2)
-                      : TibaneColors.orange.withValues(alpha: 0.2);
+                    final badgeColor = cooldownDone
+                        ? const Color(0xFF4CAF50)
+                        : TibaneColors.orange;
+                    final bgColor = cooldownDone
+                        ? const Color(0xFF4CAF50).withValues(alpha: 0.08)
+                        : TibaneColors.orange.withValues(alpha: 0.08);
+                    final borderColor = cooldownDone
+                        ? const Color(0xFF4CAF50).withValues(alpha: 0.2)
+                        : TibaneColors.orange.withValues(alpha: 0.2);
 
-                  return Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: bgColor,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: borderColor),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              cooldownDone ? Icons.check_circle : Icons.schedule,
-                              size: 16,
-                              color: badgeColor,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Unstake request: ${formatTokenAmount(userStake!.unstakeRequestAmount, pool.tokenDecimals)}',
-                                style: TextStyle(color: badgeColor, fontSize: 13),
+                    return Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: bgColor,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: borderColor),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                cooldownDone
+                                    ? Icons.check_circle
+                                    : Icons.schedule,
+                                size: 16,
+                                color: badgeColor,
                               ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: badgeColor.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(12),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Unstake request: ${formatTokenAmount(userStake!.unstakeRequestAmount, pool.tokenDecimals)}',
+                                  style: TextStyle(
+                                    color: badgeColor,
+                                    fontSize: 13,
+                                  ),
+                                ),
                               ),
-                              child: Text(
-                                cooldownDone ? 'Ready' : _formatDuration(required - elapsed),
-                                style: TextStyle(color: badgeColor, fontSize: 11, fontWeight: FontWeight.w600),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: badgeColor.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  cooldownDone
+                                      ? 'Ready'
+                                      : _formatDuration(required - elapsed),
+                                  style: TextStyle(
+                                    color: badgeColor,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (!cooldownDone && required > 0) ...[
+                            const SizedBox(height: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(3),
+                              child: LinearProgressIndicator(
+                                value: progress,
+                                backgroundColor: TibaneColors.darker,
+                                color: TibaneColors.gold,
+                                minHeight: 4,
                               ),
                             ),
                           ],
-                        ),
-                        if (!cooldownDone && required > 0) ...[
-                          const SizedBox(height: 8),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(3),
-                            child: LinearProgressIndicator(
-                              value: progress,
-                              backgroundColor: TibaneColors.darker,
-                              color: TibaneColors.gold,
-                              minHeight: 4,
-                            ),
-                          ),
                         ],
-                      ],
-                    ),
-                  );
-                }),
+                      ),
+                    );
+                  },
+                ),
               ],
             ],
           ),
@@ -890,7 +998,10 @@ class _ActionsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('ACTIONS', style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+        Text(
+          'ACTIONS',
+          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+        ),
         const SizedBox(height: 12),
         // Claim rewards
         if (pendingRewards > BigInt.zero) ...[
@@ -905,188 +1016,252 @@ class _ActionsSection extends StatelessWidget {
         // Unstake section
         if (userStake.hasUnstakeRequest) ...[
           // Pending unstake request
-          Builder(builder: (context) {
-            final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-            final elapsed = now - userStake.unstakeRequestTime.toInt();
-            final required = pool.unstakeCooldownSeconds.toInt();
-            final cooldownDone = required == 0 || elapsed >= required;
+          Builder(
+            builder: (context) {
+              final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+              final elapsed = now - userStake.unstakeRequestTime.toInt();
+              final required = pool.unstakeCooldownSeconds.toInt();
+              final cooldownDone = required == 0 || elapsed >= required;
 
-            return TibaneCard(
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SecondaryButton(
-                          label: cooldownDone ? 'Complete Unstake' : 'Cooling down...',
-                          icon: cooldownDone ? Icons.lock_open : Icons.hourglass_top,
-                          onPressed: cooldownDone
-                              ? () async {
-                                  final amountStr = formatTokenAmount(
-                                    userStake.unstakeRequestAmount,
-                                    pool.tokenDecimals,
-                                  );
-                                  final symbol = pool.tokenSymbol ?? 'tokens';
-                                  final ok = await _confirmDestructive(
-                                    context,
-                                    title: 'Complete unstake?',
-                                    body:
-                                        'This will release $amountStr $symbol from your stake account back to your wallet in a single on-chain transaction. You cannot undo it from the app.',
-                                    confirmLabel: 'Complete Unstake',
-                                  );
-                                  if (ok) onAction('completeUnstake');
-                                }
-                              : null,
+              return TibaneCard(
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SecondaryButton(
+                            label: cooldownDone
+                                ? 'Complete Unstake'
+                                : 'Cooling down...',
+                            icon: cooldownDone
+                                ? Icons.lock_open
+                                : Icons.hourglass_top,
+                            onPressed: cooldownDone
+                                ? () async {
+                                    final amountStr = formatTokenAmount(
+                                      userStake.unstakeRequestAmount,
+                                      pool.tokenDecimals,
+                                    );
+                                    final symbol = pool.tokenSymbol ?? 'tokens';
+                                    final ok = await _confirmDestructive(
+                                      context,
+                                      title: 'Complete unstake?',
+                                      body:
+                                          'This will release $amountStr $symbol from your stake account back to your wallet in a single on-chain transaction. You cannot undo it from the app.',
+                                      confirmLabel: 'Complete Unstake',
+                                    );
+                                    if (ok) onAction('completeUnstake');
+                                  }
+                                : null,
+                          ),
                         ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: SecondaryButton(
+                            label: 'Cancel',
+                            icon: Icons.cancel_outlined,
+                            onPressed: () => onAction('cancelUnstake'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ] else ...[
+          // Unstake input with % quick buttons
+          Builder(
+            builder: (context) {
+              // Check lock state
+              final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+              final lockDuration = pool.lockDurationSeconds.toInt();
+              final unlockTime = userStake.lastStakeTime.toInt() + lockDuration;
+              final isLocked = lockDuration > 0 && now < unlockTime;
+              final lockRemaining = isLocked ? unlockTime - now : 0;
+
+              return TibaneCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Unstake',
+                      style: TextStyle(
+                        color: TibaneColors.text,
+                        fontWeight: FontWeight.w600,
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: SecondaryButton(
-                          label: 'Cancel',
-                          icon: Icons.cancel_outlined,
-                          onPressed: () => onAction('cancelUnstake'),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Staked: ${formatTokenAmount(userStake.amount, pool.tokenDecimals)} ${pool.tokenSymbol ?? ''}',
+                      style: monoStyle(
+                        fontSize: 11,
+                        color: TibaneColors.textMuted,
+                      ),
+                    ),
+                    // Lock notice
+                    if (isLocked) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.red.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.lock, size: 14, color: Colors.red),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Locked for ${_formatDuration(lockRemaining)}',
+                                style: const TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
-                  ),
-                ],
-              ),
-            );
-          }),
-        ] else ...[
-          // Unstake input with % quick buttons
-          Builder(builder: (context) {
-            // Check lock state
-            final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-            final lockDuration = pool.lockDurationSeconds.toInt();
-            final unlockTime = userStake.lastStakeTime.toInt() + lockDuration;
-            final isLocked = lockDuration > 0 && now < unlockTime;
-            final lockRemaining = isLocked ? unlockTime - now : 0;
-
-            return TibaneCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Unstake', style: TextStyle(color: TibaneColors.text, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Staked: ${formatTokenAmount(userStake.amount, pool.tokenDecimals)} ${pool.tokenSymbol ?? ''}',
-                    style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
-                  ),
-                  // Lock notice
-                  if (isLocked) ...[
                     const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red.withValues(alpha: 0.2)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.lock, size: 14, color: Colors.red),
-                          const SizedBox(width: 8),
+                    // % quick buttons
+                    Row(
+                      children: [
+                        for (final pct in [25, 50, 75]) ...[
                           Expanded(
-                            child: Text(
-                              'Locked for ${_formatDuration(lockRemaining)}',
-                              style: const TextStyle(color: Colors.red, fontSize: 12),
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: GestureDetector(
+                                onTap: isLocked
+                                    ? null
+                                    : () => _setUnstakePercent(pct),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: TibaneColors.darker,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: TibaneColors.border,
+                                    ),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    '$pct%',
+                                    style: monoStyle(
+                                      fontSize: 11,
+                                      color: isLocked
+                                          ? TibaneColors.textDim
+                                          : TibaneColors.orange,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  // % quick buttons
-                  Row(
-                    children: [
-                      for (final pct in [25, 50, 75]) ...[
                         Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: GestureDetector(
-                              onTap: isLocked ? null : () => _setUnstakePercent(pct),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: TibaneColors.darker,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: TibaneColors.border),
+                          child: GestureDetector(
+                            onTap: isLocked
+                                ? null
+                                : () => _setUnstakePercent(100),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isLocked
+                                    ? TibaneColors.darker
+                                    : TibaneColors.orange.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: isLocked
+                                      ? TibaneColors.border
+                                      : TibaneColors.orange.withValues(
+                                          alpha: 0.3,
+                                        ),
                                 ),
-                                alignment: Alignment.center,
-                                child: Text('$pct%', style: monoStyle(fontSize: 11, color: isLocked ? TibaneColors.textDim : TibaneColors.orange)),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                'MAX',
+                                style: monoStyle(
+                                  fontSize: 11,
+                                  color: isLocked
+                                      ? TibaneColors.textDim
+                                      : TibaneColors.orange,
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ],
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: isLocked ? null : () => _setUnstakePercent(100),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            decoration: BoxDecoration(
-                              color: isLocked ? TibaneColors.darker : TibaneColors.orange.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: isLocked ? TibaneColors.border : TibaneColors.orange.withValues(alpha: 0.3)),
-                            ),
-                            alignment: Alignment.center,
-                            child: Text('MAX', style: monoStyle(fontSize: 11, color: isLocked ? TibaneColors.textDim : TibaneColors.orange)),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: unstakeController,
-                    enabled: !isLocked,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: InputDecoration(
-                      hintText: isLocked ? 'Tokens are locked' : 'Amount to unstake',
-                      suffixText: pool.tokenSymbol,
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  ListenableBuilder(
-                    listenable: unstakeController,
-                    builder: (context, _) {
-                      final amount = _parseUnstakeAmount();
-                      return SecondaryButton(
-                        label: isLocked
-                            ? 'Locked (${_formatDuration(lockRemaining)})'
-                            : hasCooldown ? 'Request Unstake' : 'Unstake',
-                        icon: isLocked ? Icons.lock : Icons.lock_open,
-                        expanded: true,
-                        onPressed: !isLocked && amount != null
-                            ? () async {
-                                if (hasCooldown) {
-                                  // Reversible — can be cancelled before
-                                  // cooldown elapses. No confirmation.
-                                  onAction('requestUnstake', amount: amount);
-                                  return;
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: unstakeController,
+                      enabled: !isLocked,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: isLocked
+                            ? 'Tokens are locked'
+                            : 'Amount to unstake',
+                        suffixText: pool.tokenSymbol,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ListenableBuilder(
+                      listenable: unstakeController,
+                      builder: (context, _) {
+                        final amount = _parseUnstakeAmount();
+                        return SecondaryButton(
+                          label: isLocked
+                              ? 'Locked (${_formatDuration(lockRemaining)})'
+                              : hasCooldown
+                              ? 'Request Unstake'
+                              : 'Unstake',
+                          icon: isLocked ? Icons.lock : Icons.lock_open,
+                          expanded: true,
+                          onPressed: !isLocked && amount != null
+                              ? () async {
+                                  if (hasCooldown) {
+                                    // Reversible — can be cancelled before
+                                    // cooldown elapses. No confirmation.
+                                    onAction('requestUnstake', amount: amount);
+                                    return;
+                                  }
+                                  final amountStr = formatTokenAmount(
+                                    amount,
+                                    pool.tokenDecimals,
+                                  );
+                                  final symbol = pool.tokenSymbol ?? 'tokens';
+                                  final ok = await _confirmDestructive(
+                                    context,
+                                    title: 'Unstake?',
+                                    body:
+                                        'This will withdraw $amountStr $symbol from the pool and return them to your wallet in a single on-chain transaction. You cannot undo it from the app.',
+                                    confirmLabel: 'Unstake',
+                                  );
+                                  if (ok) onAction('unstake', amount: amount);
                                 }
-                                final amountStr = formatTokenAmount(
-                                    amount, pool.tokenDecimals);
-                                final symbol = pool.tokenSymbol ?? 'tokens';
-                                final ok = await _confirmDestructive(
-                                  context,
-                                  title: 'Unstake?',
-                                  body:
-                                      'This will withdraw $amountStr $symbol from the pool and return them to your wallet in a single on-chain transaction. You cannot undo it from the app.',
-                                  confirmLabel: 'Unstake',
-                                );
-                                if (ok) onAction('unstake', amount: amount);
-                              }
-                            : null,
-                      );
-                    },
-                  ),
-                ],
-              ),
-            );
-          }),
+                              : null,
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         ],
       ],
     );
@@ -1097,7 +1272,10 @@ class _WeightMilestonesSection extends StatelessWidget {
   final StakingPool pool;
   final double weightPercent;
 
-  const _WeightMilestonesSection({required this.pool, required this.weightPercent});
+  const _WeightMilestonesSection({
+    required this.pool,
+    required this.weightPercent,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1120,7 +1298,9 @@ class _WeightMilestonesSection extends StatelessWidget {
         // Solve: 1 - e^(-t/τ) = target/100 → t = -τ * ln(1 - target/100)
         final totalSeconds = -tau * _ln(1 - target / 100);
         // Current age from weight: t_current = -τ * ln(1 - weight/100)
-        final currentAge = weightPercent > 0 ? -tau * _ln(1 - weightPercent / 100) : 0.0;
+        final currentAge = weightPercent > 0
+            ? -tau * _ln(1 - weightPercent / 100)
+            : 0.0;
         final remaining = totalSeconds - currentAge;
         if (remaining > 0) {
           upcoming.add((pct: target, daysLeft: (remaining / 86400).ceil()));
@@ -1131,7 +1311,10 @@ class _WeightMilestonesSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('WEIGHT MILESTONES', style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+        Text(
+          'WEIGHT MILESTONES',
+          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+        ),
         const SizedBox(height: 12),
         TibaneCard(
           child: Column(
@@ -1156,7 +1339,10 @@ class _WeightMilestonesSection extends StatelessWidget {
                           const SizedBox(height: 2),
                           Text(
                             milestones[i].label,
-                            style: monoStyle(fontSize: 9, color: TibaneColors.textDim),
+                            style: monoStyle(
+                              fontSize: 9,
+                              color: TibaneColors.textDim,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Container(
@@ -1183,10 +1369,20 @@ class _WeightMilestonesSection extends StatelessWidget {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('${u.pct}% weight',
-                            style: monoStyle(fontSize: 11, color: TibaneColors.textMuted)),
-                        Text('${u.daysLeft}d remaining',
-                            style: monoStyle(fontSize: 11, color: TibaneColors.gold)),
+                        Text(
+                          '${u.pct}% weight',
+                          style: monoStyle(
+                            fontSize: 11,
+                            color: TibaneColors.textMuted,
+                          ),
+                        ),
+                        Text(
+                          '${u.daysLeft}d remaining',
+                          style: monoStyle(
+                            fontSize: 11,
+                            color: TibaneColors.gold,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -1226,13 +1422,17 @@ class _StakeInputSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final displayBalance = walletBalance.toDouble() /
+    final displayBalance =
+        walletBalance.toDouble() /
         BigInt.from(10).pow(pool.tokenDecimals).toDouble();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('STAKE TOKENS', style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+        Text(
+          'STAKE TOKENS',
+          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+        ),
         const SizedBox(height: 12),
         TibaneCard(
           child: Column(
@@ -1243,29 +1443,44 @@ class _StakeInputSection extends StatelessWidget {
                 children: [
                   Text(
                     'Available',
-                    style: TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+                    style: TextStyle(
+                      color: TibaneColors.textMuted,
+                      fontSize: 13,
+                    ),
                   ),
                   Row(
                     children: [
                       Text(
                         '${formatTokenAmount(walletBalance, pool.tokenDecimals)} ${pool.tokenSymbol ?? ''}',
-                        style: monoStyle(fontSize: 13, color: TibaneColors.text),
+                        style: monoStyle(
+                          fontSize: 13,
+                          color: TibaneColors.text,
+                        ),
                       ),
                       const SizedBox(width: 8),
                       GestureDetector(
                         onTap: walletBalance > BigInt.zero
-                            ? () => controller.text = displayBalance.toStringAsFixed(pool.tokenDecimals)
+                            ? () => controller.text = displayBalance
+                                  .toStringAsFixed(pool.tokenDecimals)
                             : null,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: TibaneColors.orange.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: TibaneColors.orange.withValues(alpha: 0.3)),
+                            border: Border.all(
+                              color: TibaneColors.orange.withValues(alpha: 0.3),
+                            ),
                           ),
                           child: Text(
                             'MAX',
-                            style: monoStyle(fontSize: 10, color: TibaneColors.orange),
+                            style: monoStyle(
+                              fontSize: 10,
+                              color: TibaneColors.orange,
+                            ),
                           ),
                         ),
                       ),
@@ -1276,7 +1491,9 @@ class _StakeInputSection extends StatelessWidget {
               const SizedBox(height: 12),
               TextField(
                 controller: controller,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: InputDecoration(
                   hintText: 'Amount to stake',
                   suffixText: pool.tokenSymbol,
@@ -1322,7 +1539,12 @@ class _AdminSection extends StatefulWidget {
   final StakingPool pool;
   final bool staking;
   final void Function(BigInt amount) onDepositRewards;
-  final void Function({BigInt? minStake, BigInt? lockDuration, BigInt? cooldown}) onUpdateSettings;
+  final void Function({
+    BigInt? minStake,
+    BigInt? lockDuration,
+    BigInt? cooldown,
+  })
+  onUpdateSettings;
 
   const _AdminSection({
     required this.pool,
@@ -1346,13 +1568,18 @@ class _AdminSectionState extends State<_AdminSection> {
     super.initState();
     final pool = widget.pool;
     if (pool.minStakeAmount > BigInt.zero) {
-      _minStakeController.text = formatTokenAmount(pool.minStakeAmount, pool.tokenDecimals);
+      _minStakeController.text = formatTokenAmount(
+        pool.minStakeAmount,
+        pool.tokenDecimals,
+      );
     }
     if (pool.lockDurationSeconds > BigInt.zero) {
-      _lockDurationController.text = (pool.lockDurationSeconds.toInt() ~/ 3600).toString();
+      _lockDurationController.text = (pool.lockDurationSeconds.toInt() ~/ 3600)
+          .toString();
     }
     if (pool.unstakeCooldownSeconds > BigInt.zero) {
-      _cooldownController.text = (pool.unstakeCooldownSeconds.toInt() ~/ 3600).toString();
+      _cooldownController.text = (pool.unstakeCooldownSeconds.toInt() ~/ 3600)
+          .toString();
     }
   }
 
@@ -1370,14 +1597,23 @@ class _AdminSectionState extends State<_AdminSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('ADMIN', style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+        Text(
+          'ADMIN',
+          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+        ),
         const SizedBox(height: 12),
         // Deposit rewards
         TibaneCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Deposit Rewards', style: TextStyle(color: TibaneColors.text, fontWeight: FontWeight.w600)),
+              const Text(
+                'Deposit Rewards',
+                style: TextStyle(
+                  color: TibaneColors.text,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const SizedBox(height: 8),
               Text(
                 'Current rewards: ${formatSol(widget.pool.rewardBalance)} SOL',
@@ -1386,7 +1622,9 @@ class _AdminSectionState extends State<_AdminSection> {
               const SizedBox(height: 8),
               TextField(
                 controller: _depositController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: const InputDecoration(
                   hintText: 'SOL amount',
                   suffixText: 'SOL',
@@ -1421,16 +1659,27 @@ class _AdminSectionState extends State<_AdminSection> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Pool Settings', style: TextStyle(color: TibaneColors.text, fontWeight: FontWeight.w600)),
+              const Text(
+                'Pool Settings',
+                style: TextStyle(
+                  color: TibaneColors.text,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const SizedBox(height: 8),
               TextField(
                 controller: _minStakeController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: InputDecoration(
                   hintText: 'Min stake amount',
                   suffixText: widget.pool.tokenSymbol,
                   labelText: 'Min Stake',
-                  labelStyle: const TextStyle(color: TibaneColors.textDim, fontSize: 12),
+                  labelStyle: const TextStyle(
+                    color: TibaneColors.textDim,
+                    fontSize: 12,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -1441,7 +1690,10 @@ class _AdminSectionState extends State<_AdminSection> {
                   hintText: 'Lock duration (hours)',
                   suffixText: 'hours',
                   labelText: 'Lock Duration',
-                  labelStyle: TextStyle(color: TibaneColors.textDim, fontSize: 12),
+                  labelStyle: TextStyle(
+                    color: TibaneColors.textDim,
+                    fontSize: 12,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -1452,7 +1704,10 @@ class _AdminSectionState extends State<_AdminSection> {
                   hintText: 'Unstake cooldown (hours)',
                   suffixText: 'hours',
                   labelText: 'Unstake Cooldown',
-                  labelStyle: TextStyle(color: TibaneColors.textDim, fontSize: 12),
+                  labelStyle: TextStyle(
+                    color: TibaneColors.textDim,
+                    fontSize: 12,
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -1471,7 +1726,12 @@ class _AdminSectionState extends State<_AdminSection> {
                         if (minText.isNotEmpty) {
                           final v = double.tryParse(minText);
                           if (v != null) {
-                            minStake = BigInt.from(v * BigInt.from(10).pow(widget.pool.tokenDecimals).toDouble());
+                            minStake = BigInt.from(
+                              v *
+                                  BigInt.from(
+                                    10,
+                                  ).pow(widget.pool.tokenDecimals).toDouble(),
+                            );
                           }
                         }
                         final lockText = _lockDurationController.text.trim();
@@ -1510,8 +1770,10 @@ class _PoolInfoSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('POOL INFO',
-            style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+        Text(
+          'POOL INFO',
+          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+        ),
         const SizedBox(height: 12),
         TibaneCard(
           child: Column(
@@ -1622,10 +1884,7 @@ class _InfoRow extends StatelessWidget {
                 );
               },
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

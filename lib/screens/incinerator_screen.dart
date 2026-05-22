@@ -26,7 +26,8 @@ class IncineratorScreen extends StatefulWidget {
   State<IncineratorScreen> createState() => _IncineratorScreenState();
 }
 
-class _IncineratorScreenState extends State<IncineratorScreen> with SingleTickerProviderStateMixin {
+class _IncineratorScreenState extends State<IncineratorScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final _rpc = RpcService();
   final _relay = RelayService();
@@ -49,7 +50,8 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
 
   // Sponsored burn settings
   bool _sponsoredMode = true;
-  double _tipPercent = 5.0; // 0 = minimum (relay keeps fees only), 100 = user gives all rent
+  double _tipPercent =
+      5.0; // 0 = minimum (relay keeps fees only), 100 = user gives all rent
   int _sponsoredCurrent = 0;
   int _sponsoredTotal = 0;
 
@@ -109,13 +111,19 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
 
     try {
       final splAccounts = await _rpc.getTokenAccountsByOwner(wallet.publicKey!);
-      final t22Accounts = await _rpc.getTokenAccountsByOwner(wallet.publicKey!, token2022: true);
+      final t22Accounts = await _rpc.getTokenAccountsByOwner(
+        wallet.publicKey!,
+        token2022: true,
+      );
       final allAccounts = [...splAccounts, ...t22Accounts];
 
       final mints = allAccounts.map((a) => a.mint).toSet().toList();
       if (mints.isNotEmpty) {
         for (var i = 0; i < mints.length; i += 100) {
-          final batch = mints.sublist(i, i + 100 > mints.length ? mints.length : i + 100);
+          final batch = mints.sublist(
+            i,
+            i + 100 > mints.length ? mints.length : i + 100,
+          );
           final metadata = await _rpc.getAssetBatch(batch);
           for (final account in allAccounts) {
             final meta = metadata[account.mint];
@@ -154,7 +162,8 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
       for (final asset in assets) {
         final iface = asset['interface'] as String? ?? '';
         // Only include NFT-like interfaces
-        if (!['V1_NFT', 'V1_PRINT', 'ProgrammableNFT'].contains(iface)) continue;
+        if (!['V1_NFT', 'V1_PRINT', 'ProgrammableNFT'].contains(iface))
+          continue;
         nfts.add(NftItem.fromHeliusAsset(asset));
       }
 
@@ -182,10 +191,7 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
         final metadata = content?['metadata'] as Map<String, dynamic>?;
         final name = metadata?['name'] as String? ?? '';
         if (name.endsWith('.sol')) {
-          domains.add(DomainItem(
-            id: asset['id'] as String? ?? '',
-            name: name,
-          ));
+          domains.add(DomainItem(id: asset['id'] as String? ?? '', name: name));
         }
       }
 
@@ -201,8 +207,7 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
   // Selection helpers
   List<TokenAccount> get _selectedTokens =>
       _tokenAccounts.where((a) => a.selected).toList();
-  List<NftItem> get _selectedNfts =>
-      _nfts.where((n) => n.selected).toList();
+  List<NftItem> get _selectedNfts => _nfts.where((n) => n.selected).toList();
   List<DomainItem> get _selectedDomains =>
       _domains.where((d) => d.selected).toList();
 
@@ -275,10 +280,16 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
           style: const TextStyle(color: TibaneColors.textMuted),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Burn', style: TextStyle(color: TibaneColors.error)),
+            child: const Text(
+              'Burn',
+              style: TextStyle(color: TibaneColors.error),
+            ),
           ),
         ],
       ),
@@ -316,25 +327,38 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
             const SizedBox(height: 12),
             TextField(
               controller: controller,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(hintText: 'Amount to burn'),
               autofocus: true,
             ),
             const SizedBox(height: 8),
             GestureDetector(
               onTap: () {
-                final v = account.amount.toDouble() / BigInt.from(10).pow(account.decimals).toDouble();
+                final v =
+                    account.amount.toDouble() /
+                    BigInt.from(10).pow(account.decimals).toDouble();
                 controller.text = v.toStringAsFixed(account.decimals);
               },
-              child: Text('MAX', style: monoStyle(fontSize: 11, color: TibaneColors.orange)),
+              child: Text(
+                'MAX',
+                style: monoStyle(fontSize: 11, color: TibaneColors.orange),
+              ),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Burn', style: TextStyle(color: TibaneColors.error)),
+            child: const Text(
+              'Burn',
+              style: TextStyle(color: TibaneColors.error),
+            ),
           ),
         ],
       ),
@@ -343,7 +367,9 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
     if (confirmed == null || confirmed.isEmpty) return;
     final v = double.tryParse(confirmed);
     if (v == null || v <= 0) return;
-    final amount = BigInt.from(v * BigInt.from(10).pow(account.decimals).toDouble());
+    final amount = BigInt.from(
+      v * BigInt.from(10).pow(account.decimals).toDouble(),
+    );
     if (amount <= BigInt.zero) return;
 
     if (!mounted) return;
@@ -354,7 +380,9 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
     setState(() => _burning = true);
     try {
       final blockhash = await _rpc.getLatestBlockhash();
-      final tokenProgramId = account.isToken2022 ? token2022ProgramId : splTokenProgramId;
+      final tokenProgramId = account.isToken2022
+          ? token2022ProgramId
+          : splTokenProgramId;
       final ix = createBurnCheckedIx(
         tokenAccount: account.pubkey,
         mint: account.mint,
@@ -381,16 +409,24 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _burning = false);
     }
   }
 
   void _clearSelection() {
-    for (final a in _tokenAccounts) { a.selected = false; }
-    for (final n in _nfts) { n.selected = false; }
-    for (final d in _domains) { d.selected = false; }
+    for (final a in _tokenAccounts) {
+      a.selected = false;
+    }
+    for (final n in _nfts) {
+      n.selected = false;
+    }
+    for (final d in _domains) {
+      d.selected = false;
+    }
   }
 
   /// Direct burn: user pays fees, sign & send
@@ -408,33 +444,61 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
       // Burn tokens (batch 5 per tx)
       final tokens = _selectedTokens.toList();
       for (var i = 0; i < tokens.length; i += 5) {
-        final batch = tokens.sublist(i, i + 5 > tokens.length ? tokens.length : i + 5);
+        final batch = tokens.sublist(
+          i,
+          i + 5 > tokens.length ? tokens.length : i + 5,
+        );
         final instructions = <SolanaInstruction>[];
         for (final account in batch) {
-          instructions.addAll(buildBurnAndCloseInstructions(
-            tokenAccount: account.pubkey,
-            mint: account.mint,
-            owner: wallet.publicKey!,
-            amount: account.amount,
-            decimals: account.decimals,
-            isToken2022: account.isToken2022,
-          ));
+          instructions.addAll(
+            buildBurnAndCloseInstructions(
+              tokenAccount: account.pubkey,
+              mint: account.mint,
+              owner: wallet.publicKey!,
+              amount: account.amount,
+              decimals: account.decimals,
+              isToken2022: account.isToken2022,
+            ),
+          );
         }
         final tx = buildTransaction(
-          recentBlockhash: blockhash, feePayer: wallet.publicKey!, instructions: instructions);
+          recentBlockhash: blockhash,
+          feePayer: wallet.publicKey!,
+          instructions: instructions,
+        );
         final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
-        if (sig != null) { successCount += batch.length; lastSig = sig; } else { break; }
+        if (sig != null) {
+          successCount += batch.length;
+          lastSig = sig;
+        } else {
+          break;
+        }
       }
 
       // Burn regular NFTs (batch 3 per tx)
-      final regularNfts = _selectedNfts.where((n) => !n.compressed && n.mint != null).toList();
+      final regularNfts = _selectedNfts
+          .where((n) => !n.compressed && n.mint != null)
+          .toList();
       for (var i = 0; i < regularNfts.length; i += 3) {
-        final batch = regularNfts.sublist(i, i + 3 > regularNfts.length ? regularNfts.length : i + 3);
-        final instructions = batch.map((n) => buildRegularNftBurnIx(n, wallet.publicKey!)).toList();
+        final batch = regularNfts.sublist(
+          i,
+          i + 3 > regularNfts.length ? regularNfts.length : i + 3,
+        );
+        final instructions = batch
+            .map((n) => buildRegularNftBurnIx(n, wallet.publicKey!))
+            .toList();
         final tx = buildTransaction(
-          recentBlockhash: blockhash, feePayer: wallet.publicKey!, instructions: instructions);
+          recentBlockhash: blockhash,
+          feePayer: wallet.publicKey!,
+          instructions: instructions,
+        );
         final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
-        if (sig != null) { successCount += batch.length; lastSig = sig; } else { break; }
+        if (sig != null) {
+          successCount += batch.length;
+          lastSig = sig;
+        } else {
+          break;
+        }
       }
 
       // Burn cNFTs (1 per tx)
@@ -444,38 +508,65 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
         if (proof == null) continue;
         final ix = buildCnftBurnIx(nft, wallet.publicKey!, proof);
         final tx = buildTransaction(
-          recentBlockhash: blockhash, feePayer: wallet.publicKey!, instructions: [ix]);
+          recentBlockhash: blockhash,
+          feePayer: wallet.publicKey!,
+          instructions: [ix],
+        );
         final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
-        if (sig != null) { successCount++; lastSig = sig; } else { break; }
+        if (sig != null) {
+          successCount++;
+          lastSig = sig;
+        } else {
+          break;
+        }
       }
 
       // Delete domains (batch 25 per tx)
       final domains = _selectedDomains.toList();
       for (var i = 0; i < domains.length; i += 25) {
-        final batch = domains.sublist(i, i + 25 > domains.length ? domains.length : i + 25);
-        final instructions = batch.map((d) =>
-          buildDomainDeleteIx(nameAccount: d.id, owner: wallet.publicKey!)).toList();
+        final batch = domains.sublist(
+          i,
+          i + 25 > domains.length ? domains.length : i + 25,
+        );
+        final instructions = batch
+            .map(
+              (d) => buildDomainDeleteIx(
+                nameAccount: d.id,
+                owner: wallet.publicKey!,
+              ),
+            )
+            .toList();
         final tx = buildTransaction(
-          recentBlockhash: blockhash, feePayer: wallet.publicKey!, instructions: instructions);
+          recentBlockhash: blockhash,
+          feePayer: wallet.publicKey!,
+          instructions: instructions,
+        );
         final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
-        if (sig != null) { successCount += batch.length; lastSig = sig; } else { break; }
+        if (sig != null) {
+          successCount += batch.length;
+          lastSig = sig;
+        } else {
+          break;
+        }
       }
 
       if (!mounted) return;
       if (successCount > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Burned $successCount items')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Burned $successCount items')));
         _clearSelection();
       } else if (wallet.error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(wallet.error!)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(wallet.error!)));
         wallet.clearError();
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _burning = false);
       if (lastSig != null) {
@@ -511,20 +602,32 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
       for (final account in _selectedTokens) {
         items.add((
           ixs: buildBurnAndCloseInstructions(
-            tokenAccount: account.pubkey, mint: account.mint, owner: owner,
-            amount: account.amount, decimals: account.decimals, isToken2022: account.isToken2022,
+            tokenAccount: account.pubkey,
+            mint: account.mint,
+            owner: owner,
+            amount: account.amount,
+            decimals: account.decimals,
+            isToken2022: account.isToken2022,
           ),
           rent: account.rentLamports.toInt(),
         ));
       }
 
-      final regularNfts = _selectedNfts.where((n) => !n.compressed && n.mint != null).toList();
+      final regularNfts = _selectedNfts
+          .where((n) => !n.compressed && n.mint != null)
+          .toList();
       for (final nft in regularNfts) {
-        items.add((ixs: [buildRegularNftBurnIx(nft, owner)], rent: nft.rentLamports));
+        items.add((
+          ixs: [buildRegularNftBurnIx(nft, owner)],
+          rent: nft.rentLamports,
+        ));
       }
 
       for (final domain in _selectedDomains) {
-        items.add((ixs: [buildDomainDeleteIx(nameAccount: domain.id, owner: owner)], rent: domain.rentLamports));
+        items.add((
+          ixs: [buildDomainDeleteIx(nameAccount: domain.id, owner: owner)],
+          rent: domain.rentLamports,
+        ));
       }
 
       // Pack items into size-capped batches (matching web app's buildMixedBatches)
@@ -540,15 +643,31 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
         final tipLamports = _calculateTipLamports(probeRents);
         final probeFull = [...probeIxs];
         if (tipLamports > 0) {
-          probeFull.add(createSystemTransferIx(from: owner, to: feePayer, lamports: BigInt.from(tipLamports)));
+          probeFull.add(
+            createSystemTransferIx(
+              from: owner,
+              to: feePayer,
+              lamports: BigInt.from(tipLamports),
+            ),
+          );
         }
-        final probeSize = buildTransaction(recentBlockhash: blockhash, feePayer: feePayer, instructions: probeFull).length;
+        final probeSize = buildTransaction(
+          recentBlockhash: blockhash,
+          feePayer: feePayer,
+          instructions: probeFull,
+        ).length;
 
         if (currentIxs.isNotEmpty && probeSize > 1180) {
           // Finalize current batch
           final tip = _calculateTipLamports(currentRents);
           if (tip > 0) {
-            currentIxs.add(createSystemTransferIx(from: owner, to: feePayer, lamports: BigInt.from(tip)));
+            currentIxs.add(
+              createSystemTransferIx(
+                from: owner,
+                to: feePayer,
+                lamports: BigInt.from(tip),
+              ),
+            );
           }
           batches.add((currentIxs, currentRents));
           currentIxs = [];
@@ -560,7 +679,13 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
       if (currentIxs.isNotEmpty) {
         final tip = _calculateTipLamports(currentRents);
         if (tip > 0) {
-          currentIxs.add(createSystemTransferIx(from: owner, to: feePayer, lamports: BigInt.from(tip)));
+          currentIxs.add(
+            createSystemTransferIx(
+              from: owner,
+              to: feePayer,
+              lamports: BigInt.from(tip),
+            ),
+          );
         }
         batches.add((currentIxs, currentRents));
       }
@@ -585,11 +710,17 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
         );
 
         // Simulate first to catch errors with useful context
-        debugPrint('[SponsoredBurn] tx size=${txBytes.length}, feePayer=$feePayer, owner=$owner');
-        debugPrint('[SponsoredBurn] numSignatures=${txBytes[0]}, instructions=${ixs.length}');
+        debugPrint(
+          '[SponsoredBurn] tx size=${txBytes.length}, feePayer=$feePayer, owner=$owner',
+        );
+        debugPrint(
+          '[SponsoredBurn] numSignatures=${txBytes[0]}, instructions=${ixs.length}',
+        );
         debugPrint('[SponsoredBurn] tx_b64=${base64Encode(txBytes)}');
         try {
-          final simResult = await _rpc.simulateTransaction(Uint8List.fromList(txBytes));
+          final simResult = await _rpc.simulateTransaction(
+            Uint8List.fromList(txBytes),
+          );
           final simErr = simResult['err'];
           if (simErr != null) {
             debugPrint('[SponsoredBurn] Simulation error: $simErr');
@@ -603,13 +734,17 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
         }
 
         // Sign only — relay adds fee payer signature and submits
-        final signed = await wallet.signTransaction(Uint8List.fromList(txBytes));
+        final signed = await wallet.signTransaction(
+          Uint8List.fromList(txBytes),
+        );
         if (signed == null) {
-          debugPrint('[SponsoredBurn] signTransaction returned null, wallet error: ${wallet.error}');
+          debugPrint(
+            '[SponsoredBurn] signTransaction returned null, wallet error: ${wallet.error}',
+          );
           if (mounted && wallet.error != null) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Wallet: ${wallet.error}')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('Wallet: ${wallet.error}')));
             wallet.clearError();
           }
           break;
@@ -623,13 +758,17 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
       if (!mounted) return;
       if (signatures.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Burned ${signatures.length} batches via relay')),
+          SnackBar(
+            content: Text('Burned ${signatures.length} batches via relay'),
+          ),
         );
         _clearSelection();
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _burning = false);
       // Wait for the last submitted tx to confirm before reloading. Without
@@ -663,17 +802,26 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
                   color: TibaneColors.orange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.local_fire_department, color: TibaneColors.orange, size: 24),
+                child: const Icon(
+                  Icons.local_fire_department,
+                  color: TibaneColors.orange,
+                  size: 24,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Incinerator', style: Theme.of(context).textTheme.titleLarge),
+                    Text(
+                      'Incinerator',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
                     Text(
                       'Burn tokens, NFTs & domains',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: TibaneColors.textMuted),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: TibaneColors.textMuted,
+                      ),
                     ),
                   ],
                 ),
@@ -705,9 +853,17 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
               border: Border.all(color: TibaneColors.border),
             ),
             tabs: [
-              Tab(text: _loadingTokens ? 'Tokens ...' : 'Tokens (${_tokenAccounts.length})'),
+              Tab(
+                text: _loadingTokens
+                    ? 'Tokens ...'
+                    : 'Tokens (${_tokenAccounts.length})',
+              ),
               Tab(text: _loadingNfts ? 'NFTs ...' : 'NFTs (${_nfts.length})'),
-              Tab(text: _loadingDomains ? 'Domains ...' : 'Domains (${_domains.length})'),
+              Tab(
+                text: _loadingDomains
+                    ? 'Domains ...'
+                    : 'Domains (${_domains.length})',
+              ),
             ],
           ),
         ),
@@ -717,34 +873,63 @@ class _IncineratorScreenState extends State<IncineratorScreen> with SingleTicker
           child: !wallet.isConnected
               ? _NotConnectedView()
               : _error != null
-                  ? _ErrorView(error: _error!, onRetry: _loadAll)
-                  : TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _loadingTokens
-                            ? const Center(child: CircularProgressIndicator(color: TibaneColors.orange))
-                            : _TokensList(
-                                accounts: _tokenAccounts,
-                                onToggle: (account) => setState(() => account.selected = !account.selected),
-                                onToggleAll: _toggleAllTokens,
-                                onPartialBurn: _partialBurn,
+              ? _ErrorView(error: _error!, onRetry: _loadAll)
+              : TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _loadingTokens
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                              color: TibaneColors.orange,
+                            ),
+                          )
+                        : RefreshIndicator(
+                            color: TibaneColors.orange,
+                            onRefresh: _loadTokens,
+                            child: _TokensList(
+                              accounts: _tokenAccounts,
+                              onToggle: (account) => setState(
+                                () => account.selected = !account.selected,
                               ),
-                        _loadingNfts
-                            ? const Center(child: CircularProgressIndicator(color: TibaneColors.orange))
-                            : _NftsList(
-                                nfts: _nfts,
-                                onToggle: (nft) => setState(() => nft.selected = !nft.selected),
-                                onToggleAll: _toggleAllNfts,
+                              onToggleAll: _toggleAllTokens,
+                              onPartialBurn: _partialBurn,
+                            ),
+                          ),
+                    _loadingNfts
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                              color: TibaneColors.orange,
+                            ),
+                          )
+                        : RefreshIndicator(
+                            color: TibaneColors.orange,
+                            onRefresh: _loadNfts,
+                            child: _NftsList(
+                              nfts: _nfts,
+                              onToggle: (nft) =>
+                                  setState(() => nft.selected = !nft.selected),
+                              onToggleAll: _toggleAllNfts,
+                            ),
+                          ),
+                    _loadingDomains
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                              color: TibaneColors.orange,
+                            ),
+                          )
+                        : RefreshIndicator(
+                            color: TibaneColors.orange,
+                            onRefresh: _loadDomains,
+                            child: _DomainsList(
+                              domains: _domains,
+                              onToggle: (domain) => setState(
+                                () => domain.selected = !domain.selected,
                               ),
-                        _loadingDomains
-                            ? const Center(child: CircularProgressIndicator(color: TibaneColors.orange))
-                            : _DomainsList(
-                                domains: _domains,
-                                onToggle: (domain) => setState(() => domain.selected = !domain.selected),
-                                onToggleAll: _toggleAllDomains,
-                              ),
-                      ],
-                    ),
+                              onToggleAll: _toggleAllDomains,
+                            ),
+                          ),
+                  ],
+                ),
         ),
         // Bottom action bar
         if (wallet.isConnected && _selectedCount > 0)
@@ -774,11 +959,17 @@ class _NotConnectedView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.account_balance_wallet_outlined, size: 48, color: TibaneColors.textDim),
+            Icon(
+              Icons.account_balance_wallet_outlined,
+              size: 48,
+              color: TibaneColors.textDim,
+            ),
             const SizedBox(height: 16),
             Text(
               'Connect your wallet to view your tokens',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: TibaneColors.textMuted),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(color: TibaneColors.textMuted),
               textAlign: TextAlign.center,
             ),
           ],
@@ -802,9 +993,17 @@ class _ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, size: 48, color: TibaneColors.error),
+            const Icon(
+              Icons.error_outline,
+              size: 48,
+              color: TibaneColors.error,
+            ),
             const SizedBox(height: 16),
-            Text(error, style: const TextStyle(color: TibaneColors.textMuted), textAlign: TextAlign.center),
+            Text(
+              error,
+              style: const TextStyle(color: TibaneColors.textMuted),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 16),
             OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
           ],
@@ -820,12 +1019,30 @@ class _TokensList extends StatelessWidget {
   final void Function(bool?) onToggleAll;
   final void Function(TokenAccount)? onPartialBurn;
 
-  const _TokensList({required this.accounts, required this.onToggle, required this.onToggleAll, this.onPartialBurn});
+  const _TokensList({
+    required this.accounts,
+    required this.onToggle,
+    required this.onToggleAll,
+    this.onPartialBurn,
+  });
 
   @override
   Widget build(BuildContext context) {
     if (accounts.isEmpty) {
-      return const Center(child: Text('No token accounts found', style: TextStyle(color: TibaneColors.textMuted)));
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: const [
+          SizedBox(
+            height: 240,
+            child: Center(
+              child: Text(
+                'No token accounts found',
+                style: TextStyle(color: TibaneColors.textMuted),
+              ),
+            ),
+          ),
+        ],
+      );
     }
 
     final emptyAccounts = accounts.where((a) => a.isEmpty).toList();
@@ -833,33 +1050,62 @@ class _TokensList extends StatelessWidget {
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 20),
+      physics: const AlwaysScrollableScrollPhysics(),
       children: [
         Row(
           children: [
             Checkbox(
-              value: accounts.every((a) => a.selected) ? true : accounts.any((a) => a.selected) ? null : false,
-              tristate: true, onChanged: onToggleAll, activeColor: TibaneColors.orange,
+              value: accounts.every((a) => a.selected)
+                  ? true
+                  : accounts.any((a) => a.selected)
+                  ? null
+                  : false,
+              tristate: true,
+              onChanged: onToggleAll,
+              activeColor: TibaneColors.orange,
             ),
-            Text('${accounts.length} accounts', style: monoStyle(fontSize: 12, color: TibaneColors.textMuted)),
+            Text(
+              '${accounts.length} accounts',
+              style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
+            ),
             const Spacer(),
-            Text('${emptyAccounts.length} empty', style: monoStyle(fontSize: 12, color: TibaneColors.textDim)),
+            Text(
+              '${emptyAccounts.length} empty',
+              style: monoStyle(fontSize: 12, color: TibaneColors.textDim),
+            ),
           ],
         ),
         const SizedBox(height: 8),
         if (emptyAccounts.isNotEmpty) ...[
-          Padding(padding: const EdgeInsets.only(bottom: 8),
-            child: Text('EMPTY ACCOUNTS', style: monoStyle(fontSize: 10, color: TibaneColors.textDim))),
-          ...emptyAccounts.map((a) => _TokenAccountTile(account: a, onToggle: () => onToggle(a))),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'EMPTY ACCOUNTS',
+              style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+            ),
+          ),
+          ...emptyAccounts.map(
+            (a) => _TokenAccountTile(account: a, onToggle: () => onToggle(a)),
+          ),
           const SizedBox(height: 16),
         ],
         if (nonEmptyAccounts.isNotEmpty) ...[
-          Padding(padding: const EdgeInsets.only(bottom: 8),
-            child: Text('TOKENS', style: monoStyle(fontSize: 10, color: TibaneColors.textDim))),
-          ...nonEmptyAccounts.map((a) => _TokenAccountTile(
-            account: a,
-            onToggle: () => onToggle(a),
-            onLongPress: onPartialBurn != null ? () => onPartialBurn!(a) : null,
-          )),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'TOKENS',
+              style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+            ),
+          ),
+          ...nonEmptyAccounts.map(
+            (a) => _TokenAccountTile(
+              account: a,
+              onToggle: () => onToggle(a),
+              onLongPress: onPartialBurn != null
+                  ? () => onPartialBurn!(a)
+                  : null,
+            ),
+          ),
         ],
       ],
     );
@@ -871,7 +1117,11 @@ class _TokenAccountTile extends StatelessWidget {
   final VoidCallback onToggle;
   final VoidCallback? onLongPress;
 
-  const _TokenAccountTile({required this.account, required this.onToggle, this.onLongPress});
+  const _TokenAccountTile({
+    required this.account,
+    required this.onToggle,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -885,49 +1135,102 @@ class _TokenAccountTile extends StatelessWidget {
           child: Row(
             children: [
               Checkbox(
-                value: account.selected, onChanged: (_) => onToggle(),
+                value: account.selected,
+                onChanged: (_) => onToggle(),
                 activeColor: TibaneColors.orange,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap, visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
               ),
               const SizedBox(width: 8),
               Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(color: TibaneColors.darker, borderRadius: BorderRadius.circular(8)),
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: TibaneColors.darker,
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 child: account.imageUrl != null
-                    ? ClipRRect(borderRadius: BorderRadius.circular(8),
-                        child: Image.network(account.imageUrl!, width: 36, height: 36, fit: BoxFit.cover,
-                          errorBuilder: (_, e, s) => const Icon(Icons.token, size: 18, color: TibaneColors.textDim)))
-                    : const Icon(Icons.token, size: 18, color: TibaneColors.textDim),
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          account.imageUrl!,
+                          width: 36,
+                          height: 36,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, e, s) => const Icon(
+                            Icons.token,
+                            size: 18,
+                            color: TibaneColors.textDim,
+                          ),
+                        ),
+                      )
+                    : const Icon(
+                        Icons.token,
+                        size: 18,
+                        color: TibaneColors.textDim,
+                      ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(account.displayName,
-                      style: const TextStyle(color: TibaneColors.text, fontSize: 14, fontWeight: FontWeight.w500),
-                      overflow: TextOverflow.ellipsis),
-                    Text(account.isEmpty ? 'Empty account' : formatTokenAmount(account.amount, account.decimals),
-                      style: monoStyle(fontSize: 11, color: account.isEmpty ? TibaneColors.textDim : TibaneColors.textMuted)),
+                    Text(
+                      account.displayName,
+                      style: const TextStyle(
+                        color: TibaneColors.text,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      account.isEmpty
+                          ? 'Empty account'
+                          : formatTokenAmount(account.amount, account.decimals),
+                      style: monoStyle(
+                        fontSize: 11,
+                        color: account.isEmpty
+                            ? TibaneColors.textDim
+                            : TibaneColors.textMuted,
+                      ),
+                    ),
                   ],
                 ),
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('${account.rentSol.toStringAsFixed(4)} SOL', style: monoStyle(fontSize: 11, color: TibaneColors.gold)),
+                  Text(
+                    '${account.rentSol.toStringAsFixed(4)} SOL',
+                    style: monoStyle(fontSize: 11, color: TibaneColors.gold),
+                  ),
                   if (account.usdPrice != null && !account.isEmpty)
                     Text(
                       '\$${(account.displayAmount * account.usdPrice!).toStringAsFixed(2)}',
-                      style: monoStyle(fontSize: 9, color: TibaneColors.textDim),
+                      style: monoStyle(
+                        fontSize: 9,
+                        color: TibaneColors.textDim,
+                      ),
                     ),
                   if (account.isToken2022)
                     Container(
                       margin: const EdgeInsets.only(top: 2),
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 1,
+                      ),
                       decoration: BoxDecoration(
-                        color: TibaneColors.purple.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(3)),
-                      child: Text('T22', style: monoStyle(fontSize: 8, color: TibaneColors.purple)),
+                        color: TibaneColors.purple.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(
+                        'T22',
+                        style: monoStyle(
+                          fontSize: 8,
+                          color: TibaneColors.purple,
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -944,26 +1247,56 @@ class _NftsList extends StatelessWidget {
   final void Function(NftItem) onToggle;
   final void Function(bool?) onToggleAll;
 
-  const _NftsList({required this.nfts, required this.onToggle, required this.onToggleAll});
+  const _NftsList({
+    required this.nfts,
+    required this.onToggle,
+    required this.onToggleAll,
+  });
 
   @override
   Widget build(BuildContext context) {
     if (nfts.isEmpty) {
-      return const Center(child: Text('No NFTs found', style: TextStyle(color: TibaneColors.textMuted)));
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: const [
+          SizedBox(
+            height: 240,
+            child: Center(
+              child: Text(
+                'No NFTs found',
+                style: TextStyle(color: TibaneColors.textMuted),
+              ),
+            ),
+          ),
+        ],
+      );
     }
 
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 20),
       children: [
         Row(
           children: [
             Checkbox(
-              value: nfts.every((n) => n.selected) ? true : nfts.any((n) => n.selected) ? null : false,
-              tristate: true, onChanged: onToggleAll, activeColor: TibaneColors.orange,
+              value: nfts.every((n) => n.selected)
+                  ? true
+                  : nfts.any((n) => n.selected)
+                  ? null
+                  : false,
+              tristate: true,
+              onChanged: onToggleAll,
+              activeColor: TibaneColors.orange,
             ),
-            Text('${nfts.length} NFTs', style: monoStyle(fontSize: 12, color: TibaneColors.textMuted)),
+            Text(
+              '${nfts.length} NFTs',
+              style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
+            ),
             const Spacer(),
-            Text('${nfts.where((n) => n.compressed).length} compressed', style: monoStyle(fontSize: 12, color: TibaneColors.textDim)),
+            Text(
+              '${nfts.where((n) => n.compressed).length} compressed',
+              style: monoStyle(fontSize: 12, color: TibaneColors.textDim),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -989,31 +1322,63 @@ class _NftTile extends StatelessWidget {
         child: Row(
           children: [
             Checkbox(
-              value: nft.selected, onChanged: (_) => onToggle(),
+              value: nft.selected,
+              onChanged: (_) => onToggle(),
               activeColor: TibaneColors.orange,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap, visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
             ),
             const SizedBox(width: 8),
             Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(color: TibaneColors.darker, borderRadius: BorderRadius.circular(8)),
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: TibaneColors.darker,
+                borderRadius: BorderRadius.circular(8),
+              ),
               child: nft.image != null
-                  ? ClipRRect(borderRadius: BorderRadius.circular(8),
-                      child: Image.network(nft.image!, width: 36, height: 36, fit: BoxFit.cover,
-                        errorBuilder: (_, e, s) => const Icon(Icons.image, size: 18, color: TibaneColors.textDim)))
-                  : const Icon(Icons.image, size: 18, color: TibaneColors.textDim),
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        nft.image!,
+                        width: 36,
+                        height: 36,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, e, s) => const Icon(
+                          Icons.image,
+                          size: 18,
+                          color: TibaneColors.textDim,
+                        ),
+                      ),
+                    )
+                  : const Icon(
+                      Icons.image,
+                      size: 18,
+                      color: TibaneColors.textDim,
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(nft.name,
-                    style: const TextStyle(color: TibaneColors.text, fontSize: 14, fontWeight: FontWeight.w500),
-                    overflow: TextOverflow.ellipsis),
+                  Text(
+                    nft.name,
+                    style: const TextStyle(
+                      color: TibaneColors.text,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   if (nft.collection != null)
-                    Text(shortenAddress(nft.collection!, chars: 4),
-                      style: monoStyle(fontSize: 11, color: TibaneColors.textMuted)),
+                    Text(
+                      shortenAddress(nft.collection!, chars: 4),
+                      style: monoStyle(
+                        fontSize: 11,
+                        color: TibaneColors.textMuted,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1021,16 +1386,33 @@ class _NftTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 if (nft.rentLamports > 0)
-                  Text('${(nft.rentLamports / 1e9).toStringAsFixed(4)} SOL',
-                    style: monoStyle(fontSize: 11, color: TibaneColors.gold)),
+                  Text(
+                    '${(nft.rentLamports / 1e9).toStringAsFixed(4)} SOL',
+                    style: monoStyle(fontSize: 11, color: TibaneColors.gold),
+                  ),
                 Container(
                   margin: const EdgeInsets.only(top: 2),
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
-                    color: (nft.compressed ? TibaneColors.cyan : TibaneColors.purple).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(3)),
-                  child: Text(nft.compressed ? 'cNFT' : 'NFT',
-                    style: monoStyle(fontSize: 8, color: nft.compressed ? TibaneColors.cyan : TibaneColors.purple)),
+                    color:
+                        (nft.compressed
+                                ? TibaneColors.cyan
+                                : TibaneColors.purple)
+                            .withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    nft.compressed ? 'cNFT' : 'NFT',
+                    style: monoStyle(
+                      fontSize: 8,
+                      color: nft.compressed
+                          ? TibaneColors.cyan
+                          : TibaneColors.purple,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -1046,28 +1428,57 @@ class _DomainsList extends StatelessWidget {
   final void Function(DomainItem) onToggle;
   final void Function(bool?) onToggleAll;
 
-  const _DomainsList({required this.domains, required this.onToggle, required this.onToggleAll});
+  const _DomainsList({
+    required this.domains,
+    required this.onToggle,
+    required this.onToggleAll,
+  });
 
   @override
   Widget build(BuildContext context) {
     if (domains.isEmpty) {
-      return const Center(child: Text('No domains found', style: TextStyle(color: TibaneColors.textMuted)));
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: const [
+          SizedBox(
+            height: 240,
+            child: Center(
+              child: Text(
+                'No domains found',
+                style: TextStyle(color: TibaneColors.textMuted),
+              ),
+            ),
+          ),
+        ],
+      );
     }
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 20),
+      physics: const AlwaysScrollableScrollPhysics(),
       children: [
         Row(
           children: [
             Checkbox(
-              value: domains.every((d) => d.selected) ? true : domains.any((d) => d.selected) ? null : false,
-              tristate: true, onChanged: onToggleAll, activeColor: TibaneColors.orange,
+              value: domains.every((d) => d.selected)
+                  ? true
+                  : domains.any((d) => d.selected)
+                  ? null
+                  : false,
+              tristate: true,
+              onChanged: onToggleAll,
+              activeColor: TibaneColors.orange,
             ),
-            Text('${domains.length} domains', style: monoStyle(fontSize: 12, color: TibaneColors.textMuted)),
+            Text(
+              '${domains.length} domains',
+              style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
+            ),
           ],
         ),
         const SizedBox(height: 8),
-        ...domains.map((d) => _DomainTile(domain: d, onToggle: () => onToggle(d))),
+        ...domains.map(
+          (d) => _DomainTile(domain: d, onToggle: () => onToggle(d)),
+        ),
       ],
     );
   }
@@ -1089,24 +1500,42 @@ class _DomainTile extends StatelessWidget {
         child: Row(
           children: [
             Checkbox(
-              value: domain.selected, onChanged: (_) => onToggle(),
+              value: domain.selected,
+              onChanged: (_) => onToggle(),
               activeColor: TibaneColors.orange,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap, visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
             ),
             const SizedBox(width: 8),
             Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(color: TibaneColors.darker, borderRadius: BorderRadius.circular(8)),
-              child: const Icon(Icons.language, size: 18, color: TibaneColors.textDim),
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: TibaneColors.darker,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.language,
+                size: 18,
+                color: TibaneColors.textDim,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(domain.name,
-                style: const TextStyle(color: TibaneColors.text, fontSize: 14, fontWeight: FontWeight.w500),
-                overflow: TextOverflow.ellipsis),
+              child: Text(
+                domain.name,
+                style: const TextStyle(
+                  color: TibaneColors.text,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            Text('${(domain.rentLamports / 1e9).toStringAsFixed(4)} SOL',
-              style: monoStyle(fontSize: 11, color: TibaneColors.gold)),
+            Text(
+              '${(domain.rentLamports / 1e9).toStringAsFixed(4)} SOL',
+              style: monoStyle(fontSize: 11, color: TibaneColors.gold),
+            ),
           ],
         ),
       ),
@@ -1160,10 +1589,20 @@ class _BottomBar extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('$selectedCount selected',
-                        style: const TextStyle(color: TibaneColors.text, fontWeight: FontWeight.w600)),
-                      Text('Reclaim ${formatSol(reclaimableSol)} SOL',
-                        style: monoStyle(fontSize: 12, color: TibaneColors.gold)),
+                      Text(
+                        '$selectedCount selected',
+                        style: const TextStyle(
+                          color: TibaneColors.text,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        'Reclaim ${formatSol(reclaimableSol)} SOL',
+                        style: monoStyle(
+                          fontSize: 12,
+                          color: TibaneColors.gold,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1173,7 +1612,13 @@ class _BottomBar extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('Sponsored', style: monoStyle(fontSize: 11, color: TibaneColors.textMuted)),
+                        Text(
+                          'Sponsored',
+                          style: monoStyle(
+                            fontSize: 11,
+                            color: TibaneColors.textMuted,
+                          ),
+                        ),
                         const SizedBox(width: 4),
                         SizedBox(
                           height: 24,
@@ -1181,7 +1626,8 @@ class _BottomBar extends StatelessWidget {
                             value: sponsoredMode,
                             onChanged: burning ? null : onToggleSponsored,
                             activeTrackColor: TibaneColors.orange,
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
                           ),
                         ),
                       ],
@@ -1196,8 +1642,13 @@ class _BottomBar extends StatelessWidget {
               Row(
                 children: [
                   Text(
-                    tipPercent.round() == 0 ? 'Tip: Minimum' : 'Tip: ${tipPercent.round()}%',
-                    style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+                    tipPercent.round() == 0
+                        ? 'Tip: Minimum'
+                        : 'Tip: ${tipPercent.round()}%',
+                    style: monoStyle(
+                      fontSize: 11,
+                      color: TibaneColors.textMuted,
+                    ),
                   ),
                   Expanded(
                     child: Slider(
@@ -1229,8 +1680,13 @@ class _BottomBar extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text('$sponsoredCurrent/$sponsoredTotal',
-                    style: monoStyle(fontSize: 11, color: TibaneColors.textMuted)),
+                  Text(
+                    '$sponsoredCurrent/$sponsoredTotal',
+                    style: monoStyle(
+                      fontSize: 11,
+                      color: TibaneColors.textMuted,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 8),
