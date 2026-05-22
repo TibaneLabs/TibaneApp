@@ -37,10 +37,17 @@ class _WalletDashboardState extends State<WalletDashboard> {
   @override
   void initState() {
     super.initState();
+    _walletRef = context.read<WalletService>();
+    // Prime from the per-address cache so a returning user sees their
+    // last-known activity immediately while the background fetch runs.
+    final cached = _walletRef!.cachedTxsFor(_walletRef!.publicKey);
+    if (cached != null) {
+      _transactions = cached;
+      _loadingTxs = false;
+    }
     _loadData();
     _subscribeHistory();
     // Reload on every "tx just committed" event from the swap/send flows.
-    _walletRef = context.read<WalletService>();
     _walletRef!.swapCommittedTick.addListener(_onTxCommitted);
     // Register any on-chain tokens libwallet's auto-discovery missed so
     // they appear in the TOKENS section. Runs concurrently with the
@@ -95,7 +102,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
     try {
       final results = await Future.wait([
         lw.getAssets(),
-        lw.getTransactions(limit: 50),
+        lw.getTransactions(limit: 50, forAddress: addr),
         if (addr != null)
           _jupiter.fetchHoldings(addr, excludeMint: wsolMint)
         else
@@ -111,6 +118,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
         'assets=${assets.length} holdings=${holdings.length} '
         'txs=${txs.length}',
       );
+      if (addr != null) wallet.cacheTxsFor(addr, txs);
       setState(() {
         _assets = assets;
         _transactions = txs;

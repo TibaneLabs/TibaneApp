@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
-import 'package:libwallet/libwallet.dart' show NetworkType;
+import 'package:libwallet/libwallet.dart' show NetworkType, Transaction;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/solana_constants.dart';
@@ -152,6 +152,30 @@ class WalletService extends ChangeNotifier {
   /// the wallet dashboard so it reloads assets + tx history without waiting
   /// for the txHistoryUpdates stream to fire.
   final ValueNotifier<int> swapCommittedTick = ValueNotifier(0);
+
+  /// In-memory per-address transaction cache. libwallet's local table is
+  /// shared across every wallet ever created on this device and the
+  /// shared-table window can push an underused wallet's history off the
+  /// first page; keeping the most recent filtered result per address
+  /// means switching back to that wallet renders the cached rows
+  /// immediately instead of re-paginating the shared table.
+  final Map<String, List<Transaction>> _txCacheByAddress = {};
+
+  /// Cached transactions for [address], or `null` if nothing has been
+  /// loaded yet for this wallet in the current process. The dashboard
+  /// reads this on mount for an instant render before its background
+  /// fetch lands.
+  List<Transaction>? cachedTxsFor(String? address) {
+    if (address == null || address.isEmpty) return null;
+    return _txCacheByAddress[address];
+  }
+
+  /// Replace the cached transactions for [address] with the result of
+  /// a fresh fetch.
+  void cacheTxsFor(String address, List<Transaction> txs) {
+    if (address.isEmpty) return;
+    _txCacheByAddress[address] = List.unmodifiable(txs);
+  }
 
   /// Call from any flow that knows a tx just committed (swap, send, …) to
   /// kick downstream views into a refresh.
