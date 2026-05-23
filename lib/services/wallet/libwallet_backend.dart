@@ -686,10 +686,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         notifyListeners();
         return null;
       }
-      return await client.remoteKeys.reshare(
-        key: remoteKey.key,
-        curve: wallet.curve,
-      );
+      // As of libwallet 0.4.41 reshare takes no curve — the backend
+      // derives it from the remote key record, removing the foot-gun
+      // where a host-side defaulted wallet.curve mis-routed the
+      // ceremony into the wrong curve/protocol.
+      return await client.remoteKeys.reshare(key: remoteKey.key);
     } catch (e) {
       _error = 'Reshare failed to start: $e';
       debugPrint(_error);
