@@ -433,10 +433,10 @@ packages:
     dependency: "direct main"
     description:
       name: libwallet
-      sha256: ae86e388e1d394e44719b14b13b9d8dbd0a61c22b9116dfd53ff75421e1f6a83
+      sha256: "526958c8a095cf0d0595bc39e464909daa0c0cefcee8dc23e6c3cc413835cc66"
       url: "https://pub.dev"
     source: hosted
-    version: "0.4.42"
+    version: "0.4.44"
   lints:
     dependency: transitive
     description:
