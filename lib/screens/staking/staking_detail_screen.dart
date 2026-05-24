@@ -145,26 +145,27 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
         ),
         actions: [
           if (!context.watch<UkComplianceService>().isUk)
-            TextButton(
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => Scaffold(
-                    backgroundColor: TibaneColors.black,
-                    appBar: AppBar(title: const Text('Swap')),
-                    body: SwapScreen(
-                      initialInputMint: wsolMint,
-                      initialOutputMint: pool.mint,
-                      initialOutputSymbol: pool.tokenSymbol,
-                      initialOutputName: pool.tokenName,
-                      initialOutputImageUrl: pool.tokenImage,
-                      initialOutputDecimals: pool.tokenDecimals,
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: AccentButton(
+                label: 'SWAP',
+                icon: Icons.swap_horiz,
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => Scaffold(
+                      backgroundColor: TibaneColors.black,
+                      appBar: AppBar(title: const Text('Swap')),
+                      body: SwapScreen(
+                        initialInputMint: wsolMint,
+                        initialOutputMint: pool.mint,
+                        initialOutputSymbol: pool.tokenSymbol,
+                        initialOutputName: pool.tokenName,
+                        initialOutputImageUrl: pool.tokenImage,
+                        initialOutputDecimals: pool.tokenDecimals,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              child: Text(
-                'SWAP',
-                style: monoStyle(fontSize: 11, color: TibaneColors.orange),
               ),
             ),
           IconButton(

@@ -86,6 +86,62 @@ class GradientButton extends StatelessWidget {
   }
 }
 
+/// Compact accent-tinted outlined button for inline placements:
+/// AppBar actions, section header CTAs, anywhere a full-height
+/// [SecondaryButton] would crowd the space but a bare [TextButton]
+/// wouldn't read as tappable.
+///
+/// Defaults to the brand orange — pass [color] for variants
+/// (cyan for "live"/success affordances, gold for staking accents,
+/// etc.). Optional [icon] sits before the label at 14px.
+class AccentButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onPressed;
+  final IconData? icon;
+  final Color color;
+
+  const AccentButton({
+    super.key,
+    required this.label,
+    this.onPressed,
+    this.icon,
+    this.color = TibaneColors.orange,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final labelWidget = Text(
+      label,
+      style: monoStyle(fontSize: 11, color: color).copyWith(
+        fontWeight: FontWeight.w600,
+      ),
+    );
+    final style = OutlinedButton.styleFrom(
+      foregroundColor: color,
+      side: BorderSide(color: color.withValues(alpha: 0.5)),
+      backgroundColor: color.withValues(alpha: 0.08),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      minimumSize: const Size(0, 32),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+    );
+    if (icon == null) {
+      return OutlinedButton(
+        onPressed: onPressed,
+        style: style,
+        child: labelWidget,
+      );
+    }
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 14),
+      label: labelWidget,
+      style: style,
+    );
+  }
+}
+
 /// Secondary button with card background
 class SecondaryButton extends StatelessWidget {
   final String label;
