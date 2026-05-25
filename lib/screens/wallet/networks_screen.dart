@@ -170,17 +170,66 @@ class _NetworkRow extends StatelessWidget {
     }
   }
 
+  /// Bundled logo for [net], or null when we don't have one — caller
+  /// falls back to [_icon]. EVM chains are matched by chainId
+  /// (Ethereum / BNB / Polygon); Bitcoin-family chains are matched
+  /// by the currency ticker (LTC / DOGE; plain BTC has no asset).
+  String? get _logoAsset {
+    switch (net.type) {
+      case NetworkType.solana:
+        return 'assets/icons/solana-sol-logo-orange-network.png';
+      case NetworkType.evm:
+        switch (net.chainId) {
+          case '1':
+            return 'assets/icons/ethereum-eth-logo-orange-network.png';
+          case '56':
+            return 'assets/icons/bnb-bnb-logo-orange-network.png';
+          case '137':
+            return 'assets/icons/polygon-matic-logo-orange-network.png';
+          default:
+            return null;
+        }
+      case NetworkType.bitcoin:
+        switch (net.currencySymbol.toUpperCase()) {
+          case 'LTC':
+            return 'assets/icons/litecoin-ltc-logo-orange-network.png';
+          case 'DOGE':
+            return 'assets/icons/dogecoin-doge-logo-orange-network.png';
+          default:
+            return null;
+        }
+      case NetworkType.unknown:
+        return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final asset = _logoAsset;
+    final activeTint = active ? TibaneColors.orange : TibaneColors.textMuted;
     return TibaneCard(
       onTap: switching ? null : onTap,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
-          Icon(
-            _icon,
-            color: active ? TibaneColors.orange : TibaneColors.textMuted,
-            size: 22,
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: asset != null
+                ? Opacity(
+                    // Dim inactive rows so the active network still pops,
+                    // mirroring how the Icon variant uses orange vs muted.
+                    opacity: active ? 1.0 : 0.55,
+                    child: Image.asset(
+                      asset,
+                      width: 28,
+                      height: 28,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, e, s) =>
+                          Icon(_icon, color: activeTint, size: 22),
+                    ),
+                  )
+                : Icon(_icon, color: activeTint, size: 22),
           ),
           const SizedBox(width: 12),
           Expanded(
