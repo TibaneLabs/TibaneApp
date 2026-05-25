@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../widgets/network_logos.dart';
 import '../../widgets/tibane_card.dart';
 
 /// List every libwallet-configured network with the active one highlighted.
@@ -172,15 +173,31 @@ class _NetworkRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final asset = networkLogoAsset(net);
+    final activeTint = active ? TibaneColors.orange : TibaneColors.textMuted;
     return TibaneCard(
       onTap: switching ? null : onTap,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
-          Icon(
-            _icon,
-            color: active ? TibaneColors.orange : TibaneColors.textMuted,
-            size: 22,
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: asset != null
+                ? Opacity(
+                    // Dim inactive rows so the active network still pops,
+                    // mirroring how the Icon variant uses orange vs muted.
+                    opacity: active ? 1.0 : 0.55,
+                    child: Image.asset(
+                      asset,
+                      width: 28,
+                      height: 28,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, e, s) =>
+                          Icon(_icon, color: activeTint, size: 22),
+                    ),
+                  )
+                : Icon(_icon, color: activeTint, size: 22),
           ),
           const SizedBox(width: 12),
           Expanded(

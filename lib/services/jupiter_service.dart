@@ -28,11 +28,7 @@ class CommonToken {
 }
 
 const commonTokens = [
-  CommonToken(
-    mint: wsolMint,
-    symbol: 'SOL',
-    name: 'Solana',
-  ),
+  CommonToken(mint: wsolMint, symbol: 'SOL', name: 'Solana'),
   CommonToken(
     mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
     symbol: 'USDC',
@@ -113,7 +109,10 @@ class JupiterService {
   };
 
   /// Fetch all token holdings for a wallet address
-  Future<List<TokenHolding>> fetchHoldings(String walletAddress, {String? excludeMint}) async {
+  Future<List<TokenHolding>> fetchHoldings(
+    String walletAddress, {
+    String? excludeMint,
+  }) async {
     final rpc = RpcService();
     try {
       // Fetch SPL and Token2022 accounts in parallel
@@ -128,7 +127,8 @@ class JupiterService {
       final solBalance = results[2] as BigInt;
 
       // Parse token accounts
-      final raw = <({String mint, BigInt balance, int decimals, double uiBalance})>[];
+      final raw =
+          <({String mint, BigInt balance, int decimals, double uiBalance})>[];
 
       for (final acc in [...splAccounts, ...t22Accounts]) {
         if (acc.amount <= BigInt.zero) continue;
@@ -143,7 +143,9 @@ class JupiterService {
       }
 
       // Add native SOL (reserve ~0.01 for fees)
-      final usableSol = solBalance > BigInt.from(10000000) ? solBalance - BigInt.from(10000000) : BigInt.zero;
+      final usableSol = solBalance > BigInt.from(10000000)
+          ? solBalance - BigInt.from(10000000)
+          : BigInt.zero;
       if (usableSol > BigInt.zero && excludeMint != wsolMint) {
         raw.add((
           mint: wsolMint,
@@ -161,7 +163,9 @@ class JupiterService {
       final priceFuture = fetchTokenPrices(mints);
       final results2 = await Future.wait([metaFuture, priceFuture]);
 
-      final metaMap = results2[0] as Map<String, ({String name, String symbol, String? image})>;
+      final metaMap =
+          results2[0]
+              as Map<String, ({String name, String symbol, String? image})>;
       final priceMap = results2[1] as Map<String, double>;
 
       final holdings = <TokenHolding>[];
@@ -170,22 +174,25 @@ class JupiterService {
         final price = priceMap[r.mint];
         final valueUsd = price != null ? r.uiBalance * price : null;
 
-        holdings.add(TokenHolding(
-          mint: r.mint,
-          symbol: meta?.symbol ?? shortenAddress(r.mint),
-          name: meta?.name ?? r.mint,
-          imageUrl: meta?.image,
-          balance: r.balance,
-          decimals: r.decimals,
-          uiBalance: r.uiBalance,
-          priceUsd: price,
-          valueUsd: valueUsd,
-        ));
+        holdings.add(
+          TokenHolding(
+            mint: r.mint,
+            symbol: meta?.symbol ?? shortenAddress(r.mint),
+            name: meta?.name ?? r.mint,
+            imageUrl: meta?.image,
+            balance: r.balance,
+            decimals: r.decimals,
+            uiBalance: r.uiBalance,
+            priceUsd: price,
+            valueUsd: valueUsd,
+          ),
+        );
       }
 
       // Sort by USD value descending, then by balance
       holdings.sort((a, b) {
-        if (a.valueUsd != null && b.valueUsd != null) return b.valueUsd!.compareTo(a.valueUsd!);
+        if (a.valueUsd != null && b.valueUsd != null)
+          return b.valueUsd!.compareTo(a.valueUsd!);
         if (a.valueUsd != null) return -1;
         if (b.valueUsd != null) return 1;
         return b.uiBalance.compareTo(a.uiBalance);
@@ -198,9 +205,8 @@ class JupiterService {
   }
 
   /// Fetch metadata for tokens via Helius DAS
-  Future<Map<String, ({String name, String symbol, String? image})>> _fetchTokenMetadata(
-    List<String> mints, RpcService rpc,
-  ) async {
+  Future<Map<String, ({String name, String symbol, String? image})>>
+  _fetchTokenMetadata(List<String> mints, RpcService rpc) async {
     final map = <String, ({String name, String symbol, String? image})>{};
     // Handle SOL specially
     map[wsolMint] = (name: 'Solana', symbol: 'SOL', image: null);
@@ -271,29 +277,40 @@ class JupiterService {
       'referralFee': _referralFee,
     };
 
-    final uri = Uri.parse('$_jupiterApi/ultra/v1/order').replace(queryParameters: params);
+    final uri = Uri.parse(
+      '$_jupiterApi/ultra/v1/order',
+    ).replace(queryParameters: params);
     final response = await _client.get(uri, headers: _getHeaders);
 
     if (response.statusCode != 200) {
-      throw Exception(response.body.isNotEmpty ? response.body : 'Failed to get quote');
+      throw Exception(
+        response.body.isNotEmpty ? response.body : 'Failed to get quote',
+      );
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
 
     if (data['transaction'] == null) {
-      throw Exception(data['error'] as String? ?? 'No route found for this swap');
+      throw Exception(
+        data['error'] as String? ?? 'No route found for this swap',
+      );
     }
 
     final outAmount = BigInt.parse(data['outAmount'] as String);
-    final outUi = outAmount.toDouble() / BigInt.from(10).pow(outputDecimals).toDouble();
+    final outUi =
+        outAmount.toDouble() / BigInt.from(10).pow(outputDecimals).toDouble();
 
     return SwapQuote(
       inAmount: data['inAmount'] as String,
       outAmount: data['outAmount'] as String,
       outAmountUi: outUi,
       priceImpactPct: (data['priceImpactPct'] as String?) ?? '0',
-      inUsdValue: data['inUsdValue'] is num ? (data['inUsdValue'] as num).toDouble() : null,
-      outUsdValue: data['outUsdValue'] is num ? (data['outUsdValue'] as num).toDouble() : null,
+      inUsdValue: data['inUsdValue'] is num
+          ? (data['inUsdValue'] as num).toDouble()
+          : null,
+      outUsdValue: data['outUsdValue'] is num
+          ? (data['outUsdValue'] as num).toDouble()
+          : null,
       gasless: data['gasless'] == true,
       requestId: data['requestId'] as String,
       transaction: data['transaction'] as String,
@@ -322,8 +339,8 @@ class JupiterService {
 
     throw Exception(
       result['error'] as String? ??
-      result['message'] as String? ??
-      'Swap failed: ${result['status'] ?? 'unknown'}',
+          result['message'] as String? ??
+          'Swap failed: ${result['status'] ?? 'unknown'}',
     );
   }
 
