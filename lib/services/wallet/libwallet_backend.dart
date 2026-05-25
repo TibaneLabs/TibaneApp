@@ -13,6 +13,24 @@ import '../solana_common.dart';
 import 'secure_keystore.dart';
 import 'wallet_backend.dart';
 
+/// Minimal token result shape returned by
+/// [LibwalletBackend.searchCuratedTokens] — symbol/name/mint/image,
+/// suitable for rendering directly in a list or wrapping into a
+/// [FavoriteToken] when navigating into a downstream screen.
+class TokenSearchResult {
+  final String mint;
+  final String? name;
+  final String? symbol;
+  final String? imageUrl;
+
+  const TokenSearchResult({
+    required this.mint,
+    this.name,
+    this.symbol,
+    this.imageUrl,
+  });
+}
+
 /// In-app MPC wallet backend. 2-of-3 TSS: device share + remote email share + password.
 ///
 /// Signing uses libwallet 0.3.5's direct `Account:sign*` endpoints with the
@@ -1106,6 +1124,67 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       lastPage = next;
     }
     return matches;
+  }
+
+  /// Cache of curated-token lists keyed by chainKey
+  /// (`"<type>.<chainId>"`). `listCurated` is local but still pays
+  /// JSON-decode cost on every call, and the list is stable within a
+  /// session.
+  final Map<String, List<CuratedToken>> _curatedCache = {};
+
+  /// Search libwallet's embedded curated-token registry by
+  /// case-insensitive substring match on symbol, name, or address.
+  /// Purely local — no RPC, no third-party HTTP. Backed by the
+  /// vetted per-chain list libwallet ships (Jupiter verified list
+  /// for Solana, Uniswap default list for EVM, etc.).
+  ///
+  /// [network] defaults to the active wallet's current network's
+  /// chainKey. If no network is loaded yet, returns an empty list.
+  Future<List<TokenSearchResult>> searchCuratedTokens(
+    String query, {
+    String? network,
+    int limit = 20,
+  }) async {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    final chainKey = network ?? _curatedChainKey();
+    if (chainKey == null) return const [];
+    final tokens = await _loadCurated(chainKey);
+    final results = <TokenSearchResult>[];
+    for (final t in tokens) {
+      if (t.symbol.toLowerCase().contains(q) ||
+          t.name.toLowerCase().contains(q) ||
+          t.address.toLowerCase().contains(q)) {
+        results.add(TokenSearchResult(
+          mint: t.address,
+          name: t.name,
+          symbol: t.symbol,
+          imageUrl: t.logoUri.isEmpty ? null : t.logoUri,
+        ));
+        if (results.length >= limit) break;
+      }
+    }
+    return results;
+  }
+
+  String? _curatedChainKey() {
+    final n = _currentNetwork;
+    if (n == null) return null;
+    return '${n.type.name}.${n.chainId}';
+  }
+
+  Future<List<CuratedToken>> _loadCurated(String chainKey) async {
+    final cached = _curatedCache[chainKey];
+    if (cached != null) return cached;
+    try {
+      final client = await _getClient();
+      final list = await client.tokens.listCurated(chainKey);
+      _curatedCache[chainKey] = list;
+      return list;
+    } catch (e) {
+      debugPrint('listCurated($chainKey) failed: $e');
+      return const [];
+    }
   }
 
   /// Re-fire libwallet's background tx-history backfill for the active

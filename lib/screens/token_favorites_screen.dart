@@ -6,9 +6,10 @@ import 'package:provider/provider.dart';
 import '../constants/solana_constants.dart';
 import '../models/staking_pool.dart';
 import '../services/favorites_service.dart';
-import '../services/jupiter_service.dart';
 import '../services/rpc_service.dart';
 import '../services/staker_instructions.dart';
+import '../services/wallet/libwallet_backend.dart';
+import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/tibane_card.dart';
 import 'staking/staking_detail_screen.dart';
@@ -27,7 +28,6 @@ class TokenFavoritesScreen extends StatefulWidget {
 class _TokenFavoritesScreenState extends State<TokenFavoritesScreen> {
   final _searchController = TextEditingController();
   final _rpc = RpcService();
-  final _jupiter = JupiterService();
   bool _loading = false;
 
   // Live ticker/name search state. The favorites list is hidden while
@@ -51,7 +51,6 @@ class _TokenFavoritesScreenState extends State<TokenFavoritesScreen> {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _rpc.dispose();
-    _jupiter.dispose();
     super.dispose();
   }
 
@@ -79,7 +78,8 @@ class _TokenFavoritesScreenState extends State<TokenFavoritesScreen> {
   Future<void> _runSearch(String query) async {
     final mySeq = ++_searchSeq;
     setState(() => _searching = true);
-    final results = await _jupiter.searchTokens(query);
+    final wallet = context.read<WalletService>();
+    final results = await wallet.libwallet.searchCuratedTokens(query);
     if (!mounted || mySeq != _searchSeq) return;
     setState(() {
       _results = results;

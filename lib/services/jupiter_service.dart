@@ -71,23 +71,6 @@ class TokenHolding {
   });
 }
 
-/// One row from a [JupiterService.searchTokens] call. Same shape as
-/// [FavoriteToken] minus the persistence concerns — callers can wrap
-/// in a FavoriteToken when navigating into a screen that wants one.
-class TokenSearchResult {
-  final String mint;
-  final String? name;
-  final String? symbol;
-  final String? imageUrl;
-
-  const TokenSearchResult({
-    required this.mint,
-    this.name,
-    this.symbol,
-    this.imageUrl,
-  });
-}
-
 /// Quote from Jupiter Ultra API
 class SwapQuote {
   final String inAmount;
@@ -244,46 +227,6 @@ class JupiterService {
       debugPrint('fetchTokenMetadata error: $e');
     }
     return map;
-  }
-
-  /// Search Jupiter's verified-token catalogue by ticker, name, or
-  /// mint substring. Returns a small list of best-match candidates
-  /// the caller can render. Returns an empty list on any error so
-  /// the UI just shows "no results" instead of an exception toast.
-  Future<List<TokenSearchResult>> searchTokens(
-    String query, {
-    int limit = 20,
-  }) async {
-    final q = query.trim();
-    if (q.isEmpty) return const [];
-    try {
-      final url =
-          '$_jupiterApi/tokens/v2/search'
-          '?query=${Uri.encodeQueryComponent(q)}';
-      final response = await _client.get(Uri.parse(url), headers: _getHeaders);
-      if (response.statusCode != 200) return const [];
-      final data = jsonDecode(response.body);
-      if (data is! List) return const [];
-      final results = <TokenSearchResult>[];
-      for (final raw in data) {
-        if (raw is! Map<String, dynamic>) continue;
-        final mint = (raw['address'] ?? raw['id']) as String?;
-        if (mint == null || mint.isEmpty) continue;
-        results.add(
-          TokenSearchResult(
-            mint: mint,
-            name: raw['name'] as String?,
-            symbol: raw['symbol'] as String?,
-            imageUrl: (raw['logoURI'] ?? raw['icon']) as String?,
-          ),
-        );
-        if (results.length >= limit) break;
-      }
-      return results;
-    } catch (e) {
-      debugPrint('searchTokens error: $e');
-      return const [];
-    }
   }
 
   /// Fetch token prices from Jupiter Price API
