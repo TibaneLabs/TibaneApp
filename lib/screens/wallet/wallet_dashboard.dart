@@ -11,6 +11,7 @@ import '../../services/jupiter_service.dart';
 import '../../services/uk_compliance_service.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../widgets/network_logos.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import '../swap_screen.dart';
@@ -265,12 +266,20 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 ),
               )
             else
-              ..._displayTokens(wallet).map(
-                (h) => Padding(
+              ..._displayTokens(wallet).map((h) {
+                final isNativeRow = h.mint.endsWith('.NATIVE');
+                final net = wallet.libwallet.currentNetwork;
+                final assetPath =
+                    isNativeRow && net != null ? networkLogoAsset(net) : null;
+                return Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: TibaneCard(
                     padding: const EdgeInsets.all(12),
-                    onTap: context.read<UkComplianceService>().isUk
+                    // Native rows aren't tappable — there's no "swap X
+                    // to X" path. SPL token rows keep the swap-to-SOL
+                    // shortcut behind the existing UK gate.
+                    onTap: (isNativeRow ||
+                            context.read<UkComplianceService>().isUk)
                         ? null
                         : () => _openSwap(
                             context,
@@ -281,6 +290,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                       children: [
                         TokenIcon(
                           imageUrl: h.imageUrl,
+                          assetPath: assetPath,
                           mint: h.mint,
                           symbol: h.symbol.isNotEmpty ? h.symbol : h.name,
                           size: 32,
@@ -333,8 +343,8 @@ class _WalletDashboardState extends State<WalletDashboard> {
                       ],
                     ),
                   ),
-                ),
-              ),
+                );
+              }),
           ] else ...[
             if (_loadingTxs)
               const Center(
@@ -364,31 +374,93 @@ class _WalletDashboardState extends State<WalletDashboard> {
   }
 
   /// Tokens to render in the Tokens tab. Always prepends a synthetic
-  /// SOL row on Solana-family networks (even when the balance is zero)
-  /// so SOL is visible as a sendable / receivable asset without users
-  /// having to look at the headline balance bar.
+  /// row for the active network's native asset (SOL / ETH / BNB /
+  /// MATIC / BTC / LTC / DOGE) — even when the balance is zero — so
+  /// the user can see and reach the network's native currency without
+  /// reading the headline balance bar.
+  ///
+  /// The row's symbol/name/balance/decimals come from the matching
+  /// `Asset` in `_assets` when it has loaded; otherwise the row falls
+  /// back to the network's `currencySymbol` and a zero balance so the
+  /// list isn't empty during the brief window before assets arrive.
+  /// `_holdings` is built with `excludeMint: wsolMint`, so the SPL
+  /// path never duplicates SOL.
   List<TokenHolding> _displayTokens(WalletService wallet) {
-    final isSolana =
-        wallet.libwallet.currentNetwork?.type == NetworkType.solana;
-    if (!isSolana) return _holdings;
-    // _holdings is built with `excludeMint: wsolMint`, so wSOL won't
-    // already be in the list; safe to prepend unconditionally.
-    final uiBalance = wallet.solBalance.toDouble() / 1e9;
-    final valueUsd = wallet.solFiatUsd;
-    final priceUsd = uiBalance > 0 ? valueUsd / uiBalance : null;
-    final sol = TokenHolding(
-      mint: wsolMint,
-      symbol: 'SOL',
-      name: 'Solana',
+    final native = _nativeRowForCurrentNetwork(wallet);
+    if (native == null) return _holdings;
+    return [native, ..._holdings];
+  }
+
+  TokenHolding? _nativeRowForCurrentNetwork(WalletService wallet) {
+    final net = wallet.libwallet.currentNetwork;
+    if (net == null) return null;
+    final mintKey = '${net.type.name}.${net.chainId}.NATIVE';
+
+    // Asset rows are what libwallet's getAssets returns; the native one
+    // is whichever entry has the .NATIVE suffix on its key and matches
+    // the active network. There is at most one per (account, network).
+    Asset? nativeAsset;
+    for (final a in _assets) {
+      if (a.isNative && a.network == net.id) {
+        nativeAsset = a;
+        break;
+      }
+    }
+
+    if (nativeAsset != null) {
+      final balance = nativeAsset.amount.value;
+      final decimals = nativeAsset.amount.exp;
+      final divisor = BigInt.from(10).pow(decimals);
+      final uiBalance =
+          decimals > 0 ? balance.toDouble() / divisor.toDouble() : balance.toDouble();
+      final valueUsd = nativeAsset.fiatAmount?.toDouble();
+      final priceUsd =
+          (uiBalance > 0 && valueUsd != null && valueUsd > 0) ? valueUsd / uiBalance : null;
+      return TokenHolding(
+        mint: mintKey,
+        symbol: nativeAsset.symbol.isNotEmpty ? nativeAsset.symbol : net.currencySymbol,
+        name: nativeAsset.name.isNotEmpty ? nativeAsset.name : net.name,
+        imageUrl: null,
+        balance: balance,
+        decimals: decimals,
+        uiBalance: uiBalance,
+        priceUsd: priceUsd,
+        valueUsd: (valueUsd != null && valueUsd > 0) ? valueUsd : null,
+      );
+    }
+
+    // Solana fallback: WalletService caches the SOL balance separately
+    // (refreshBalances populates it before getAssets returns), so we
+    // can render a populated row even on a cold dashboard mount.
+    if (net.type == NetworkType.solana) {
+      final uiBalance = wallet.solBalance.toDouble() / 1e9;
+      final valueUsd = wallet.solFiatUsd;
+      final priceUsd = uiBalance > 0 && valueUsd > 0 ? valueUsd / uiBalance : null;
+      return TokenHolding(
+        mint: mintKey,
+        symbol: 'SOL',
+        name: 'Solana',
+        imageUrl: null,
+        balance: wallet.solBalance,
+        decimals: 9,
+        uiBalance: uiBalance,
+        priceUsd: priceUsd,
+        valueUsd: valueUsd > 0 ? valueUsd : null,
+      );
+    }
+
+    // No native Asset yet (assets haven't loaded) and not Solana — render
+    // a zero-balance placeholder so the network's native ticker is at
+    // least visible while we wait.
+    return TokenHolding(
+      mint: mintKey,
+      symbol: net.currencySymbol.isNotEmpty ? net.currencySymbol : 'NATIVE',
+      name: net.name.isNotEmpty ? net.name : 'Native',
       imageUrl: null,
-      // TokenIcon falls back to the bundled SOL asset.
-      balance: wallet.solBalance,
-      decimals: 9,
-      uiBalance: uiBalance,
-      priceUsd: priceUsd,
-      valueUsd: valueUsd > 0 ? valueUsd : null,
+      balance: BigInt.zero,
+      decimals: 0,
+      uiBalance: 0,
     );
-    return [sol, ..._holdings];
   }
 
   /// Open the swap screen pre-filled with the requested input/output mints.
