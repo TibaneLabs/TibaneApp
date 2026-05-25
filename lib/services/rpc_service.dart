@@ -282,26 +282,29 @@ class RpcService {
   Future<List<({String address, UserStake stake})>> getUserStakesForPool(String poolAddress) async {
     final results = <({String address, UserStake stake})>[];
 
-    // Fetch all three historical sizes
-    for (final size in [153, 161, 177]) {
-      final result = await _rpc('getProgramAccounts', [
-        chiefStakerProgramId,
-        {
-          'encoding': 'base64',
-          'filters': [
-            {'dataSize': size},
-            {'memcmp': {'offset': 40, 'bytes': poolAddress}},
-          ],
-        },
-      ]);
+    // Filter by discriminator + pool only — never by dataSize. UserStake has
+    // grown over time (153 → 161 → 177 → 178 bytes as fields were added), and
+    // accounts of every historical size coexist on-chain until they realloc.
+    // A dataSize filter silently drops whichever sizes aren't listed (it was
+    // missing the current 178-byte accounts). UserStake.deserialize tolerates
+    // any size >= 153, so match all of them and let it parse.
+    final result = await _rpc('getProgramAccounts', [
+      chiefStakerProgramId,
+      {
+        'encoding': 'base64',
+        'filters': [
+          {'memcmp': {'offset': 0, 'bytes': base58Encode(userStakeDiscriminator)}},
+          {'memcmp': {'offset': 40, 'bytes': poolAddress}},
+        ],
+      },
+    ]);
 
-      for (final item in result as List) {
-        final pubkey = item['pubkey'] as String;
-        final data = base64Decode((item['account']['data'] as List)[0] as String);
-        final stake = UserStake.deserialize(data);
-        if (stake != null && stake.amount > BigInt.zero) {
-          results.add((address: pubkey, stake: stake));
-        }
+    for (final item in result as List) {
+      final pubkey = item['pubkey'] as String;
+      final data = base64Decode((item['account']['data'] as List)[0] as String);
+      final stake = UserStake.deserialize(data);
+      if (stake != null && stake.amount > BigInt.zero) {
+        results.add((address: pubkey, stake: stake));
       }
     }
 

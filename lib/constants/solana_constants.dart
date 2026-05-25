@@ -53,6 +53,7 @@ final revokeFeeSharingAuthorityDisc = Uint8List.fromList([18, 233, 158, 39, 185,
 final poolSeed = utf8.encode('pool');
 final stakeSeed = utf8.encode('stake');
 final tokenVaultSeed = utf8.encode('token_vault');
+final metadataSeed = utf8.encode('metadata');
 
 // Instruction indices
 class StakerInstruction {

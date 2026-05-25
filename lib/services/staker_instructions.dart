@@ -34,6 +34,14 @@ String deriveUserStakePDA(String pool, String user) {
   return addr;
 }
 
+String derivePoolMetadataPDA(String pool) {
+  final (addr, _) = findProgramAddressFromStrings([
+    Uint8List.fromList(metadataSeed),
+    base58Decode(pool),
+  ], chiefStakerProgramId);
+  return addr;
+}
+
 // ─── Instruction builders ────────────────────────────────────────────────────
 
 SolanaInstruction createStakeIx({
@@ -46,6 +54,7 @@ SolanaInstruction createStakeIx({
   final userStake = deriveUserStakePDA(pool, user);
   final tokenVault = deriveTokenVaultPDA(pool);
   final userToken = deriveATA(user, mint, tokenProgramId);
+  final metadata = derivePoolMetadataPDA(pool);
 
   final data = ByteData(1 + 8);
   data.setUint8(0, StakerInstruction.stake);
@@ -62,6 +71,10 @@ SolanaInstruction createStakeIx({
       AccountMeta.fromBase58(user, isSigner: true, isWritable: true),
       AccountMeta.fromBase58(systemProgramId, isSigner: false, isWritable: false),
       AccountMeta.fromBase58(tokenProgramId, isSigner: false, isWritable: false),
+      // Metadata PDA: required since chiefstaker 91ce912 — keeps
+      // member_count exact (+1 on a new stake). Uninitialized for
+      // metadata-less pools, which the program tolerates.
+      AccountMeta.fromBase58(metadata, isSigner: false, isWritable: true),
     ],
     data: Uint8List.view(data.buffer),
   );
@@ -78,6 +91,7 @@ SolanaInstruction createStakeOnBehalfIx({
   final beneficiaryStake = deriveUserStakePDA(pool, beneficiary);
   final tokenVault = deriveTokenVaultPDA(pool);
   final stakerToken = deriveATA(staker, mint, tokenProgramId);
+  final metadata = derivePoolMetadataPDA(pool);
 
   final data = ByteData(1 + 8);
   data.setUint8(0, StakerInstruction.stakeOnBehalf);
@@ -95,6 +109,8 @@ SolanaInstruction createStakeOnBehalfIx({
       AccountMeta.fromBase58(beneficiary, isSigner: false, isWritable: true),
       AccountMeta.fromBase58(systemProgramId, isSigner: false, isWritable: false),
       AccountMeta.fromBase58(tokenProgramId, isSigner: false, isWritable: false),
+      // Metadata PDA: required since chiefstaker 91ce912 (+1 on a new stake).
+      AccountMeta.fromBase58(metadata, isSigner: false, isWritable: true),
     ],
     data: Uint8List.view(data.buffer),
   );
@@ -132,6 +148,7 @@ SolanaInstruction createCompleteUnstakeIx({
   final userStake = deriveUserStakePDA(pool, user);
   final tokenVault = deriveTokenVaultPDA(pool);
   final userToken = deriveATA(user, mint, tokenProgramId);
+  final metadata = derivePoolMetadataPDA(pool);
 
   return SolanaInstruction.fromBase58(
     programId: chiefStakerProgramId,
@@ -144,6 +161,9 @@ SolanaInstruction createCompleteUnstakeIx({
       AccountMeta.fromBase58(user, isSigner: true, isWritable: true),
       AccountMeta.fromBase58(tokenProgramId, isSigner: false, isWritable: false),
       AccountMeta.fromBase58(systemProgramId, isSigner: false, isWritable: false),
+      // Metadata PDA: required since chiefstaker 91ce912 — decrements
+      // member_count if completing a full unstake closes the account.
+      AccountMeta.fromBase58(metadata, isSigner: false, isWritable: true),
     ],
     data: Uint8List.fromList([StakerInstruction.completeUnstake]),
   );
@@ -195,6 +215,7 @@ SolanaInstruction createUnstakeIx({
   final userStake = deriveUserStakePDA(pool, user);
   final tokenVault = deriveTokenVaultPDA(pool);
   final userToken = deriveATA(user, mint, tokenProgramId);
+  final metadata = derivePoolMetadataPDA(pool);
 
   final data = ByteData(1 + 8);
   data.setUint8(0, StakerInstruction.unstake);
@@ -211,6 +232,9 @@ SolanaInstruction createUnstakeIx({
       AccountMeta.fromBase58(user, isSigner: true, isWritable: true),
       AccountMeta.fromBase58(tokenProgramId, isSigner: false, isWritable: false),
       AccountMeta.fromBase58(systemProgramId, isSigner: false, isWritable: false),
+      // Metadata PDA: required since chiefstaker 91ce912 — decrements
+      // member_count if a full unstake closes the account.
+      AccountMeta.fromBase58(metadata, isSigner: false, isWritable: true),
     ],
     data: Uint8List.view(data.buffer),
   );
@@ -221,6 +245,7 @@ SolanaInstruction createCloseStakeAccountIx({
   required String user,
 }) {
   final userStake = deriveUserStakePDA(pool, user);
+  final metadata = derivePoolMetadataPDA(pool);
 
   return SolanaInstruction.fromBase58(
     programId: chiefStakerProgramId,
@@ -228,6 +253,9 @@ SolanaInstruction createCloseStakeAccountIx({
       AccountMeta.fromBase58(pool, isSigner: false, isWritable: false),
       AccountMeta.fromBase58(userStake, isSigner: false, isWritable: true),
       AccountMeta.fromBase58(user, isSigner: true, isWritable: true),
+      // Metadata PDA: required since chiefstaker 91ce912 — decrements
+      // member_count on close.
+      AccountMeta.fromBase58(metadata, isSigner: false, isWritable: true),
     ],
     data: Uint8List.fromList([StakerInstruction.closeStakeAccount]),
   );
