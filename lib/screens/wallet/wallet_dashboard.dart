@@ -1,7 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:libwallet/libwallet.dart' show Asset, Transaction, TxHistoryUpdatedEvent;
+import 'package:libwallet/libwallet.dart'
+    show Asset, NetworkType, Transaction, TxHistoryUpdatedEvent;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -130,7 +131,9 @@ class _WalletDashboardState extends State<WalletDashboard> {
       // it once per dashboard mount; results land via txHistoryUpdates.
       if (txs.isEmpty && !_kickedHistoryBackfill) {
         _kickedHistoryBackfill = true;
-        debugPrint('[dashboard] tx list empty on first load — kicking backfill');
+        debugPrint(
+          '[dashboard] tx list empty on first load — kicking backfill',
+        );
         unawaited(lw.kickHistoryBackfill());
       }
     } catch (e) {
@@ -162,77 +165,84 @@ class _WalletDashboardState extends State<WalletDashboard> {
           // every on-chain SPL holding's USD value) on top, with the
           // native SOL amount underneath as a secondary line.
           Center(
-            child: Builder(builder: (context) {
-              final solFiat = _assets
-                  .where((a) => a.isNative)
-                  .fold<double>(
-                    0,
-                    (sum, a) => sum + (a.fiatAmount?.toDouble() ?? 0),
-                  );
-              final tokensFiat = _holdings.fold<double>(
-                0,
-                (sum, h) => sum + (h.valueUsd ?? 0),
-              );
-              final totalUsd = solFiat + tokensFiat;
-              return Column(
-                children: [
-                  Text(
-                    '\$${totalUsd.toStringAsFixed(2)}',
-                    style:
-                        Theme.of(context).textTheme.displaySmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                  ),
-                  Text(
-                    'TOTAL',
-                    style: monoStyle(
-                      fontSize: 11,
-                      color: TibaneColors.textDim,
+            child: Builder(
+              builder: (context) {
+                final solFiat = _assets
+                    .where((a) => a.isNative)
+                    .fold<double>(
+                      0,
+                      (sum, a) => sum + (a.fiatAmount?.toDouble() ?? 0),
+                    );
+                final tokensFiat = _holdings.fold<double>(
+                  0,
+                  (sum, h) => sum + (h.valueUsd ?? 0),
+                );
+                final totalUsd = solFiat + tokensFiat;
+                return Column(
+                  children: [
+                    Text(
+                      '\$${totalUsd.toStringAsFixed(2)}',
+                      style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${formatSol(wallet.solBalance)} SOL',
-                    style: monoStyle(
-                      fontSize: 13,
-                      color: TibaneColors.textMuted,
+                    Text(
+                      'TOTAL',
+                      style: monoStyle(
+                        fontSize: 11,
+                        color: TibaneColors.textDim,
+                      ),
                     ),
-                  ),
-                ],
-              );
-            }),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${formatSol(wallet.solBalance)} SOL',
+                      style: monoStyle(
+                        fontSize: 13,
+                        color: TibaneColors.textMuted,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
           const SizedBox(height: 24),
 
           // Action buttons — swap entry hidden in UK mode.
-          Builder(builder: (context) {
-            final isUk = context.watch<UkComplianceService>().isUk;
-            return Row(
-              children: [
-                _ActionButton(
-                  icon: Icons.arrow_downward,
-                  label: 'Receive',
-                  onTap: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const ReceiveScreen())),
-                ),
-                const SizedBox(width: 12),
-                _ActionButton(
-                  icon: Icons.arrow_upward,
-                  label: 'Send',
-                  onTap: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const SendScreen())),
-                ),
-                if (!isUk) ...[
+          Builder(
+            builder: (context) {
+              final isUk = context.watch<UkComplianceService>().isUk;
+              return Row(
+                children: [
+                  _ActionButton(
+                    icon: Icons.arrow_downward,
+                    label: 'Receive',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ReceiveScreen()),
+                    ),
+                  ),
                   const SizedBox(width: 12),
                   _ActionButton(
-                    icon: Icons.swap_horiz,
-                    label: 'Swap',
-                    onTap: () => _openSwap(context),
+                    icon: Icons.arrow_upward,
+                    label: 'Send',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SendScreen()),
+                    ),
                   ),
+                  if (!isUk) ...[
+                    const SizedBox(width: 12),
+                    _ActionButton(
+                      icon: Icons.swap_horiz,
+                      label: 'Swap',
+                      onTap: () => _openSwap(context),
+                    ),
+                  ],
                 ],
-              ],
-            );
-          }),
+              );
+            },
+          ),
           const SizedBox(height: 24),
 
           // Tabs: Tokens / Activity. Only one list is rendered at a time
@@ -244,73 +254,87 @@ class _WalletDashboardState extends State<WalletDashboard> {
           ),
           const SizedBox(height: 12),
           if (_selectedTab == 0) ...[
-            if (_holdings.isEmpty)
+            if (_displayTokens(wallet).isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Center(
-                  child: Text('No tokens yet',
-                      style: TextStyle(color: TibaneColors.textMuted)),
+                  child: Text(
+                    'No tokens yet',
+                    style: TextStyle(color: TibaneColors.textMuted),
+                  ),
                 ),
               )
             else
-              ..._holdings.map((h) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: TibaneCard(
-                      padding: const EdgeInsets.all(12),
-                      onTap: context.read<UkComplianceService>().isUk
-                          ? null
-                          : () => _openSwap(
-                                context,
-                                inputMint: h.mint,
-                                outputMint: wsolMint,
-                              ),
-                      child: Row(
-                        children: [
-                          TokenIcon(
-                            imageUrl: h.imageUrl,
-                            mint: h.mint,
-                            symbol: h.symbol.isNotEmpty ? h.symbol : h.name,
-                            size: 32,
+              ..._displayTokens(wallet).map(
+                (h) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: TibaneCard(
+                    padding: const EdgeInsets.all(12),
+                    onTap: context.read<UkComplianceService>().isUk
+                        ? null
+                        : () => _openSwap(
+                            context,
+                            inputMint: h.mint,
+                            outputMint: wsolMint,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  h.symbol.isNotEmpty ? h.symbol : h.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                    color: TibaneColors.text,
-                                  ),
-                                ),
-                                if (h.name.isNotEmpty && h.name != h.symbol)
-                                  Text(h.name,
-                                      style: monoStyle(
-                                          fontSize: 11, color: TibaneColors.textMuted)),
-                              ],
-                            ),
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
+                    child: Row(
+                      children: [
+                        TokenIcon(
+                          imageUrl: h.imageUrl,
+                          mint: h.mint,
+                          symbol: h.symbol.isNotEmpty ? h.symbol : h.name,
+                          size: 32,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                formatTokenAmount(h.balance, h.decimals, displayDecimals: 4),
-                                style: monoStyle(fontSize: 13),
+                                h.symbol.isNotEmpty ? h.symbol : h.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: TibaneColors.text,
+                                ),
                               ),
-                              if (h.valueUsd != null)
+                              if (h.name.isNotEmpty && h.name != h.symbol)
                                 Text(
-                                  '\$${h.valueUsd!.toStringAsFixed(2)}',
+                                  h.name,
                                   style: monoStyle(
-                                      fontSize: 11, color: TibaneColors.textMuted),
+                                    fontSize: 11,
+                                    color: TibaneColors.textMuted,
+                                  ),
                                 ),
                             ],
                           ),
-                        ],
-                      ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              formatTokenAmount(
+                                h.balance,
+                                h.decimals,
+                                displayDecimals: 4,
+                              ),
+                              style: monoStyle(fontSize: 13),
+                            ),
+                            if (h.valueUsd != null)
+                              Text(
+                                '\$${h.valueUsd!.toStringAsFixed(2)}',
+                                style: monoStyle(
+                                  fontSize: 11,
+                                  color: TibaneColors.textMuted,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
                     ),
-                  )),
+                  ),
+                ),
+              ),
           ] else ...[
             if (_loadingTxs)
               const Center(
@@ -323,16 +347,48 @@ class _WalletDashboardState extends State<WalletDashboard> {
               Center(
                 child: Padding(
                   padding: const EdgeInsets.all(32),
-                  child: Text('No transactions yet',
-                      style: TextStyle(color: TibaneColors.textMuted)),
+                  child: Text(
+                    'No transactions yet',
+                    style: TextStyle(color: TibaneColors.textMuted),
+                  ),
                 ),
               )
             else
-              ..._transactions.map((tx) => _TransactionRow(tx: tx, myAddr: addr)),
+              ..._transactions.map(
+                (tx) => _TransactionRow(tx: tx, myAddr: addr),
+              ),
           ],
         ],
       ),
     );
+  }
+
+  /// Tokens to render in the Tokens tab. Always prepends a synthetic
+  /// SOL row on Solana-family networks (even when the balance is zero)
+  /// so SOL is visible as a sendable / receivable asset without users
+  /// having to look at the headline balance bar.
+  List<TokenHolding> _displayTokens(WalletService wallet) {
+    final isSolana =
+        wallet.libwallet.currentNetwork?.type == NetworkType.solana;
+    if (!isSolana) return _holdings;
+    // _holdings is built with `excludeMint: wsolMint`, so wSOL won't
+    // already be in the list; safe to prepend unconditionally.
+    final uiBalance = wallet.solBalance.toDouble() / 1e9;
+    final valueUsd = wallet.solFiatUsd;
+    final priceUsd = uiBalance > 0 ? valueUsd / uiBalance : null;
+    final sol = TokenHolding(
+      mint: wsolMint,
+      symbol: 'SOL',
+      name: 'Solana',
+      imageUrl: null,
+      // TokenIcon falls back to the bundled SOL asset.
+      balance: wallet.solBalance,
+      decimals: 9,
+      uiBalance: uiBalance,
+      priceUsd: priceUsd,
+      valueUsd: valueUsd > 0 ? valueUsd : null,
+    );
+    return [sol, ..._holdings];
   }
 
   /// Open the swap screen pre-filled with the requested input/output mints.
@@ -357,7 +413,6 @@ class _WalletDashboardState extends State<WalletDashboard> {
       ),
     );
   }
-
 }
 
 class _ActionButton extends StatelessWidget {
@@ -397,9 +452,13 @@ class _ActionButton extends StatelessWidget {
                   child: Icon(icon, color: TibaneColors.orange, size: 20),
                 ),
                 const SizedBox(height: 8),
-                Text(label,
-                    style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w500)),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ],
             ),
           ),
@@ -502,11 +561,17 @@ class _TransactionRow extends StatelessWidget {
                 children: [
                   Text(
                     _isSend ? 'Sent' : 'Received',
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
                   ),
                   Text(
                     shortenAddress(counterparty),
-                    style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+                    style: monoStyle(
+                      fontSize: 11,
+                      color: TibaneColors.textMuted,
+                    ),
                   ),
                 ],
               ),
@@ -523,9 +588,18 @@ class _TransactionRow extends StatelessWidget {
                   ),
                 ),
                 if (fiatStr != null)
-                  Text(fiatStr, style: monoStyle(fontSize: 11, color: TibaneColors.textMuted)),
+                  Text(
+                    fiatStr,
+                    style: monoStyle(
+                      fontSize: 11,
+                      color: TibaneColors.textMuted,
+                    ),
+                  ),
                 if (timeStr.isNotEmpty)
-                  Text(timeStr, style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+                  Text(
+                    timeStr,
+                    style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+                  ),
               ],
             ),
           ],
