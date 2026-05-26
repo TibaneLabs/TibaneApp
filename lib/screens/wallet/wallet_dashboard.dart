@@ -180,6 +180,16 @@ class _WalletDashboardState extends State<WalletDashboard> {
                   (sum, h) => sum + (h.valueUsd ?? 0),
                 );
                 final totalUsd = solFiat + tokensFiat;
+                // Express the dollar total in SOL when we have enough
+                // signal to compute the SOL price (native fiat ÷ native
+                // ui-balance). Falls back to silence on non-Solana
+                // networks or when balances haven't loaded yet rather
+                // than printing a misleading 0.
+                final solUi = wallet.solBalance.toDouble() / 1e9;
+                final solPriceUsd =
+                    (solFiat > 0 && solUi > 0) ? solFiat / solUi : null;
+                final totalInSol =
+                    solPriceUsd != null ? totalUsd / solPriceUsd : null;
                 return Column(
                   children: [
                     Text(
@@ -188,21 +198,16 @@ class _WalletDashboardState extends State<WalletDashboard> {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Text(
-                      'TOTAL',
-                      style: monoStyle(
-                        fontSize: 11,
-                        color: TibaneColors.textDim,
+                    if (totalInSol != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        '${totalInSol.toStringAsFixed(4)} SOL',
+                        style: monoStyle(
+                          fontSize: 13,
+                          color: TibaneColors.textMuted,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '${formatSol(wallet.solBalance)} SOL',
-                      style: monoStyle(
-                        fontSize: 13,
-                        color: TibaneColors.textMuted,
-                      ),
-                    ),
+                    ],
                   ],
                 );
               },
