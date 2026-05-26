@@ -15,6 +15,7 @@ import '../../widgets/network_logos.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import '../swap_screen.dart';
+import '../token_detail_screen.dart';
 import 'receive_screen.dart';
 import 'send_screen.dart';
 
@@ -271,21 +272,29 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 final net = wallet.libwallet.currentNetwork;
                 final assetPath =
                     isNativeRow && net != null ? networkLogoAsset(net) : null;
+                // Resolve the on-chain mint to push to TokenDetailScreen.
+                // Native rows carry a synthetic ".NATIVE" sentinel that
+                // Helius DAS doesn't understand — substitute wSOL for
+                // Solana; leave EVM/BTC native rows non-tappable since
+                // there's no equivalent analytics surface for them.
+                String? detailMint;
+                if (isNativeRow) {
+                  if (net?.type == NetworkType.solana) detailMint = wsolMint;
+                } else {
+                  detailMint = h.mint;
+                }
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: TibaneCard(
                     padding: const EdgeInsets.all(12),
-                    // Native rows aren't tappable — there's no "swap X
-                    // to X" path. SPL token rows keep the swap-to-SOL
-                    // shortcut behind the existing UK gate.
-                    onTap: (isNativeRow ||
-                            context.read<UkComplianceService>().isUk)
+                    onTap: detailMint == null
                         ? null
-                        : () => _openSwap(
-                            context,
-                            inputMint: h.mint,
-                            outputMint: wsolMint,
-                          ),
+                        : () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    TokenDetailScreen(mint: detailMint!),
+                              ),
+                            ),
                     child: Row(
                       children: [
                         TokenIcon(

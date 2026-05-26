@@ -10,12 +10,15 @@ import '../services/jupiter_service.dart';
 import '../services/rpc_service.dart';
 import '../services/staker_instructions.dart';
 import '../services/uk_compliance_service.dart';
+import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
 import 'fee_sharing_screen.dart';
 import 'staking/staking_detail_screen.dart';
 import 'swap_screen.dart';
+import 'wallet/receive_screen.dart';
+import 'wallet/send_screen.dart';
 
 /// Read-only analytics view for a single SPL token: metadata, supply,
 /// market cap, top holders, recent transactions, optional staking-pool
@@ -40,6 +43,10 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
   StakingPool? _stakingPool;
   bool _loading = true;
   String? _error;
+  // User's on-chain balance for this token (raw, scaled by decimals).
+  // null until the first lookup completes; the Send button stays
+  // disabled until we have a positive value to send.
+  BigInt? _userBalance;
 
   @override
   void initState() {
@@ -77,6 +84,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
       });
       _checkStakingPool();
       _backfillPriceIfMissing();
+      _loadUserBalance();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -108,6 +116,108 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
     }
   }
 
+  /// AppBar overflow menu — collects Receive / Send / Swap into one
+  /// trigger so the actions don't crowd the title row. Send disables
+  /// itself when the balance lookup returns zero; Swap is hidden in
+  /// UK mode for the same reason it's hidden on other screens.
+  Widget _buildActionsMenu(BuildContext context) {
+    final token = _token!;
+    final isUk = context.watch<UkComplianceService>().isUk;
+    final canSend = _userBalance != null && _userBalance! > BigInt.zero;
+    return PopupMenuButton<_TokenAction>(
+      tooltip: 'Actions',
+      icon: const Icon(Icons.more_vert),
+      onSelected: (action) {
+        switch (action) {
+          case _TokenAction.receive:
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ReceiveScreen()),
+            );
+          case _TokenAction.send:
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SendScreen(
+                  mint: token.mint,
+                  symbol: token.symbol,
+                  decimals: token.decimals,
+                ),
+              ),
+            );
+          case _TokenAction.swap:
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => Scaffold(
+                  backgroundColor: TibaneColors.black,
+                  appBar: AppBar(title: const Text('Swap')),
+                  body: SwapScreen(
+                    initialInputMint: wsolMint,
+                    initialOutputMint: token.mint,
+                    initialOutputSymbol: token.symbol,
+                    initialOutputName: token.name,
+                    initialOutputImageUrl: token.imageUrl,
+                    initialOutputDecimals: token.decimals,
+                  ),
+                ),
+              ),
+            );
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem<_TokenAction>(
+          value: _TokenAction.receive,
+          child: _MenuRow(icon: Icons.arrow_downward, label: 'Receive'),
+        ),
+        PopupMenuItem<_TokenAction>(
+          value: _TokenAction.send,
+          enabled: canSend,
+          child: _MenuRow(
+            icon: Icons.arrow_upward,
+            label: 'Send',
+            dimmed: !canSend,
+          ),
+        ),
+        if (!isUk)
+          const PopupMenuItem<_TokenAction>(
+            value: _TokenAction.swap,
+            child: _MenuRow(icon: Icons.swap_horiz, label: 'Swap'),
+          ),
+      ],
+    );
+  }
+
+  /// Fetch the connected wallet's balance for this token so the Send
+  /// button can disable itself when there's nothing to send. Native
+  /// SOL is the WalletService balance; everything else sums the
+  /// matching SPL / Token-2022 accounts.
+  Future<void> _loadUserBalance() async {
+    if (!mounted) return;
+    final wallet = context.read<WalletService>();
+    final owner = wallet.publicKey;
+    if (owner == null) return;
+    try {
+      BigInt total;
+      if (widget.mint == wsolMint) {
+        total = wallet.solBalance;
+      } else {
+        final results = await Future.wait([
+          _rpc.getTokenAccountsByOwner(owner),
+          _rpc.getTokenAccountsByOwner(owner, token2022: true),
+        ]);
+        total = BigInt.zero;
+        for (final acc in [...results[0], ...results[1]]) {
+          if (acc.mint == widget.mint) total += acc.amount;
+        }
+      }
+      if (!mounted) return;
+      setState(() => _userBalance = total);
+    } catch (e) {
+      if (!mounted) return;
+      // Leave _userBalance null so the Send button stays disabled
+      // rather than allowing a send the wallet might not cover.
+      debugPrint('[token-detail] balance lookup failed: $e');
+    }
+  }
+
   Future<void> _checkStakingPool() async {
     try {
       final poolAddr = derivePoolPDA(widget.mint);
@@ -128,39 +238,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
       appBar: AppBar(
         title: const Text('Token info'),
         actions: [
-          // SWAP action — same affordance as the staking detail
-          // screen. Hidden in UK mode for the same reason swap is
-          // hidden elsewhere there. Only meaningful once token
-          // metadata has loaded; before that we have no decimals to
-          // pre-fill the swap selector with.
-          if (_token != null && !context.watch<UkComplianceService>().isUk)
-            Padding(
-              // Right inset replaces the breathing room that would
-              // normally come from a trailing IconButton's 48dp tap
-              // target; without it the button sits flush against the
-              // AppBar edge and the border looks cropped.
-              padding: const EdgeInsets.fromLTRB(0, 8, 12, 8),
-              child: AccentButton(
-                label: 'SWAP',
-                icon: Icons.swap_horiz,
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => Scaffold(
-                      backgroundColor: TibaneColors.black,
-                      appBar: AppBar(title: const Text('Swap')),
-                      body: SwapScreen(
-                        initialInputMint: wsolMint,
-                        initialOutputMint: _token!.mint,
-                        initialOutputSymbol: _token!.symbol,
-                        initialOutputName: _token!.name,
-                        initialOutputImageUrl: _token!.imageUrl,
-                        initialOutputDecimals: _token!.decimals,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          if (_token != null) _buildActionsMenu(context),
         ],
       ),
       body: _loading
@@ -674,5 +752,36 @@ class _TransactionsSection extends StatelessWidget {
     if (diff.inHours < 24) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
     return '${dt.month}/${dt.day}';
+  }
+}
+
+/// Actions surfaced in the AppBar overflow menu.
+enum _TokenAction { receive, send, swap }
+
+/// Single row inside the overflow menu: icon + label. The colour
+/// drops to `textDim` when [dimmed] is true so a disabled Send item
+/// reads as obviously not-tappable (Flutter's default disabled menu
+/// item is barely greyer than the enabled state on a dark theme).
+class _MenuRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool dimmed;
+
+  const _MenuRow({
+    required this.icon,
+    required this.label,
+    this.dimmed = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = dimmed ? TibaneColors.textDim : TibaneColors.text;
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 12),
+        Text(label, style: TextStyle(color: color)),
+      ],
+    );
   }
 }
