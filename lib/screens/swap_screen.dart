@@ -123,17 +123,28 @@ class _SwapScreenState extends State<SwapScreen> {
     // should pass it in so the picker displays the right name/icon
     // immediately. The libwallet quote will replace decimals with the
     // authoritative value once it lands.
+    //
+    // When the caller passes an output mint without its symbol / name
+    // (e.g. the wallet dashboard's tap-to-swap-to-SOL shortcut), fall
+    // back to the curated commonTokens entry for that mint so the TO
+    // field doesn't render with the icon-only / empty-text glitch.
+    // The flip button copies these fields into the new INPUT row, so a
+    // blank symbol here would also leak into FROM after a flip.
     final initOutMint = widget.initialOutputMint ?? chiefPussyMint;
-    final isCp = initOutMint == chiefPussyMint;
+    final fallback = commonTokens.firstWhere(
+      (t) => t.mint == initOutMint,
+      orElse: () =>
+          const CommonToken(mint: '', symbol: '', name: ''),
+    );
     _selectedOutput = _SwapToken(
       mint: initOutMint,
-      symbol: widget.initialOutputSymbol ?? (isCp ? 'ChiefPussy' : ''),
-      name: widget.initialOutputName ?? (isCp ? 'Tibane Thecat' : ''),
-      imageUrl: widget.initialOutputImageUrl,
+      symbol: widget.initialOutputSymbol ?? fallback.symbol,
+      name: widget.initialOutputName ?? fallback.name,
+      imageUrl: widget.initialOutputImageUrl ?? fallback.imageUrl,
     );
     _outputDecimals =
         widget.initialOutputDecimals ?? (initOutMint == wsolMint ? 9 : 6);
-    _outputImageUrl = widget.initialOutputImageUrl;
+    _outputImageUrl = widget.initialOutputImageUrl ?? fallback.imageUrl;
 
     final wallet = context.read<WalletService>();
     _wallet = wallet;
