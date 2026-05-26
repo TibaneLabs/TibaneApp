@@ -14,20 +14,22 @@ import 'secure_keystore.dart';
 import 'wallet_backend.dart';
 
 /// Minimal token result shape returned by
-/// [LibwalletBackend.searchCuratedTokens] — symbol/name/mint/image,
-/// suitable for rendering directly in a list or wrapping into a
-/// [FavoriteToken] when navigating into a downstream screen.
+/// [LibwalletBackend.searchCuratedTokens] — symbol/name/mint/image/
+/// decimals, suitable for rendering directly in a list or wrapping
+/// into a [FavoriteToken] / passing to a swap selector callback.
 class TokenSearchResult {
   final String mint;
   final String? name;
   final String? symbol;
   final String? imageUrl;
+  final int? decimals;
 
   const TokenSearchResult({
     required this.mint,
     this.name,
     this.symbol,
     this.imageUrl,
+    this.decimals,
   });
 }
 
@@ -1160,6 +1162,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
           name: t.name,
           symbol: t.symbol,
           imageUrl: t.logoUri.isEmpty ? null : t.logoUri,
+          decimals: t.decimals,
         ));
         if (results.length >= limit) break;
       }
