@@ -2,19 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/solana_constants.dart';
-import '../models/staking_pool.dart';
 import '../services/favorites_service.dart';
-import '../services/rpc_service.dart';
-import '../services/staker_instructions.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/tibane_card.dart';
 import '../widgets/token_search.dart';
-import 'staking/staking_detail_screen.dart';
+import 'token_detail_screen.dart';
 
 /// Landing screen for the "Token Info" feature: lists the user's
 /// favorited tokens and offers a search field for unknown mints /
 /// tickers. Each tap / search submission pushes a
-/// [StakingDetailScreen] route for the matching pool.
+/// [TokenDetailScreen] route — this screen never renders token
+/// analytics inline.
 class TokenFavoritesScreen extends StatefulWidget {
   const TokenFavoritesScreen({super.key});
 
@@ -23,57 +21,16 @@ class TokenFavoritesScreen extends StatefulWidget {
 }
 
 class _TokenFavoritesScreenState extends State<TokenFavoritesScreen> {
-  final _rpc = RpcService();
-  bool _loading = false;
-
-  @override
-  void dispose() {
-    _rpc.dispose();
-    super.dispose();
-  }
-
-  /// Resolve [mintInput] to a staking pool and push the staking detail
-  /// screen. When [favorite] is provided, its display metadata (name,
-  /// symbol, image) is grafted onto the pool object so the staking
-  /// screen doesn't flash a bare "Pool" title before its own refresh
-  /// populates the fields.
-  Future<void> _openPool(String mintInput, {FavoriteToken? favorite}) async {
+  /// Push the [TokenDetailScreen] for [mintInput]. Wrapped in async
+  /// only so [TokenSearch.onMintSubmitted] can await the push and
+  /// drive its suffix spinner for the brief frame between tap and
+  /// route transition — the actual navigation is synchronous.
+  Future<void> _openToken(String mintInput) async {
     final mint = mintInput.trim();
-    if (mint.length < 32 || _loading) return;
-    setState(() => _loading = true);
-    try {
-      final poolAddr = derivePoolPDA(mint);
-      final data = await _rpc.getAccountInfo(poolAddr);
-      if (!mounted) return;
-      if (data == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No staking pool found for this token')),
-        );
-        return;
-      }
-      final pool = StakingPool.deserialize(poolAddr, data);
-      if (pool == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not read staking pool data')),
-        );
-        return;
-      }
-      if (favorite != null) {
-        pool.tokenName = favorite.name;
-        pool.tokenSymbol = favorite.symbol;
-        pool.tokenImage = favorite.imageUrl;
-      }
-      await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => StakingDetailScreen(pool: pool)),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to load pool: $e')));
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+    if (mint.length < 32) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => TokenDetailScreen(mint: mint)),
+    );
   }
 
   @override
@@ -86,16 +43,8 @@ class _TokenFavoritesScreenState extends State<TokenFavoritesScreen> {
       body: Padding(
         padding: const EdgeInsets.only(top: 16),
         child: TokenSearch(
-          onResultSelected: (r) => _openPool(
-            r.mint,
-            favorite: FavoriteToken(
-              mint: r.mint,
-              name: r.name,
-              symbol: r.symbol,
-              imageUrl: r.imageUrl,
-            ),
-          ),
-          onMintSubmitted: (mint) => _openPool(mint),
+          onResultSelected: (r) => _openToken(r.mint),
+          onMintSubmitted: _openToken,
           emptyBody: favs.favorites.isEmpty
               ? Center(
                   child: Column(
@@ -127,7 +76,7 @@ class _TokenFavoritesScreenState extends State<TokenFavoritesScreen> {
                     final fav = favs.favorites[index];
                     return _FavoriteTokenTile(
                       token: fav,
-                      onTap: () => _openPool(fav.mint, favorite: fav),
+                      onTap: () => _openToken(fav.mint),
                       onRemove: () => favs.toggle(fav.mint),
                     );
                   },

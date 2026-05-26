@@ -6,13 +6,16 @@ import '../constants/solana_constants.dart';
 import '../models/staking_pool.dart';
 import '../models/token_account.dart';
 import '../services/favorites_service.dart';
+import '../services/jupiter_service.dart';
 import '../services/rpc_service.dart';
 import '../services/staker_instructions.dart';
+import '../services/uk_compliance_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
 import 'fee_sharing_screen.dart';
 import 'staking/staking_detail_screen.dart';
+import 'swap_screen.dart';
 
 /// Read-only analytics view for a single SPL token: metadata, supply,
 /// market cap, top holders, recent transactions, optional staking-pool
@@ -73,12 +76,35 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
         if (_token == null) _error = 'Token not found';
       });
       _checkStakingPool();
+      _backfillPriceIfMissing();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = 'Failed to load token: $e';
         _loading = false;
       });
+    }
+  }
+
+  /// Helius's getAsset only carries a price for a small subset of
+  /// SPL tokens. When it doesn't, ask Jupiter's price API — which
+  /// covers any actively-traded SPL — so the Market Cap stat can
+  /// render for the long tail of tokens too. Idempotent: skips if a
+  /// price is already populated or if the screen has unmounted.
+  Future<void> _backfillPriceIfMissing() async {
+    final token = _token;
+    if (token == null || token.pricePerToken != null) return;
+    final jupiter = JupiterService();
+    try {
+      final prices = await jupiter.fetchTokenPrices([widget.mint]);
+      if (!mounted) return;
+      final price = prices[widget.mint];
+      if (price == null || price <= 0) return;
+      setState(() {
+        _token = _token!.copyWith(pricePerToken: price);
+      });
+    } finally {
+      jupiter.dispose();
     }
   }
 
@@ -99,7 +125,44 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Token info')),
+      appBar: AppBar(
+        title: const Text('Token info'),
+        actions: [
+          // SWAP action — same affordance as the staking detail
+          // screen. Hidden in UK mode for the same reason swap is
+          // hidden elsewhere there. Only meaningful once token
+          // metadata has loaded; before that we have no decimals to
+          // pre-fill the swap selector with.
+          if (_token != null && !context.watch<UkComplianceService>().isUk)
+            Padding(
+              // Right inset replaces the breathing room that would
+              // normally come from a trailing IconButton's 48dp tap
+              // target; without it the button sits flush against the
+              // AppBar edge and the border looks cropped.
+              padding: const EdgeInsets.fromLTRB(0, 8, 12, 8),
+              child: AccentButton(
+                label: 'SWAP',
+                icon: Icons.swap_horiz,
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => Scaffold(
+                      backgroundColor: TibaneColors.black,
+                      appBar: AppBar(title: const Text('Swap')),
+                      body: SwapScreen(
+                        initialInputMint: wsolMint,
+                        initialOutputMint: _token!.mint,
+                        initialOutputSymbol: _token!.symbol,
+                        initialOutputName: _token!.name,
+                        initialOutputImageUrl: _token!.imageUrl,
+                        initialOutputDecimals: _token!.decimals,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: TibaneColors.orange),
@@ -405,8 +468,8 @@ class _SupplySection extends StatelessWidget {
                 icon: Icons.pie_chart,
               ),
             ),
-            const SizedBox(width: 8),
-            if (token.pricePerToken != null)
+            if (token.pricePerToken != null) ...[
+              const SizedBox(width: 8),
               Expanded(
                 child: StatCard(
                   label: 'Market Cap',
@@ -414,38 +477,17 @@ class _SupplySection extends StatelessWidget {
                   valueColor: TibaneColors.gold,
                   icon: Icons.attach_money,
                 ),
-              )
-            else
-              Expanded(
-                child: StatCard(
-                  label: 'Decimals',
-                  value: '${token.decimals}',
-                  icon: Icons.code,
-                ),
               ),
+            ],
           ],
         ),
         if (token.burned > BigInt.zero) ...[
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: StatCard(
-                  label: 'Burned',
-                  value: formatTokenAmount(token.burned, token.decimals),
-                  valueColor: TibaneColors.orange,
-                  icon: Icons.local_fire_department,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: StatCard(
-                  label: 'Decimals',
-                  value: '${token.decimals}',
-                  icon: Icons.code,
-                ),
-              ),
-            ],
+          StatCard(
+            label: 'Burned',
+            value: formatTokenAmount(token.burned, token.decimals),
+            valueColor: TibaneColors.orange,
+            icon: Icons.local_fire_department,
           ),
         ],
         const SizedBox(height: 8),
