@@ -63,6 +63,27 @@ class TokenMetadata {
   }) : supply = supply ?? BigInt.zero,
        burned = burned ?? BigInt.zero;
 
+  TokenMetadata copyWith({
+    String? name,
+    String? symbol,
+    String? imageUrl,
+    int? decimals,
+    double? pricePerToken,
+    BigInt? supply,
+    BigInt? burned,
+  }) {
+    return TokenMetadata(
+      mint: mint,
+      name: name ?? this.name,
+      symbol: symbol ?? this.symbol,
+      imageUrl: imageUrl ?? this.imageUrl,
+      decimals: decimals ?? this.decimals,
+      pricePerToken: pricePerToken ?? this.pricePerToken,
+      supply: supply ?? this.supply,
+      burned: burned ?? this.burned,
+    );
+  }
+
   factory TokenMetadata.fromHeliusAsset(Map<String, dynamic> json) {
     final content = json['content'] as Map<String, dynamic>?;
     final metadata = content?['metadata'] as Map<String, dynamic>?;

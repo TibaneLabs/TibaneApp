@@ -11,7 +11,23 @@ import '../../theme/tibane_theme.dart';
 import 'inapp_unlock_screen.dart';
 
 class SendScreen extends StatefulWidget {
-  const SendScreen({super.key});
+  /// Optional SPL mint to send instead of native SOL. When null the
+  /// screen behaves as a SOL transfer (the default).
+  final String? mint;
+
+  /// Ticker shown in the AppBar / amount label when [mint] is set.
+  final String? symbol;
+
+  /// On-chain decimals for [mint]. Required when [mint] is non-null
+  /// — the scale of the amount input depends on it.
+  final int? decimals;
+
+  const SendScreen({
+    super.key,
+    this.mint,
+    this.symbol,
+    this.decimals,
+  });
 
   @override
   State<SendScreen> createState() => _SendScreenState();
@@ -109,16 +125,35 @@ class _SendScreenState extends State<SendScreen> {
     try {
       final result = await wallet.libwallet.maxSendable(
         to: _addrCtrl.text.trim().isNotEmpty ? _addrCtrl.text.trim() : null,
+        asset: _assetKey,
       );
       if (!mounted) return;
-      // result.max is an Amount with lamports
-      final sol = result.max.toDouble();
-      _amountCtrl.text = sol.toStringAsFixed(9).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+      // result.max is an Amount scaled by the asset's decimals.
+      final ui = result.max.toDouble();
+      _amountCtrl.text = ui
+          .toStringAsFixed(_decimals)
+          .replaceAll(RegExp(r'0+$'), '')
+          .replaceAll(RegExp(r'\.$'), '');
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = 'Could not compute max: $e');
     }
   }
+
+  /// Asset key passed to libwallet (`solana.mainnet.<mint>`) when an
+  /// SPL mint is selected, else null for the native-SOL path.
+  String? get _assetKey {
+    final mint = widget.mint;
+    if (mint == null) return null;
+    return 'solana.mainnet.$mint';
+  }
+
+  /// Decimals for the active asset — SPL value when [SendScreen.mint]
+  /// is set, otherwise SOL's 9.
+  int get _decimals => widget.decimals ?? 9;
+
+  /// Ticker used in labels and the review sheet.
+  String get _symbol => widget.symbol ?? 'SOL';
 
   Future<void> _send() async {
     final typed = _addrCtrl.text.trim();
@@ -135,8 +170,9 @@ class _SendScreenState extends State<SendScreen> {
       setState(() => _error = 'Enter a valid amount');
       return;
     }
-    final lamports = BigInt.from((amountFloat * 1e9).round());
-    final amount = Amount(lamports, 9);
+    final scale = BigInt.from(10).pow(_decimals);
+    final raw = BigInt.from((amountFloat * scale.toDouble()).round());
+    final amount = Amount(raw, _decimals);
 
     // Pre-flight: simulate before asking for the password / FaceID. This
     // catches "recipient_new_account" rent advice, "will revert" failures,
@@ -150,7 +186,11 @@ class _SendScreenState extends State<SendScreen> {
     TransactionSimulation? sim;
     try {
       final wallet = context.read<WalletService>();
-      sim = await wallet.libwallet.simulateSend(to: addr, amount: amount);
+      sim = await wallet.libwallet.simulateSend(
+        to: addr,
+        amount: amount,
+        asset: _assetKey,
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -176,7 +216,11 @@ class _SendScreenState extends State<SendScreen> {
 
     final wallet = context.read<WalletService>();
     try {
-      final tx = await wallet.libwallet.send(to: addr, amount: amount);
+      final tx = await wallet.libwallet.send(
+        to: addr,
+        amount: amount,
+        asset: _assetKey,
+      );
       if (!mounted) return;
       setState(() {
         _successHash = tx.hash;
@@ -193,7 +237,7 @@ class _SendScreenState extends State<SendScreen> {
 
   Future<bool?> _showReviewSheet(
     String to,
-    double amountSol,
+    double amountUi,
     TransactionSimulation sim,
   ) {
     return showModalBottomSheet<bool>(
@@ -205,7 +249,9 @@ class _SendScreenState extends State<SendScreen> {
       ),
       builder: (ctx) => _SendReviewSheet(
         to: to,
-        amountSol: amountSol,
+        amountUi: amountUi,
+        symbol: _symbol,
+        decimals: _decimals,
         sim: sim,
       ),
     );
@@ -215,7 +261,7 @@ class _SendScreenState extends State<SendScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Send SOL')),
+      appBar: AppBar(title: Text('Send $_symbol')),
       body: SafeArea(
         child: GestureDetector(
           // Tap outside any input to dismiss the iOS numeric keyboard.
@@ -295,7 +341,7 @@ class _SendScreenState extends State<SendScreen> {
                 enabled: !_sending,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: InputDecoration(
-                  labelText: 'Amount (SOL)',
+                  labelText: 'Amount ($_symbol)',
                   suffixIcon: TextButton(
                     onPressed: _sending ? null : _setMax,
                     child: const Text('MAX', style: TextStyle(fontSize: 12)),
@@ -354,12 +400,16 @@ class _SendScreenState extends State<SendScreen> {
 /// before the user is asked to authenticate the send.
 class _SendReviewSheet extends StatelessWidget {
   final String to;
-  final double amountSol;
+  final double amountUi;
+  final String symbol;
+  final int decimals;
   final TransactionSimulation sim;
 
   const _SendReviewSheet({
     required this.to,
-    required this.amountSol,
+    required this.amountUi,
+    required this.symbol,
+    required this.decimals,
     required this.sim,
   });
 
@@ -396,9 +446,9 @@ class _SendReviewSheet extends StatelessWidget {
           const SizedBox(height: 16),
           _kv('To', shortTo),
           const SizedBox(height: 8),
-          _kv('Amount', '${amountSol.toStringAsFixed(9)
+          _kv('Amount', '${amountUi.toStringAsFixed(decimals)
               .replaceAll(RegExp(r'0+$'), '')
-              .replaceAll(RegExp(r'\.$'), '')} SOL'),
+              .replaceAll(RegExp(r'\.$'), '')} $symbol'),
           if (sim.unitsConsumed != null) ...[
             const SizedBox(height: 8),
             _kv('Compute', '${sim.unitsConsumed} CU'),

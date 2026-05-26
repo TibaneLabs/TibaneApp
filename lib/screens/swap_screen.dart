@@ -3,8 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:libwallet/libwallet.dart' show SwapTokenRef, SigningKey;
 import 'package:libwallet/libwallet.dart' as lw;
+import 'package:libwallet/libwallet.dart' show SwapTokenRef, SigningKey;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -13,12 +13,14 @@ import '../services/favorites_service.dart';
 import '../services/jupiter_service.dart';
 import '../services/rpc_service.dart';
 import '../services/uk_compliance_service.dart';
+import '../services/wallet/libwallet_backend.dart' show TokenSearchResult;
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
-import 'wallet/inapp_unlock_screen.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
 import '../widgets/token_icon.dart';
+import '../widgets/token_search.dart';
+import 'wallet/inapp_unlock_screen.dart';
 
 class SwapScreen extends StatefulWidget {
   /// Optional input mint to pre-select once holdings finish loading. Pass
@@ -56,7 +58,9 @@ class SwapScreen extends StatefulWidget {
 /// Clean up raw exceptions into user-friendly messages
 String _friendlyError(Object e) {
   final s = e.toString();
-  if (s.contains('SocketException') || s.contains('Failed host lookup') || s.contains('No address associated')) {
+  if (s.contains('SocketException') ||
+      s.contains('Failed host lookup') ||
+      s.contains('No address associated')) {
     return 'No internet connection';
   }
   if (s.contains('Connection refused') || s.contains('Connection reset')) {
@@ -84,7 +88,7 @@ class _SwapScreenState extends State<SwapScreen> {
 
   // Quote — one of these is non-null when a quote is ready
   SwapQuote? _jupiterQuote; // MWA path
-  lw.SwapQuote? _lwQuote;  // in-app path
+  lw.SwapQuote? _lwQuote; // in-app path
   bool _hasQuote = false;
   double? _quoteOutUi;
   bool _loadingQuote = false;
@@ -119,17 +123,28 @@ class _SwapScreenState extends State<SwapScreen> {
     // should pass it in so the picker displays the right name/icon
     // immediately. The libwallet quote will replace decimals with the
     // authoritative value once it lands.
+    //
+    // When the caller passes an output mint without its symbol / name
+    // (e.g. the wallet dashboard's tap-to-swap-to-SOL shortcut), fall
+    // back to the curated commonTokens entry for that mint so the TO
+    // field doesn't render with the icon-only / empty-text glitch.
+    // The flip button copies these fields into the new INPUT row, so a
+    // blank symbol here would also leak into FROM after a flip.
     final initOutMint = widget.initialOutputMint ?? chiefPussyMint;
-    final isCp = initOutMint == chiefPussyMint;
+    final fallback = commonTokens.firstWhere(
+      (t) => t.mint == initOutMint,
+      orElse: () =>
+          const CommonToken(mint: '', symbol: '', name: ''),
+    );
     _selectedOutput = _SwapToken(
       mint: initOutMint,
-      symbol: widget.initialOutputSymbol ?? (isCp ? 'ChiefPussy' : ''),
-      name: widget.initialOutputName ?? (isCp ? 'Tibane Thecat' : ''),
-      imageUrl: widget.initialOutputImageUrl,
+      symbol: widget.initialOutputSymbol ?? fallback.symbol,
+      name: widget.initialOutputName ?? fallback.name,
+      imageUrl: widget.initialOutputImageUrl ?? fallback.imageUrl,
     );
-    _outputDecimals = widget.initialOutputDecimals ??
-        (initOutMint == wsolMint ? 9 : 6);
-    _outputImageUrl = widget.initialOutputImageUrl;
+    _outputDecimals =
+        widget.initialOutputDecimals ?? (initOutMint == wsolMint ? 9 : 6);
+    _outputImageUrl = widget.initialOutputImageUrl ?? fallback.imageUrl;
 
     final wallet = context.read<WalletService>();
     _wallet = wallet;
@@ -200,7 +215,9 @@ class _SwapScreenState extends State<SwapScreen> {
       _quoteOutUi = null;
       _quoteError = null;
     });
-    if (_amountController.text.isNotEmpty && _selectedInput != null && _selectedOutput != null) {
+    if (_amountController.text.isNotEmpty &&
+        _selectedInput != null &&
+        _selectedOutput != null) {
       _quoteDebounce = Timer(const Duration(milliseconds: 500), _fetchQuote);
     }
   }
@@ -274,9 +291,9 @@ class _SwapScreenState extends State<SwapScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _switchingNetwork = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Switch failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Switch failed: $e')));
     }
   }
 
@@ -311,10 +328,7 @@ class _SwapScreenState extends State<SwapScreen> {
           const SizedBox(height: 8),
           Text(
             _availabilityMessage(a),
-            style: const TextStyle(
-              color: TibaneColors.textMuted,
-              height: 1.4,
-            ),
+            style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
@@ -326,9 +340,7 @@ class _SwapScreenState extends State<SwapScreen> {
             ),
             icon: const Icon(Icons.flash_on, size: 18),
             label: Text(
-              _switchingNetwork
-                  ? 'Switching…'
-                  : 'Switch to Solana mainnet',
+              _switchingNetwork ? 'Switching…' : 'Switch to Solana mainnet',
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
@@ -419,7 +431,9 @@ class _SwapScreenState extends State<SwapScreen> {
       return;
     }
 
-    final rawAmount = BigInt.from(amountFloat * BigInt.from(10).pow(_selectedInput!.decimals).toDouble());
+    final rawAmount = BigInt.from(
+      amountFloat * BigInt.from(10).pow(_selectedInput!.decimals).toDouble(),
+    );
     if (rawAmount <= BigInt.zero) return;
 
     final wallet = context.read<WalletService>();
@@ -445,7 +459,10 @@ class _SwapScreenState extends State<SwapScreen> {
     }
   }
 
-  Future<void> _fetchQuoteJupiter(WalletService wallet, BigInt rawAmount) async {
+  Future<void> _fetchQuoteJupiter(
+    WalletService wallet,
+    BigInt rawAmount,
+  ) async {
     final quote = await _jupiter.fetchQuote(
       inputMint: _selectedInput!.mint,
       outputMint: _selectedOutput!.mint,
@@ -463,7 +480,10 @@ class _SwapScreenState extends State<SwapScreen> {
     });
   }
 
-  Future<void> _fetchQuoteLibwallet(WalletService wallet, BigInt rawAmount) async {
+  Future<void> _fetchQuoteLibwallet(
+    WalletService wallet,
+    BigInt rawAmount,
+  ) async {
     final inputMint = _selectedInput!.mint;
     final outputMint = _selectedOutput!.mint;
     final client = await wallet.libwallet.ensureClient();
@@ -500,7 +520,8 @@ class _SwapScreenState extends State<SwapScreen> {
             : const lw.QuoteAttempt(provider: '', providerLabel: ''),
       );
       final code = firstErr.error?.code ?? 'no_route';
-      final msg = firstErr.error?.message ?? 'No provider could quote this pair';
+      final msg =
+          firstErr.error?.message ?? 'No provider could quote this pair';
       throw Exception('$msg ($code)');
     }
     final quote = best.quote!;
@@ -553,11 +574,15 @@ class _SwapScreenState extends State<SwapScreen> {
         // silently filling the field with an amount that won't actually
         // swap.
         if (!quote.isExecutable) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(quote.statusMessage.isNotEmpty
-                ? quote.statusMessage
-                : 'Max amount unavailable for this pair'),
-          ));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                quote.statusMessage.isNotEmpty
+                    ? quote.statusMessage
+                    : 'Max amount unavailable for this pair',
+              ),
+            ),
+          );
           return;
         }
         final raw = quote.amountIn.value;
@@ -590,8 +615,8 @@ class _SwapScreenState extends State<SwapScreen> {
     // sheet has names + amounts to display.
     final inputSymbol = _selectedInput?.symbol ?? '';
     final outputSymbol = _selectedOutput?.symbol ?? '';
-    final inputAmount = double.tryParse(
-            _amountController.text.trim().replaceAll(',', '.')) ??
+    final inputAmount =
+        double.tryParse(_amountController.text.trim().replaceAll(',', '.')) ??
         0;
     final outputAmount = _quoteOutUi ?? 0;
     final outputMint = _selectedOutput?.mint;
@@ -631,27 +656,31 @@ class _SwapScreenState extends State<SwapScreen> {
       // to nudge again once it's in so the dashboard reloads after the
       // first registration completes.
       if (outputMint != null && outputMint != wsolMint) {
-        unawaited(wallet.libwallet
-            .ensureTokenTracked(
-          mint: outputMint,
-          name: _selectedOutput?.name,
-          symbol: outputSymbol,
-          decimals: _outputDecimals,
-        )
-            .then((added) {
-          if (added && mounted) wallet.notifyTxCommitted();
-        }));
+        unawaited(
+          wallet.libwallet
+              .ensureTokenTracked(
+                mint: outputMint,
+                name: _selectedOutput?.name,
+                symbol: outputSymbol,
+                decimals: _outputDecimals,
+              )
+              .then((added) {
+                if (added && mounted) wallet.notifyTxCommitted();
+              }),
+        );
       }
       // Show the success sheet. Don't await — let it sit while we kick
       // off a few delayed balance refreshes for confirmation.
-      unawaited(_showSwapResultSheet(
-        signature: signature,
-        inputSymbol: inputSymbol,
-        outputSymbol: outputSymbol,
-        inputAmount: inputAmount,
-        outputAmount: outputAmount,
-        outputMint: outputMint,
-      ));
+      unawaited(
+        _showSwapResultSheet(
+          signature: signature,
+          inputSymbol: inputSymbol,
+          outputSymbol: outputSymbol,
+          inputAmount: inputAmount,
+          outputAmount: outputAmount,
+          outputMint: outputMint,
+        ),
+      );
       // Re-poll holdings a couple times so the new balances catch up
       // once the swap confirms on-chain (Solana ~2-5s typically).
       for (final delay in const [Duration(seconds: 4), Duration(seconds: 10)]) {
@@ -720,12 +749,14 @@ class _SwapScreenState extends State<SwapScreen> {
     );
   }
 
-
   Future<String> _executeSwapJupiter(WalletService wallet) async {
     final q = _jupiterQuote!;
     final txBytes = base64Decode(q.transaction);
-    final signedBytes = await wallet.signTransaction(Uint8List.fromList(txBytes));
-    if (signedBytes == null) throw Exception('Transaction signing was rejected');
+    final signedBytes = await wallet.signTransaction(
+      Uint8List.fromList(txBytes),
+    );
+    if (signedBytes == null)
+      throw Exception('Transaction signing was rejected');
     final signedBase64 = base64Encode(signedBytes);
     return _jupiter.executeSwap(
       signedTransactionBase64: signedBase64,
@@ -737,7 +768,13 @@ class _SwapScreenState extends State<SwapScreen> {
     final q = _lwQuote!;
     final client = await wallet.libwallet.ensureClient();
     final keys = wallet.libwallet.currentSigningKeys
-        .map((k) => SigningKey(id: k['Id'] as String, key: k['Key'] as String, type: k['Type'] as String?))
+        .map(
+          (k) => SigningKey(
+            id: k['Id'] as String,
+            key: k['Key'] as String,
+            type: k['Type'] as String?,
+          ),
+        )
         .toList();
     final result = await client.swap.execute(quoteId: q.quoteId, keys: keys);
     return result.hash;
@@ -822,7 +859,12 @@ class _SwapScreenState extends State<SwapScreen> {
         onSelect: (mint, symbol, name, imageUrl, decimals) {
           Navigator.pop(context);
           setState(() {
-            _selectedOutput = _SwapToken(mint: mint, symbol: symbol, name: name, imageUrl: imageUrl);
+            _selectedOutput = _SwapToken(
+              mint: mint,
+              symbol: symbol,
+              name: name,
+              imageUrl: imageUrl,
+            );
             _outputDecimals = decimals;
             _outputImageUrl = imageUrl;
             _jupiterQuote = null;
@@ -836,7 +878,10 @@ class _SwapScreenState extends State<SwapScreen> {
           // Re-fetch quote if we have input and amount
           if (_selectedInput != null && _amountController.text.isNotEmpty) {
             _quoteDebounce?.cancel();
-            _quoteDebounce = Timer(const Duration(milliseconds: 300), _fetchQuote);
+            _quoteDebounce = Timer(
+              const Duration(milliseconds: 300),
+              _fetchQuote,
+            );
           }
         },
       ),
@@ -875,111 +920,152 @@ class _SwapScreenState extends State<SwapScreen> {
       onTap: () => FocusScope.of(context).unfocus(),
       behavior: HitTestBehavior.translucent,
       child: RefreshIndicator(
-      onRefresh: _loadHoldings,
-      color: TibaneColors.orange,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-        // Scrolling the list also dismisses the keyboard.
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        children: [
-
-          if (!wallet.isConnected) ...[
-            TibaneCard(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 40),
-                  child: Column(
-                    children: [
-                      Icon(Icons.account_balance_wallet_outlined, size: 48, color: TibaneColors.textDim),
-                      const SizedBox(height: 16),
-                      Text('Connect wallet to swap', style: Theme.of(context).textTheme.bodyLarge),
-                    ],
+        onRefresh: _loadHoldings,
+        color: TibaneColors.orange,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          // Scrolling the list also dismisses the keyboard.
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          children: [
+            if (!wallet.isConnected) ...[
+              TibaneCard(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 40),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.account_balance_wallet_outlined,
+                          size: 48,
+                          color: TibaneColors.textDim,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Connect wallet to swap',
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ] else if (_swapAvailability != null && !_swapAvailability!.available) ...[
-            _buildUnavailableBanner(),
-          ] else ...[
-            // From section
-            _buildFromSection(),
-            const SizedBox(height: 8),
+            ] else if (_swapAvailability != null &&
+                !_swapAvailability!.available) ...[
+              _buildUnavailableBanner(),
+            ] else ...[
+              // From section
+              _buildFromSection(),
+              const SizedBox(height: 8),
 
-            // Flip button
-            Center(
-              child: IconButton(
-                onPressed: _flipTokens,
-                icon: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: TibaneColors.surface,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: TibaneColors.border),
-                  ),
-                  child: const Icon(Icons.swap_vert, color: TibaneColors.orange, size: 24),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // To section
-            _buildToSection(),
-            const SizedBox(height: 16),
-
-            // Quote details
-            if (_loadingQuote)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Center(child: SizedBox(
-                  width: 20, height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: TibaneColors.orange),
-                )),
-              ),
-
-            if (_quoteError != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: TibaneCard(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.warning_amber, color: TibaneColors.warning, size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(_quoteError!, style: TextStyle(color: TibaneColors.warning, fontSize: 13))),
-                    ],
+              // Flip button
+              Center(
+                child: IconButton(
+                  onPressed: _flipTokens,
+                  icon: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: TibaneColors.surface,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: TibaneColors.border),
+                    ),
+                    child: const Icon(
+                      Icons.swap_vert,
+                      color: TibaneColors.orange,
+                      size: 24,
+                    ),
                   ),
                 ),
               ),
+              const SizedBox(height: 8),
 
-            if (_hasQuote) _buildQuoteDetails(),
+              // To section
+              _buildToSection(),
+              const SizedBox(height: 16),
 
-            // Error
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: TibaneCard(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.error_outline, color: TibaneColors.error, size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(_error!, style: TextStyle(color: TibaneColors.error, fontSize: 13))),
-                    ],
+              // Quote details
+              if (_loadingQuote)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: TibaneColors.orange,
+                      ),
+                    ),
                   ),
                 ),
-              ),
 
-            // Swap button
-            GradientButton(
-              label: _swapping ? 'Swapping...' : 'Swap',
-              icon: Icons.swap_horiz,
-              expanded: true,
-              loading: _swapping,
-              onPressed: _hasQuote && !_swapping ? _executeSwap : null,
-            ),
+              if (_quoteError != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: TibaneCard(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.warning_amber,
+                          color: TibaneColors.warning,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _quoteError!,
+                            style: TextStyle(
+                              color: TibaneColors.warning,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              if (_hasQuote) _buildQuoteDetails(),
+
+              // Error
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: TibaneCard(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.error_outline,
+                          color: TibaneColors.error,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _error!,
+                            style: TextStyle(
+                              color: TibaneColors.error,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // Swap button
+              GradientButton(
+                label: _swapping ? 'Swapping...' : 'Swap',
+                icon: Icons.swap_horiz,
+                expanded: true,
+                loading: _swapping,
+                onPressed: _hasQuote && !_swapping ? _executeSwap : null,
+              ),
+            ],
           ],
-        ],
-      ),
+        ),
       ),
     );
   }
@@ -992,7 +1078,10 @@ class _SwapScreenState extends State<SwapScreen> {
         children: [
           Row(
             children: [
-              Text('From', style: monoStyle(fontSize: 11, color: TibaneColors.textDim)),
+              Text(
+                'From',
+                style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
+              ),
               const Spacer(),
               if (_selectedInput != null)
                 Text(
@@ -1010,7 +1099,10 @@ class _SwapScreenState extends State<SwapScreen> {
                   onTap: _loadingHoldings ? null : _showInputPicker,
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: TibaneColors.darker,
                       borderRadius: BorderRadius.circular(8),
@@ -1019,20 +1111,38 @@ class _SwapScreenState extends State<SwapScreen> {
                     child: Row(
                       children: [
                         if (_selectedInput != null) ...[
-                          TokenIcon(imageUrl: _selectedInput!.imageUrl, mint: _selectedInput!.mint, symbol: _selectedInput!.symbol, size: 24),
+                          TokenIcon(
+                            imageUrl: _selectedInput!.imageUrl,
+                            mint: _selectedInput!.mint,
+                            symbol: _selectedInput!.symbol,
+                            size: 24,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               _selectedInput!.symbol,
-                              style: const TextStyle(fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ] else ...[
                           if (_loadingHoldings)
-                            const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: TibaneColors.orange))
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: TibaneColors.orange,
+                              ),
+                            )
                           else
-                            const Icon(Icons.token, color: TibaneColors.textDim, size: 20),
+                            const Icon(
+                              Icons.token,
+                              color: TibaneColors.textDim,
+                              size: 20,
+                            ),
                           const SizedBox(width: 8),
                           Text(
                             _loadingHoldings ? 'Loading...' : 'Select token',
@@ -1040,7 +1150,11 @@ class _SwapScreenState extends State<SwapScreen> {
                           ),
                         ],
                         const SizedBox(width: 4),
-                        const Icon(Icons.keyboard_arrow_down, size: 18, color: TibaneColors.textDim),
+                        const Icon(
+                          Icons.keyboard_arrow_down,
+                          size: 18,
+                          color: TibaneColors.textDim,
+                        ),
                       ],
                     ),
                   ),
@@ -1059,10 +1173,14 @@ class _SwapScreenState extends State<SwapScreen> {
             decoration: InputDecoration(
               hintText: '0.00',
               hintStyle: monoStyle(fontSize: 20, color: TibaneColors.textDim),
-              suffixText: _selectedInput != null && _selectedInput!.priceUsd != null
+              suffixText:
+                  _selectedInput != null && _selectedInput!.priceUsd != null
                   ? '\$${(_formatUsd(double.tryParse(_amountController.text.replaceAll(',', '.')) ?? 0, _selectedInput!.priceUsd!))}'
                   : null,
-              suffixStyle: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
+              suffixStyle: monoStyle(
+                fontSize: 12,
+                color: TibaneColors.textMuted,
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -1075,7 +1193,9 @@ class _SwapScreenState extends State<SwapScreen> {
                     padding: EdgeInsets.only(right: pct == 100 ? 0 : 6),
                     child: _PercentButton(
                       label: pct == 100 ? 'Max' : '$pct%',
-                      onTap: _selectedInput != null ? () => _setPercent(pct) : null,
+                      onTap: _selectedInput != null
+                          ? () => _setPercent(pct)
+                          : null,
                     ),
                   ),
                 ),
@@ -1092,7 +1212,10 @@ class _SwapScreenState extends State<SwapScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('To', style: monoStyle(fontSize: 11, color: TibaneColors.textDim)),
+          Text(
+            'To',
+            style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
+          ),
           const SizedBox(height: 12),
           InkWell(
             onTap: _showOutputPicker,
@@ -1107,7 +1230,12 @@ class _SwapScreenState extends State<SwapScreen> {
               child: Row(
                 children: [
                   if (_selectedOutput != null) ...[
-                    TokenIcon(imageUrl: _outputImageUrl ?? _selectedOutput!.imageUrl, mint: _selectedOutput!.mint, symbol: _selectedOutput!.symbol, size: 24),
+                    TokenIcon(
+                      imageUrl: _outputImageUrl ?? _selectedOutput!.imageUrl,
+                      mint: _selectedOutput!.mint,
+                      symbol: _selectedOutput!.symbol,
+                      size: 24,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -1117,12 +1245,23 @@ class _SwapScreenState extends State<SwapScreen> {
                       ),
                     ),
                   ] else ...[
-                    const Icon(Icons.token, color: TibaneColors.textDim, size: 20),
+                    const Icon(
+                      Icons.token,
+                      color: TibaneColors.textDim,
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
-                    Text('Select token', style: TextStyle(color: TibaneColors.textMuted)),
+                    Text(
+                      'Select token',
+                      style: TextStyle(color: TibaneColors.textMuted),
+                    ),
                   ],
                   const SizedBox(width: 4),
-                  const Icon(Icons.keyboard_arrow_down, size: 18, color: TibaneColors.textDim),
+                  const Icon(
+                    Icons.keyboard_arrow_down,
+                    size: 18,
+                    color: TibaneColors.textDim,
+                  ),
                 ],
               ),
             ),
@@ -1179,7 +1318,8 @@ class _SwapScreenState extends State<SwapScreen> {
     final provider = q.providerLabel.isNotEmpty ? q.providerLabel : q.provider;
     final summary = StringBuffer();
     summary.write(
-        '${_formatOutputAmount(q.amountOut.toDouble())} ${q.tokenOut.symbol}');
+      '${_formatOutputAmount(q.amountOut.toDouble())} ${q.tokenOut.symbol}',
+    );
     if (q.priceImpact > 0) {
       summary.write('  ·  ${(q.priceImpact * 100).toStringAsFixed(2)}% impact');
     }
@@ -1188,15 +1328,24 @@ class _SwapScreenState extends State<SwapScreen> {
       summary: summary.toString(),
       children: [
         _quoteRow('Provider', provider),
-        _quoteRow('You receive',
-            '${_formatOutputAmount(q.amountOut.toDouble())} ${q.tokenOut.symbol}'),
-        _quoteRow('Min receive', _formatOutputAmount(q.minAmountOut.toDouble())),
+        _quoteRow(
+          'You receive',
+          '${_formatOutputAmount(q.amountOut.toDouble())} ${q.tokenOut.symbol}',
+        ),
+        _quoteRow(
+          'Min receive',
+          _formatOutputAmount(q.minAmountOut.toDouble()),
+        ),
         if (q.priceImpact > 0)
-          _quoteRow('Price impact',
-              '${(q.priceImpact * 100).toStringAsFixed(2)}%'),
+          _quoteRow(
+            'Price impact',
+            '${(q.priceImpact * 100).toStringAsFixed(2)}%',
+          ),
         if (q.networkFee != null)
-          _quoteRow('Network fee',
-              '${q.networkFee!.toDouble().toStringAsFixed(6)} SOL'),
+          _quoteRow(
+            'Network fee',
+            '${q.networkFee!.toDouble().toStringAsFixed(6)} SOL',
+          ),
         _quoteRow('Fee', '${(q.feeBps / 100).toStringAsFixed(1)}%'),
         if (q.route.isNotEmpty)
           _quoteRow('Route', q.route.map((h) => h.venue).join(' → ')),
@@ -1215,8 +1364,8 @@ class _SwapScreenState extends State<SwapScreen> {
       padding: const EdgeInsets.only(bottom: 12),
       child: TibaneCard(
         padding: EdgeInsets.zero,
-        onTap: () => setState(
-            () => _quoteDetailsExpanded = !_quoteDetailsExpanded),
+        onTap: () =>
+            setState(() => _quoteDetailsExpanded = !_quoteDetailsExpanded),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Column(
@@ -1259,8 +1408,17 @@ class _SwapScreenState extends State<SwapScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: monoStyle(fontSize: 11, color: TibaneColors.textMuted)),
-          Text(value, style: monoStyle(fontSize: 11, color: valueColor ?? TibaneColors.text)),
+          Text(
+            label,
+            style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+          ),
+          Text(
+            value,
+            style: monoStyle(
+              fontSize: 11,
+              color: valueColor ?? TibaneColors.text,
+            ),
+          ),
         ],
       ),
     );
@@ -1295,7 +1453,12 @@ class _SwapToken {
   final String name;
   final String? imageUrl;
 
-  _SwapToken({required this.mint, required this.symbol, required this.name, this.imageUrl});
+  _SwapToken({
+    required this.mint,
+    required this.symbol,
+    required this.name,
+    this.imageUrl,
+  });
 }
 
 // Percent button
@@ -1351,7 +1514,10 @@ class _InputTokenPicker extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Text('Select token to swap', style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Select token to swap',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const Spacer(),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
@@ -1368,16 +1534,39 @@ class _InputTokenPicker extends StatelessWidget {
               itemBuilder: (context, index) {
                 final h = holdings[index];
                 return ListTile(
-                  leading: TokenIcon(imageUrl: h.imageUrl, mint: h.mint, symbol: h.symbol, size: 36),
-                  title: Text(h.symbol, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text(h.name, style: TextStyle(color: TibaneColors.textMuted, fontSize: 12)),
+                  leading: TokenIcon(
+                    imageUrl: h.imageUrl,
+                    mint: h.mint,
+                    symbol: h.symbol,
+                    size: 36,
+                  ),
+                  title: Text(
+                    h.symbol,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    h.name,
+                    style: TextStyle(
+                      color: TibaneColors.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
                   trailing: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text(_formatHoldingBalance(h.uiBalance), style: monoStyle(fontSize: 12)),
+                      Text(
+                        _formatHoldingBalance(h.uiBalance),
+                        style: monoStyle(fontSize: 12),
+                      ),
                       if (h.valueUsd != null)
-                        Text('\$${h.valueUsd!.toStringAsFixed(2)}', style: monoStyle(fontSize: 10, color: TibaneColors.textMuted)),
+                        Text(
+                          '\$${h.valueUsd!.toStringAsFixed(2)}',
+                          style: monoStyle(
+                            fontSize: 10,
+                            color: TibaneColors.textMuted,
+                          ),
+                        ),
                     ],
                   ),
                   onTap: () => onSelect(h),
@@ -1400,7 +1589,14 @@ class _InputTokenPicker extends StatelessWidget {
 
 // Output token picker bottom sheet
 class _OutputTokenPicker extends StatefulWidget {
-  final void Function(String mint, String symbol, String name, String? imageUrl, int decimals) onSelect;
+  final void Function(
+    String mint,
+    String symbol,
+    String name,
+    String? imageUrl,
+    int decimals,
+  )
+  onSelect;
 
   const _OutputTokenPicker({required this.onSelect});
 
@@ -1409,48 +1605,51 @@ class _OutputTokenPicker extends StatefulWidget {
 }
 
 class _OutputTokenPickerState extends State<_OutputTokenPicker> {
-  final _searchController = TextEditingController();
-  String? _searchError;
-  bool _searching = false;
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+  /// Called when the user pastes a mint and submits — fetches the
+  /// on-chain metadata so the swap selector gets the right decimals /
+  /// symbol / logo. Curated-list taps go through [_selectResult] and
+  /// skip this since they already carry the metadata.
+  ///
+  /// [TokenSearch] awaits the returned future and drives its suffix
+  /// spinner for the duration, so no local loading flag is needed.
+  Future<void> _selectByMint(String mint) async {
+    final rpc = RpcService();
+    try {
+      final meta = await rpc.getAsset(mint);
+      if (!mounted) return;
+      if (meta == null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Token not found')));
+        return;
+      }
+      widget.onSelect(
+        mint,
+        meta.symbol ?? shortenAddress(mint),
+        meta.name ?? mint,
+        meta.imageUrl,
+        meta.decimals,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_friendlyError(e))));
+    } finally {
+      rpc.dispose();
+    }
   }
 
-  Future<void> _searchMint() async {
-    final mint = _searchController.text.trim();
-    if (mint.isEmpty) return;
-
-    // Validate it looks like a Solana address
-    if (mint.length < 32 || mint.length > 44) {
-      setState(() => _searchError = 'Invalid mint address');
-      return;
-    }
-
-    setState(() {
-      _searching = true;
-      _searchError = null;
-    });
-
-    try {
-      final rpc = RpcService();
-      try {
-        final meta = await rpc.getAsset(mint);
-        if (meta != null) {
-          widget.onSelect(mint, meta.symbol ?? shortenAddress(mint), meta.name ?? mint, meta.imageUrl, meta.decimals);
-        } else {
-          setState(() => _searchError = 'Token not found');
-        }
-      } finally {
-        rpc.dispose();
-      }
-    } catch (e) {
-      setState(() => _searchError = _friendlyError(e));
-    } finally {
-      if (mounted) setState(() => _searching = false);
-    }
+  void _selectResult(TokenSearchResult r) {
+    // Curated list carries decimals; fall back to 6 (most SPL tokens)
+    // when the entry is missing it for whatever reason.
+    widget.onSelect(
+      r.mint,
+      r.symbol ?? shortenAddress(r.mint),
+      r.name ?? r.mint,
+      r.imageUrl,
+      r.decimals ?? 6,
+    );
   }
 
   @override
@@ -1468,7 +1667,10 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Text('Select output token', style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Select output token',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const Spacer(),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
@@ -1477,80 +1679,101 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
               ],
             ),
           ),
-          // Search by mint
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: const InputDecoration(
-                      hintText: 'Paste mint address...',
-                      prefixIcon: Icon(Icons.search, size: 18),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                    style: monoStyle(fontSize: 12),
-                    onSubmitted: (_) => _searchMint(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: _searching ? null : _searchMint,
-                  icon: _searching
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: TibaneColors.orange))
-                    : const Icon(Icons.arrow_forward, size: 20),
-                ),
-              ],
-            ),
-          ),
-          if (_searchError != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Text(_searchError!, style: TextStyle(color: TibaneColors.error, fontSize: 12)),
-            ),
-          const SizedBox(height: 8),
-          const Divider(height: 1),
           Expanded(
-            child: ListView(
-              controller: scrollController,
-              children: [
-                // Common tokens section
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  child: Text('POPULAR', style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
-                ),
-                for (final token in commonTokens)
-                  ListTile(
-                    leading: TokenIcon(imageUrl: token.imageUrl, mint: token.mint, symbol: token.symbol, size: 36),
-                    title: Text(token.symbol, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text(token.name, style: TextStyle(color: TibaneColors.textMuted, fontSize: 12)),
-                    onTap: () {
-                      final decimals = token.mint == wsolMint ? 9 : 6; // SOL=9, USDC/USDT/pump=6
-                      widget.onSelect(token.mint, token.symbol, token.name, token.imageUrl, decimals);
-                    },
-                  ),
-
-                // Favorites section
-                if (favorites.isNotEmpty) ...[
+            child: TokenSearch(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              scrollController: scrollController,
+              onResultSelected: _selectResult,
+              onMintSubmitted: _selectByMint,
+              emptyBody: ListView(
+                controller: scrollController,
+                children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Text('FAVORITES', style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
-                  ),
-                  for (final fav in favorites)
-                    // Skip if already in common tokens
-                    if (!commonTokens.any((c) => c.mint == fav.mint))
-                      ListTile(
-                        leading: TokenIcon(imageUrl: fav.imageUrl, mint: fav.mint, symbol: fav.symbol ?? '?', size: 36),
-                        title: Text(fav.symbol ?? shortenAddress(fav.mint), style: const TextStyle(fontWeight: FontWeight.w600)),
-                        subtitle: Text(fav.name ?? fav.mint, style: TextStyle(color: TibaneColors.textMuted, fontSize: 12)),
-                        onTap: () {
-                          // Default to 6 decimals for favorites (most SPL tokens)
-                          widget.onSelect(fav.mint, fav.symbol ?? shortenAddress(fav.mint), fav.name ?? fav.mint, fav.imageUrl, 6);
-                        },
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                    child: Text(
+                      'POPULAR',
+                      style: monoStyle(
+                        fontSize: 10,
+                        color: TibaneColors.textDim,
                       ),
+                    ),
+                  ),
+                  for (final token in commonTokens)
+                    ListTile(
+                      leading: TokenIcon(
+                        imageUrl: token.imageUrl,
+                        mint: token.mint,
+                        symbol: token.symbol,
+                        size: 36,
+                      ),
+                      title: Text(
+                        token.symbol,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Text(
+                        token.name,
+                        style: TextStyle(
+                          color: TibaneColors.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                      onTap: () {
+                        // SOL=9, USDC/USDT/pump=6
+                        final decimals = token.mint == wsolMint ? 9 : 6;
+                        widget.onSelect(
+                          token.mint,
+                          token.symbol,
+                          token.name,
+                          token.imageUrl,
+                          decimals,
+                        );
+                      },
+                    ),
+                  if (favorites.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Text(
+                        'FAVORITES',
+                        style: monoStyle(
+                          fontSize: 10,
+                          color: TibaneColors.textDim,
+                        ),
+                      ),
+                    ),
+                    for (final fav in favorites)
+                      // Skip if already in common tokens.
+                      if (!commonTokens.any((c) => c.mint == fav.mint))
+                        ListTile(
+                          leading: TokenIcon(
+                            imageUrl: fav.imageUrl,
+                            mint: fav.mint,
+                            symbol: fav.symbol ?? '?',
+                            size: 36,
+                          ),
+                          title: Text(
+                            fav.symbol ?? shortenAddress(fav.mint),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          subtitle: Text(
+                            fav.name ?? fav.mint,
+                            style: TextStyle(
+                              color: TibaneColors.textMuted,
+                              fontSize: 12,
+                            ),
+                          ),
+                          onTap: () {
+                            widget.onSelect(
+                              fav.mint,
+                              fav.symbol ?? shortenAddress(fav.mint),
+                              fav.name ?? fav.mint,
+                              fav.imageUrl,
+                              6,
+                            );
+                          },
+                        ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ],
@@ -1587,9 +1810,9 @@ class _SwapResultSheet extends StatelessWidget {
   Future<void> _openExplorer(BuildContext context, String url) async {
     final uri = Uri.tryParse(url);
     if (uri == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Invalid explorer URL: $url')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Invalid explorer URL: $url')));
       return;
     }
     Object? lastErr;
@@ -1762,8 +1985,7 @@ class _SwapResultSheet extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 color: TibaneColors.darker,
                 borderRadius: BorderRadius.circular(10),
@@ -1870,11 +2092,7 @@ class _SwapUnavailableInRegion extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.public_off,
-              color: TibaneColors.textDim,
-              size: 48,
-            ),
+            const Icon(Icons.public_off, color: TibaneColors.textDim, size: 48),
             const SizedBox(height: 16),
             Text(
               'Swap not available in your region',

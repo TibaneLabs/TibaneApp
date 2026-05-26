@@ -15,6 +15,7 @@ import '../../widgets/network_logos.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import '../swap_screen.dart';
+import '../token_detail_screen.dart';
 import 'receive_screen.dart';
 import 'send_screen.dart';
 
@@ -179,6 +180,16 @@ class _WalletDashboardState extends State<WalletDashboard> {
                   (sum, h) => sum + (h.valueUsd ?? 0),
                 );
                 final totalUsd = solFiat + tokensFiat;
+                // Express the dollar total in SOL when we have enough
+                // signal to compute the SOL price (native fiat ÷ native
+                // ui-balance). Falls back to silence on non-Solana
+                // networks or when balances haven't loaded yet rather
+                // than printing a misleading 0.
+                final solUi = wallet.solBalance.toDouble() / 1e9;
+                final solPriceUsd =
+                    (solFiat > 0 && solUi > 0) ? solFiat / solUi : null;
+                final totalInSol =
+                    solPriceUsd != null ? totalUsd / solPriceUsd : null;
                 return Column(
                   children: [
                     Text(
@@ -187,21 +198,16 @@ class _WalletDashboardState extends State<WalletDashboard> {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Text(
-                      'TOTAL',
-                      style: monoStyle(
-                        fontSize: 11,
-                        color: TibaneColors.textDim,
+                    if (totalInSol != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        '${totalInSol.toStringAsFixed(4)} SOL',
+                        style: monoStyle(
+                          fontSize: 13,
+                          color: TibaneColors.textMuted,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '${formatSol(wallet.solBalance)} SOL',
-                      style: monoStyle(
-                        fontSize: 13,
-                        color: TibaneColors.textMuted,
-                      ),
-                    ),
+                    ],
                   ],
                 );
               },
@@ -271,21 +277,29 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 final net = wallet.libwallet.currentNetwork;
                 final assetPath =
                     isNativeRow && net != null ? networkLogoAsset(net) : null;
+                // Resolve the on-chain mint to push to TokenDetailScreen.
+                // Native rows carry a synthetic ".NATIVE" sentinel that
+                // Helius DAS doesn't understand — substitute wSOL for
+                // Solana; leave EVM/BTC native rows non-tappable since
+                // there's no equivalent analytics surface for them.
+                String? detailMint;
+                if (isNativeRow) {
+                  if (net?.type == NetworkType.solana) detailMint = wsolMint;
+                } else {
+                  detailMint = h.mint;
+                }
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: TibaneCard(
                     padding: const EdgeInsets.all(12),
-                    // Native rows aren't tappable — there's no "swap X
-                    // to X" path. SPL token rows keep the swap-to-SOL
-                    // shortcut behind the existing UK gate.
-                    onTap: (isNativeRow ||
-                            context.read<UkComplianceService>().isUk)
+                    onTap: detailMint == null
                         ? null
-                        : () => _openSwap(
-                            context,
-                            inputMint: h.mint,
-                            outputMint: wsolMint,
-                          ),
+                        : () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    TokenDetailScreen(mint: detailMint!),
+                              ),
+                            ),
                     child: Row(
                       children: [
                         TokenIcon(

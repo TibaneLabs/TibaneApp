@@ -9,8 +9,15 @@ import '../theme/tibane_theme.dart';
 /// Compact chip showing the active libwallet network. Tap to open the
 /// network picker. Refreshes itself on mount, then relies on [Wallet
 /// Service] listener notifications to update.
+///
+/// Set [iconOnly] to render just a network-tinted globe icon (no label
+/// text or chevron) for tight contexts where the surrounding layout
+/// already conveys "network" by position — e.g. the wallet info bottom
+/// sheet's title row, where the chip lives next to the wallet name.
 class NetworkChip extends StatefulWidget {
-  const NetworkChip({super.key});
+  final bool iconOnly;
+
+  const NetworkChip({super.key, this.iconOnly = false});
 
   @override
   State<NetworkChip> createState() => _NetworkChipState();
@@ -48,6 +55,21 @@ class _NetworkChipState extends State<NetworkChip> {
     final net = wallet.libwallet.currentNetwork;
     final color = _accent(net?.type);
     final label = net?.name.isNotEmpty == true ? net!.name : 'Network';
+    if (widget.iconOnly) {
+      return InkWell(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const NetworksScreen()),
+        ),
+        borderRadius: BorderRadius.circular(20),
+        child: Tooltip(
+          message: 'Switch network ($label)',
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Icon(Icons.public, size: 20, color: color),
+          ),
+        ),
+      );
+    }
     return InkWell(
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const NetworksScreen()),

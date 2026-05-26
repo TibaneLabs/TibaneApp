@@ -6,13 +6,19 @@ import '../constants/solana_constants.dart';
 import '../models/staking_pool.dart';
 import '../models/token_account.dart';
 import '../services/favorites_service.dart';
+import '../services/jupiter_service.dart';
 import '../services/rpc_service.dart';
 import '../services/staker_instructions.dart';
+import '../services/uk_compliance_service.dart';
+import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
 import 'fee_sharing_screen.dart';
 import 'staking/staking_detail_screen.dart';
+import 'swap_screen.dart';
+import 'wallet/receive_screen.dart';
+import 'wallet/send_screen.dart';
 
 /// Read-only analytics view for a single SPL token: metadata, supply,
 /// market cap, top holders, recent transactions, optional staking-pool
@@ -37,6 +43,10 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
   StakingPool? _stakingPool;
   bool _loading = true;
   String? _error;
+  // User's on-chain balance for this token (raw, scaled by decimals).
+  // null until the first lookup completes; the Send button stays
+  // disabled until we have a positive value to send.
+  BigInt? _userBalance;
 
   @override
   void initState() {
@@ -73,12 +83,138 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
         if (_token == null) _error = 'Token not found';
       });
       _checkStakingPool();
+      _backfillPriceIfMissing();
+      _loadUserBalance();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = 'Failed to load token: $e';
         _loading = false;
       });
+    }
+  }
+
+  /// Helius's getAsset only carries a price for a small subset of
+  /// SPL tokens. When it doesn't, ask Jupiter's price API — which
+  /// covers any actively-traded SPL — so the Market Cap stat can
+  /// render for the long tail of tokens too. Idempotent: skips if a
+  /// price is already populated or if the screen has unmounted.
+  Future<void> _backfillPriceIfMissing() async {
+    final token = _token;
+    if (token == null || token.pricePerToken != null) return;
+    final jupiter = JupiterService();
+    try {
+      final prices = await jupiter.fetchTokenPrices([widget.mint]);
+      if (!mounted) return;
+      final price = prices[widget.mint];
+      if (price == null || price <= 0) return;
+      setState(() {
+        _token = _token!.copyWith(pricePerToken: price);
+      });
+    } finally {
+      jupiter.dispose();
+    }
+  }
+
+  /// AppBar overflow menu — collects Receive / Send / Swap into one
+  /// trigger so the actions don't crowd the title row. Send disables
+  /// itself when the balance lookup returns zero; Swap is hidden in
+  /// UK mode for the same reason it's hidden on other screens.
+  Widget _buildActionsMenu(BuildContext context) {
+    final token = _token!;
+    final isUk = context.watch<UkComplianceService>().isUk;
+    final canSend = _userBalance != null && _userBalance! > BigInt.zero;
+    return PopupMenuButton<_TokenAction>(
+      tooltip: 'Actions',
+      icon: const Icon(Icons.more_vert),
+      onSelected: (action) {
+        switch (action) {
+          case _TokenAction.receive:
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ReceiveScreen()),
+            );
+          case _TokenAction.send:
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SendScreen(
+                  mint: token.mint,
+                  symbol: token.symbol,
+                  decimals: token.decimals,
+                ),
+              ),
+            );
+          case _TokenAction.swap:
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => Scaffold(
+                  backgroundColor: TibaneColors.black,
+                  appBar: AppBar(title: const Text('Swap')),
+                  body: SwapScreen(
+                    initialInputMint: wsolMint,
+                    initialOutputMint: token.mint,
+                    initialOutputSymbol: token.symbol,
+                    initialOutputName: token.name,
+                    initialOutputImageUrl: token.imageUrl,
+                    initialOutputDecimals: token.decimals,
+                  ),
+                ),
+              ),
+            );
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem<_TokenAction>(
+          value: _TokenAction.receive,
+          child: _MenuRow(icon: Icons.arrow_downward, label: 'Receive'),
+        ),
+        PopupMenuItem<_TokenAction>(
+          value: _TokenAction.send,
+          enabled: canSend,
+          child: _MenuRow(
+            icon: Icons.arrow_upward,
+            label: 'Send',
+            dimmed: !canSend,
+          ),
+        ),
+        if (!isUk)
+          const PopupMenuItem<_TokenAction>(
+            value: _TokenAction.swap,
+            child: _MenuRow(icon: Icons.swap_horiz, label: 'Swap'),
+          ),
+      ],
+    );
+  }
+
+  /// Fetch the connected wallet's balance for this token so the Send
+  /// button can disable itself when there's nothing to send. Native
+  /// SOL is the WalletService balance; everything else sums the
+  /// matching SPL / Token-2022 accounts.
+  Future<void> _loadUserBalance() async {
+    if (!mounted) return;
+    final wallet = context.read<WalletService>();
+    final owner = wallet.publicKey;
+    if (owner == null) return;
+    try {
+      BigInt total;
+      if (widget.mint == wsolMint) {
+        total = wallet.solBalance;
+      } else {
+        final results = await Future.wait([
+          _rpc.getTokenAccountsByOwner(owner),
+          _rpc.getTokenAccountsByOwner(owner, token2022: true),
+        ]);
+        total = BigInt.zero;
+        for (final acc in [...results[0], ...results[1]]) {
+          if (acc.mint == widget.mint) total += acc.amount;
+        }
+      }
+      if (!mounted) return;
+      setState(() => _userBalance = total);
+    } catch (e) {
+      if (!mounted) return;
+      // Leave _userBalance null so the Send button stays disabled
+      // rather than allowing a send the wallet might not cover.
+      debugPrint('[token-detail] balance lookup failed: $e');
     }
   }
 
@@ -99,7 +235,12 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Token info')),
+      appBar: AppBar(
+        title: const Text('Token info'),
+        actions: [
+          if (_token != null) _buildActionsMenu(context),
+        ],
+      ),
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: TibaneColors.orange),
@@ -405,8 +546,8 @@ class _SupplySection extends StatelessWidget {
                 icon: Icons.pie_chart,
               ),
             ),
-            const SizedBox(width: 8),
-            if (token.pricePerToken != null)
+            if (token.pricePerToken != null) ...[
+              const SizedBox(width: 8),
               Expanded(
                 child: StatCard(
                   label: 'Market Cap',
@@ -414,38 +555,17 @@ class _SupplySection extends StatelessWidget {
                   valueColor: TibaneColors.gold,
                   icon: Icons.attach_money,
                 ),
-              )
-            else
-              Expanded(
-                child: StatCard(
-                  label: 'Decimals',
-                  value: '${token.decimals}',
-                  icon: Icons.code,
-                ),
               ),
+            ],
           ],
         ),
         if (token.burned > BigInt.zero) ...[
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: StatCard(
-                  label: 'Burned',
-                  value: formatTokenAmount(token.burned, token.decimals),
-                  valueColor: TibaneColors.orange,
-                  icon: Icons.local_fire_department,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: StatCard(
-                  label: 'Decimals',
-                  value: '${token.decimals}',
-                  icon: Icons.code,
-                ),
-              ),
-            ],
+          StatCard(
+            label: 'Burned',
+            value: formatTokenAmount(token.burned, token.decimals),
+            valueColor: TibaneColors.orange,
+            icon: Icons.local_fire_department,
           ),
         ],
         const SizedBox(height: 8),
@@ -632,5 +752,36 @@ class _TransactionsSection extends StatelessWidget {
     if (diff.inHours < 24) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
     return '${dt.month}/${dt.day}';
+  }
+}
+
+/// Actions surfaced in the AppBar overflow menu.
+enum _TokenAction { receive, send, swap }
+
+/// Single row inside the overflow menu: icon + label. The colour
+/// drops to `textDim` when [dimmed] is true so a disabled Send item
+/// reads as obviously not-tappable (Flutter's default disabled menu
+/// item is barely greyer than the enabled state on a dark theme).
+class _MenuRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool dimmed;
+
+  const _MenuRow({
+    required this.icon,
+    required this.label,
+    this.dimmed = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = dimmed ? TibaneColors.textDim : TibaneColors.text;
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 12),
+        Text(label, style: TextStyle(color: color)),
+      ],
+    );
   }
 }

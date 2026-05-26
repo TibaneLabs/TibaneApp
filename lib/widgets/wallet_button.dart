@@ -10,6 +10,7 @@ import '../screens/wallet/inapp_export_screen.dart';
 import '../screens/wallet/inapp_unlock_screen.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
+import 'network_chip.dart';
 
 /// Wallet connect/disconnect button for the app bar
 class WalletButton extends StatelessWidget {
@@ -316,9 +317,25 @@ class _ConnectedButton extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              wallet.walletName ?? 'Connected Wallet',
-              style: Theme.of(context).textTheme.titleLarge,
+            // Wallet name stays visually centered; the network-switch chip
+            // floats at the right edge of the same row via a full-width
+            // Stack so the title's centering isn't pulled off-axis by the
+            // chip's variable width.
+            SizedBox(
+              width: double.infinity,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Text(
+                    wallet.walletName ?? 'Connected Wallet',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: NetworkChip(iconOnly: true),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
             Container(
