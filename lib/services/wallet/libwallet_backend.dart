@@ -1584,25 +1584,25 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     return keys;
   }
 
-  /// Auto-rotate the device share on a wallet that exists locally but
-  /// has no SecureKeystore entry for its StoreKey private. Per
-  /// libwallet's device-share docs
-  /// (https://github.com/KarpelesLab/libwallet/blob/master/dart/doc/device_share.md),
-  /// the wallet has T+1 shares available on a fresh device (RemoteKey
-  /// via the authenticated WalletSign session + Password from the user)
-  /// — enough to authorize the reshare ceremony. Mints a new StoreKey,
-  /// reshares to swap it in, and persists the private half locally.
+  /// Build the `oldKeys` list for a device-share reshare ceremony.
   ///
-  /// Caller is responsible for using the returned private key (set
-  /// `_storeKeyPriv = …`). Throws on any failure; surrounding code
-  /// should surface a clear error.
-  Future<String> _resharedDeviceShare({
-    required LibwalletClient client,
+  /// Pure function — extracted from [_resharedDeviceShare] so it can be
+  /// unit-tested without a live [LibwalletClient]. The wallet must
+  /// carry a StoreKey row (we're replacing it); throws otherwise. The
+  /// StoreKey entry is included only when [storeKeyPriv] is non-null,
+  /// since that's the 64-byte private produced by StoreKey:create and
+  /// is what libwallet's opener expects — the wallet's stored
+  /// `WalletKey.key` is the X.509 public, which would trip the length
+  /// check. On a recovery device that never held the private, omit
+  /// the entry; Password + RemoteKey still satisfies T+1 for a 2-of-3
+  /// wallet, and `reshareNew` mints the replacement StoreKey.
+  @visibleForTesting
+  static List<KeyDescription> buildReshareOldKeys({
     required Wallet wallet,
     required String password,
+    required String? storeKeyPriv,
     String? freshRemoteKeyResource,
-  }) async {
-    // Find the existing shares we'll reference in oldKeys.
+  }) {
     final oldStoreKey = wallet.keys.firstWhere(
       (k) => k.type == 'StoreKey',
       orElse: () => throw StateError('Wallet has no StoreKey share'),
@@ -1625,18 +1625,16 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     // produces `invalid status for wallet sign session: done`.
     // Callers in the cross-device recovery flow must run
     // RemoteKey:reshare + :validate first and pass the fresh
-    // `RemoteKeyValidation.remoteKey` here. The fresh id replaces
-    // the stored one on BOTH the old and new RemoteKey
-    // KeyDescriptions.
+    // `RemoteKeyValidation.remoteKey` here.
     final remoteKeyForReshare = freshRemoteKeyResource ?? oldRemoteKey?.key;
 
-    final newStorePair = await client.storeKeys.create();
-    final reshareOld = <KeyDescription>[
-      KeyDescription(
-        type: 'StoreKey',
-        key: oldStoreKey.key,
-        id: oldStoreKey.id,
-      ),
+    return <KeyDescription>[
+      if (storeKeyPriv != null)
+        KeyDescription(
+          type: 'StoreKey',
+          key: storeKeyPriv,
+          id: oldStoreKey.id,
+        ),
       if (oldRemoteKey != null && remoteKeyForReshare != null)
         KeyDescription(
           type: 'RemoteKey',
@@ -1645,6 +1643,41 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         ),
       KeyDescription(type: 'Password', key: password, id: oldPasswordKey.id),
     ];
+  }
+
+  /// Auto-rotate the device share on a wallet that exists locally but
+  /// has no SecureKeystore entry for its StoreKey private. Per
+  /// libwallet's device-share docs
+  /// (https://github.com/KarpelesLab/libwallet/blob/master/dart/doc/device_share.md),
+  /// the wallet has T+1 shares available on a fresh device (RemoteKey
+  /// via the authenticated WalletSign session + Password from the user)
+  /// — enough to authorize the reshare ceremony. Mints a new StoreKey,
+  /// reshares to swap it in, and persists the private half locally.
+  ///
+  /// Caller is responsible for using the returned private key (set
+  /// `_storeKeyPriv = …`). Throws on any failure; surrounding code
+  /// should surface a clear error.
+  Future<String> _resharedDeviceShare({
+    required LibwalletClient client,
+    required Wallet wallet,
+    required String password,
+    String? freshRemoteKeyResource,
+  }) async {
+    final newStorePair = await client.storeKeys.create();
+    final reshareOld = buildReshareOldKeys(
+      wallet: wallet,
+      password: password,
+      storeKeyPriv: _storeKeyPriv,
+      freshRemoteKeyResource: freshRemoteKeyResource,
+    );
+    WalletKey? oldRemoteKey;
+    for (final k in wallet.keys) {
+      if (k.type == 'RemoteKey') {
+        oldRemoteKey = k;
+        break;
+      }
+    }
+    final remoteKeyForReshare = freshRemoteKeyResource ?? oldRemoteKey?.key;
     final reshareNew = <KeyDescription>[
       KeyDescription.storeKey(newStorePair.publicKey),
       if (oldRemoteKey != null && remoteKeyForReshare != null)
