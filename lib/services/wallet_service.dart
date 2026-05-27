@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -95,6 +96,12 @@ class WalletService extends ChangeNotifier {
     _kind = _parseKind(prefs.getString('wallet_backend'));
     await _mwa.tryRestore();
     await _libwallet.tryRestore();
+    // libwallet's built-in default is Ethereum mainnet, so a fresh
+    // install (no wallet, no explicit pick) shows the wrong network
+    // chip on the dashboard. Normalize to Solana mainnet on every
+    // cold start — ensureSolanaDefault no-ops once the user has
+    // explicitly picked a network via NetworksScreen.
+    unawaited(_libwallet.ensureSolanaDefault());
     if (isConnected) {
       refreshBalances();
       if (!_auth.isAuthenticated) {
