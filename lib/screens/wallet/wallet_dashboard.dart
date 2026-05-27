@@ -277,7 +277,14 @@ class _WalletDashboardState extends State<WalletDashboard> {
               ..._displayTokens(wallet).map((h) {
                 final isNativeRow = h.mint.endsWith('.NATIVE');
                 final net = wallet.libwallet.currentNetwork;
-                final assetPath = isNativeRow && net != null
+                final isSolanaNative =
+                    isNativeRow && net?.type == NetworkType.solana;
+                // Defer to TokenIcon's wsolMint → sol.png branch for
+                // Solana so it matches every other surface that shows
+                // SOL. Other networks fall back to the bundled brand
+                // logo since TokenIcon has no equivalent shortcut for
+                // them.
+                final assetPath = isNativeRow && !isSolanaNative && net != null
                     ? networkLogoAsset(net)
                     : null;
                 // Resolve the on-chain mint to push to TokenDetailScreen.
@@ -287,10 +294,15 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 // there's no equivalent analytics surface for them.
                 String? detailMint;
                 if (isNativeRow) {
-                  if (net?.type == NetworkType.solana) detailMint = wsolMint;
+                  if (isSolanaNative) detailMint = wsolMint;
                 } else {
                   detailMint = h.mint;
                 }
+                // The mint we hand to TokenIcon: for Solana-native, use
+                // wsolMint so the bundled sol.png wins; otherwise pass
+                // the row's mint untouched (synthetic `.NATIVE` sentinel
+                // for non-Solana native, real on-chain mint for SPL).
+                final iconMint = isSolanaNative ? wsolMint : h.mint;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: TibaneCard(
@@ -308,7 +320,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                         TokenIcon(
                           imageUrl: h.imageUrl,
                           assetPath: assetPath,
-                          mint: h.mint,
+                          mint: iconMint,
                           symbol: h.symbol.isNotEmpty ? h.symbol : h.name,
                           size: 32,
                         ),
@@ -502,12 +514,17 @@ class _WalletDashboardState extends State<WalletDashboard> {
     final lastDot = assetKey.lastIndexOf('.');
     final tail = lastDot >= 0 ? assetKey.substring(lastDot + 1) : assetKey;
     final isNative = tail == 'NATIVE';
+    // Native Solana → swap in wSOL's mint so TokenIcon's
+    // `mint == wsolMint` branch picks up the bundled sol.png.
+    // Without this the row would land on the letter-S placeholder
+    // since libwallet doesn't carry a logo URL for native assets.
+    final isNativeSol = isNative && assetKey.startsWith('solana.');
 
     for (final a in _assets) {
       if (a.key == assetKey) {
         return _TxTokenInfo(
           symbol: a.symbol,
-          mint: isNative ? null : a.tokenAddress,
+          mint: isNativeSol ? wsolMint : (isNative ? null : a.tokenAddress),
           imageUrl: null,
           isNative: isNative,
         );
@@ -530,7 +547,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
       symbol: isNative
           ? (net?.currencySymbol.isNotEmpty == true ? net!.currencySymbol : '')
           : '',
-      mint: isNative ? null : tail,
+      mint: isNativeSol ? wsolMint : (isNative ? null : tail),
       imageUrl: null,
       isNative: isNative,
     );
