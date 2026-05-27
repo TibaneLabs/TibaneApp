@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../constants/solana_constants.dart';
 import '../models/staking_pool.dart';
 import '../models/token_account.dart';
+import '../services/chiefstaker_api.dart';
 import '../services/favorites_service.dart';
 import '../services/jupiter_service.dart';
 import '../services/rpc_service.dart';
@@ -218,17 +219,40 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
     }
   }
 
+  /// Resolve the staking pool for this mint from the ChiefStaker API
+  /// so it carries the same enrichment (name, symbol, image, decimals,
+  /// price, supply, member count) that the pools-list screen has —
+  /// otherwise the detail screen we push into renders with a bare
+  /// 'Pool' title and missing stats. Falls back to on-chain
+  /// deserialization for pools the API doesn't know about, enriching
+  /// what we can from the token metadata already loaded above.
   Future<void> _checkStakingPool() async {
     try {
+      final api = ChiefStakerApi();
+      final pool = await api.getByMint(widget.mint);
+      if (!mounted) return;
+      if (pool != null) {
+        setState(() => _stakingPool = pool);
+        return;
+      }
       final poolAddr = derivePoolPDA(widget.mint);
       final data = await _rpc.getAccountInfo(poolAddr);
-      if (data != null && mounted) {
-        final pool = StakingPool.deserialize(poolAddr, data);
-        if (pool != null) {
-          setState(() => _stakingPool = pool);
-        }
+      if (!mounted || data == null) return;
+      final onChain = StakingPool.deserialize(poolAddr, data);
+      if (onChain == null) return;
+      final token = _token;
+      if (token != null) {
+        onChain.tokenName = token.name;
+        onChain.tokenSymbol = token.symbol;
+        onChain.tokenImage = token.imageUrl;
+        onChain.tokenDecimals = token.decimals;
+        onChain.tokenPrice = token.pricePerToken;
+        onChain.tokenSupply = token.supply;
       }
-    } catch (_) {}
+      setState(() => _stakingPool = onChain);
+    } catch (e) {
+      debugPrint('[token-detail] staking pool lookup failed: $e');
+    }
   }
 
   @override
