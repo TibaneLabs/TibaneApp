@@ -15,6 +15,7 @@ import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
+import '../widgets/token_icon.dart';
 import 'fee_sharing_screen.dart';
 import 'staking/staking_detail_screen.dart';
 import 'swap_screen.dart';
@@ -451,33 +452,11 @@ class _TokenHeader extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: TibaneColors.darker,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: token.imageUrl != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.network(
-                          token.imageUrl!,
-                          width: 56,
-                          height: 56,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, e, s) => const Icon(
-                            Icons.token,
-                            size: 28,
-                            color: TibaneColors.textDim,
-                          ),
-                        ),
-                      )
-                    : const Icon(
-                        Icons.token,
-                        size: 28,
-                        color: TibaneColors.textDim,
-                      ),
+              TokenIcon(
+                imageUrl: token.imageUrl,
+                mint: token.mint,
+                symbol: token.symbol ?? token.name ?? '',
+                size: 56,
               ),
               const SizedBox(width: 16),
               Expanded(

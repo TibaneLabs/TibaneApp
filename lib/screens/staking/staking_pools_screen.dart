@@ -8,6 +8,7 @@ import '../../services/favorites_service.dart';
 import '../../services/uk_compliance_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../widgets/token_icon.dart';
 import 'staking_detail_screen.dart';
 
 class StakingPoolsScreen extends StatefulWidget {
@@ -357,34 +358,11 @@ class _PoolCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              // Token image
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: TibaneColors.darker,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: pool.tokenImage != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.network(
-                          pool.tokenImage!,
-                          width: 40,
-                          height: 40,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, e, s) => const Icon(
-                            Icons.token,
-                            size: 20,
-                            color: TibaneColors.textDim,
-                          ),
-                        ),
-                      )
-                    : const Icon(
-                        Icons.token,
-                        size: 20,
-                        color: TibaneColors.textDim,
-                      ),
+              TokenIcon(
+                imageUrl: pool.tokenImage,
+                mint: pool.mint,
+                symbol: pool.tokenSymbol ?? pool.tokenName ?? '',
+                size: 40,
               ),
               const SizedBox(width: 12),
               Expanded(

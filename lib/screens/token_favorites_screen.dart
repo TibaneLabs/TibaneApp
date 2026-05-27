@@ -5,6 +5,7 @@ import '../constants/solana_constants.dart';
 import '../services/favorites_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/tibane_card.dart';
+import '../widgets/token_icon.dart';
 import '../widgets/token_search.dart';
 import 'token_detail_screen.dart';
 
@@ -109,33 +110,11 @@ class _FavoriteTokenTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: TibaneColors.darker,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: token.imageUrl != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Image.network(
-                        token.imageUrl!,
-                        width: 40,
-                        height: 40,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, e, s) => const Icon(
-                          Icons.token,
-                          size: 20,
-                          color: TibaneColors.textDim,
-                        ),
-                      ),
-                    )
-                  : const Icon(
-                      Icons.token,
-                      size: 20,
-                      color: TibaneColors.textDim,
-                    ),
+            TokenIcon(
+              imageUrl: token.imageUrl,
+              mint: token.mint,
+              symbol: token.symbol ?? token.name ?? '',
+              size: 40,
             ),
             const SizedBox(width: 12),
             Expanded(
