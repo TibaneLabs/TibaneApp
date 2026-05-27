@@ -99,3 +99,20 @@ String formatTokenAmount(BigInt amount, int tokenDecimals, {int displayDecimals 
   if (value >= 1e3) return '${(value / 1e3).toStringAsFixed(displayDecimals)}K';
   return value.toStringAsFixed(displayDecimals);
 }
+
+/// Render a raw token amount with at most [maxDecimals] fractional
+/// digits, stripping insignificant trailing zeros (and the dangling
+/// `.`). `0.006000000` becomes `0.006`; `1.0` becomes `1`. Use this
+/// for transaction rows where libwallet's `Amount.toString()` pads
+/// to the full asset exponent and produces noisy decimals.
+String formatAmountTrimmed(BigInt value, int exp, {int maxDecimals = 8}) {
+  final decimals = exp < maxDecimals ? exp : maxDecimals;
+  final divisor = BigInt.from(10).pow(exp);
+  final dv = value.toDouble() / divisor.toDouble();
+  var s = dv.toStringAsFixed(decimals);
+  if (s.contains('.')) {
+    s = s.replaceFirst(RegExp(r'0+$'), '');
+    s = s.replaceFirst(RegExp(r'\.$'), '');
+  }
+  return s;
+}
