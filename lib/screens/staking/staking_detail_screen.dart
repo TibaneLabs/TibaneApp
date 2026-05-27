@@ -69,6 +69,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
         _fetchWalletBalance(wallet.publicKey!),
         _rpc.getStakingPool(pool.address),
       ]);
+      if (!mounted) return;
       setState(() {
         _userStake = results[0] as UserStake?;
         _walletBalance = results[1] as BigInt;
@@ -92,6 +93,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
         _loadingStake = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = 'Failed to load stake: $e';
         _loadingStake = false;
@@ -410,9 +412,11 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
-      setState(() => _staking = false);
-      _loadUserStake();
-      wallet.refreshBalances();
+      if (mounted) {
+        setState(() => _staking = false);
+        _loadUserStake();
+        wallet.refreshBalances();
+      }
     }
   }
 
@@ -456,9 +460,11 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
-      setState(() => _staking = false);
-      _loadUserStake();
-      wallet.refreshBalances();
+      if (mounted) {
+        setState(() => _staking = false);
+        _loadUserStake();
+        wallet.refreshBalances();
+      }
     }
   }
 
@@ -596,9 +602,11 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
-      setState(() => _staking = false);
-      _loadUserStake();
-      wallet.refreshBalances();
+      if (mounted) {
+        setState(() => _staking = false);
+        _loadUserStake();
+        wallet.refreshBalances();
+      }
     }
   }
 }
