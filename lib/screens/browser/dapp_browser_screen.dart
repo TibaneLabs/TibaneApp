@@ -67,8 +67,11 @@ class _Gate extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.shield_outlined,
-                  size: 48, color: TibaneColors.orange),
+              const Icon(
+                Icons.shield_outlined,
+                size: 48,
+                color: TibaneColors.orange,
+              ),
               const SizedBox(height: 16),
               Text(title, style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
@@ -76,7 +79,9 @@ class _Gate extends StatelessWidget {
                 subtitle,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                    color: TibaneColors.textMuted, height: 1.4),
+                  color: TibaneColors.textMuted,
+                  height: 1.4,
+                ),
               ),
               const SizedBox(height: 24),
               FilledButton(
@@ -85,7 +90,9 @@ class _Gate extends StatelessWidget {
                   backgroundColor: TibaneColors.orange,
                   foregroundColor: TibaneColors.black,
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 32, vertical: 14),
+                    horizontal: 32,
+                    vertical: 14,
+                  ),
                 ),
                 child: Text(
                   actionLabel,

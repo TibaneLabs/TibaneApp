@@ -28,9 +28,9 @@ class _TokenFavoritesScreenState extends State<TokenFavoritesScreen> {
   Future<void> _openToken(String mintInput) async {
     final mint = mintInput.trim();
     if (mint.length < 32) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => TokenDetailScreen(mint: mint)),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => TokenDetailScreen(mint: mint)));
   }
 
   @override
@@ -63,8 +63,10 @@ class _TokenFavoritesScreenState extends State<TokenFavoritesScreen> {
                       const SizedBox(height: 8),
                       Text(
                         'Search for a token and tap the star to add it',
-                        style:
-                            monoStyle(fontSize: 11, color: TibaneColors.textDim),
+                        style: monoStyle(
+                          fontSize: 11,
+                          color: TibaneColors.textDim,
+                        ),
                       ),
                     ],
                   ),

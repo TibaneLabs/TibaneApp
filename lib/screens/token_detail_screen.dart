@@ -44,6 +44,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
   StakingPool? _stakingPool;
   bool _loading = true;
   String? _error;
+
   // User's on-chain balance for this token (raw, scaled by decimals).
   // null until the first lookup completes; the Send button stays
   // disabled until we have a positive value to send.
@@ -131,9 +132,9 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
       onSelected: (action) {
         switch (action) {
           case _TokenAction.receive:
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ReceiveScreen()),
-            );
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const ReceiveScreen()));
           case _TokenAction.send:
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -261,9 +262,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
         title: const Text('Token info'),
-        actions: [
-          if (_token != null) _buildActionsMenu(context),
-        ],
+        actions: [if (_token != null) _buildActionsMenu(context)],
       ),
       body: _loading
           ? const Center(

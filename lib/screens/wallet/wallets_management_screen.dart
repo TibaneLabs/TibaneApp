@@ -77,17 +77,16 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
   }
 
   Future<void> _addWallet() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const InAppCreateScreen()),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const InAppCreateScreen()));
     // _load triggers from WalletService listener on success.
   }
 
   @override
   Widget build(BuildContext context) {
-    final activeId = (_wallet ?? context.watch<WalletService>())
-        .libwallet
-        .walletId;
+    final activeId =
+        (_wallet ?? context.watch<WalletService>()).libwallet.walletId;
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
@@ -115,57 +114,62 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
         label: const Text('New wallet'),
       ),
       body: SafeArea(
-        child: Builder(builder: (context) {
-          if (_loading) {
-            return const Center(
-              child: CircularProgressIndicator(color: TibaneColors.orange),
-            );
-          }
-          if (_error != null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  _error!,
-                  style: const TextStyle(color: TibaneColors.textMuted),
-                  textAlign: TextAlign.center,
+        child: Builder(
+          builder: (context) {
+            if (_loading) {
+              return const Center(
+                child: CircularProgressIndicator(color: TibaneColors.orange),
+              );
+            }
+            if (_error != null) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-              ),
-            );
-          }
-          final list = _wallets ?? const [];
-          if (list.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.account_balance_wallet_outlined,
-                        size: 48, color: TibaneColors.textDim),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No local wallets yet',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Tap "New wallet" to create one.',
-                      style: TextStyle(color: TibaneColors.textMuted),
-                    ),
-                  ],
+              );
+            }
+            final list = _wallets ?? const [];
+            if (list.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.account_balance_wallet_outlined,
+                        size: 48,
+                        color: TibaneColors.textDim,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No local wallets yet',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Tap "New wallet" to create one.',
+                        style: TextStyle(color: TibaneColors.textMuted),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+              );
+            }
+            return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
+              itemCount: list.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (_, i) =>
+                  _WalletRow(wallet: list[i], active: list[i].id == activeId),
             );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
-            itemCount: list.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) =>
-                _WalletRow(wallet: list[i], active: list[i].id == activeId),
-          );
-        }),
+          },
+        ),
       ),
     );
   }
@@ -174,6 +178,7 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
 class _WalletRow extends StatelessWidget {
   final lw.Wallet wallet;
   final bool active;
+
   const _WalletRow({required this.wallet, required this.active});
 
   @override
@@ -200,13 +205,18 @@ class _WalletRow extends StatelessWidget {
               Expanded(
                 child: Text(
                   wallet.name.isEmpty ? '(unnamed)' : wallet.name,
-                  style: const TextStyle(color: TibaneColors.text, fontSize: 15),
+                  style: const TextStyle(
+                    color: TibaneColors.text,
+                    fontSize: 15,
+                  ),
                 ),
               ),
               if (active)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 4),
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: TibaneColors.cyan.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
@@ -217,8 +227,11 @@ class _WalletRow extends StatelessWidget {
                   ),
                 ),
               const SizedBox(width: 6),
-              const Icon(Icons.chevron_right,
-                  color: TibaneColors.textDim, size: 18),
+              const Icon(
+                Icons.chevron_right,
+                color: TibaneColors.textDim,
+                size: 18,
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -229,13 +242,11 @@ class _WalletRow extends StatelessWidget {
               children: [
                 Text(
                   'Curve: ${wallet.curve}',
-                  style:
-                      monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
                 Text(
                   'Shares: $subkeys',
-                  style:
-                      monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
               ],
             ),

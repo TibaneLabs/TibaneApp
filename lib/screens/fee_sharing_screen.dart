@@ -11,9 +11,9 @@ import '../services/solana_common.dart';
 import '../services/spl_instructions.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
-import 'wallet/inapp_unlock_screen.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
+import 'wallet/inapp_unlock_screen.dart';
 
 class FeeSharingScreen extends StatefulWidget {
   final String mint;

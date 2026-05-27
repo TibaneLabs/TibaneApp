@@ -14,6 +14,7 @@ class ChiefStakerApi {
   static ChiefStakerApi? testInstance;
 
   factory ChiefStakerApi() => testInstance ?? ChiefStakerApi.real();
+
   ChiefStakerApi.real();
 
   /// List every known pool. Pages through the backend transparently.

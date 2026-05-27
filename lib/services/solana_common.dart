@@ -9,7 +9,8 @@ import 'package:crypto/crypto.dart';
 
 // ─── Base58 ──────────────────────────────────────────────────────────────────
 
-const _base58Alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const _base58Alphabet =
+    '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 final _base58Map = () {
   final map = <int, int>{};
   for (var i = 0; i < _base58Alphabet.length; i++) {
@@ -23,7 +24,10 @@ Uint8List base58Decode(String input) {
   final base = BigInt.from(58);
   for (final c in input.codeUnits) {
     final digit = _base58Map[c];
-    if (digit == null) throw FormatException('Invalid base58 character: ${String.fromCharCode(c)}');
+    if (digit == null)
+      throw FormatException(
+        'Invalid base58 character: ${String.fromCharCode(c)}',
+      );
     value = value * base + BigInt.from(digit);
   }
 
@@ -82,10 +86,7 @@ Uint8List compactU16(int value) {
   if (value < 0x80) {
     return Uint8List.fromList([value]);
   } else if (value < 0x4000) {
-    return Uint8List.fromList([
-      (value & 0x7F) | 0x80,
-      (value >> 7) & 0x7F,
-    ]);
+    return Uint8List.fromList([(value & 0x7F) | 0x80, (value >> 7) & 0x7F]);
   } else {
     return Uint8List.fromList([
       (value & 0x7F) | 0x80,
@@ -98,7 +99,8 @@ Uint8List compactU16(int value) {
 // ─── Ed25519 curve check (for PDA derivation) ───────────────────────────────
 
 final _edP = BigInt.two.pow(255) - BigInt.from(19);
-final _edD = BigInt.from(-121665) * _modInverse(BigInt.from(121666), _edP) % _edP;
+final _edD =
+    BigInt.from(-121665) * _modInverse(BigInt.from(121666), _edP) % _edP;
 
 BigInt _modInverse(BigInt a, BigInt m) => a.modPow(m - BigInt.two, m);
 
@@ -131,7 +133,10 @@ bool _isOnCurve(Uint8List key) {
 // ─── PDA derivation ──────────────────────────────────────────────────────────
 
 /// Derive a Program Derived Address. Returns (address, bump).
-(Uint8List, int) findProgramAddress(List<Uint8List> seeds, Uint8List programId) {
+(Uint8List, int) findProgramAddress(
+  List<Uint8List> seeds,
+  Uint8List programId,
+) {
   final pda = utf8.encode('ProgramDerivedAddress');
   for (var bump = 255; bump >= 0; bump--) {
     final hasher = sha256.convert([
@@ -149,7 +154,10 @@ bool _isOnCurve(Uint8List key) {
 }
 
 /// Convenience: derive PDA from string seeds and base58 program ID
-(String, int) findProgramAddressFromStrings(List<Uint8List> seeds, String programIdBase58) {
+(String, int) findProgramAddressFromStrings(
+  List<Uint8List> seeds,
+  String programIdBase58,
+) {
   final programId = base58Decode(programIdBase58);
   final (addr, bump) = findProgramAddress(seeds, programId);
   return (base58Encode(addr), bump);
@@ -164,8 +172,16 @@ class AccountMeta {
 
   AccountMeta(this.pubkey, {required this.isSigner, required this.isWritable});
 
-  factory AccountMeta.fromBase58(String address, {required bool isSigner, required bool isWritable}) {
-    return AccountMeta(base58Decode(address), isSigner: isSigner, isWritable: isWritable);
+  factory AccountMeta.fromBase58(
+    String address, {
+    required bool isSigner,
+    required bool isWritable,
+  }) {
+    return AccountMeta(
+      base58Decode(address),
+      isSigner: isSigner,
+      isWritable: isWritable,
+    );
   }
 }
 

@@ -31,8 +31,16 @@ SolanaInstruction createAssociatedTokenAccountIdempotentIx({
       AccountMeta.fromBase58(ata, isSigner: false, isWritable: true),
       AccountMeta.fromBase58(owner, isSigner: false, isWritable: false),
       AccountMeta.fromBase58(mint, isSigner: false, isWritable: false),
-      AccountMeta.fromBase58(systemProgramId, isSigner: false, isWritable: false),
-      AccountMeta.fromBase58(tokenProgramId, isSigner: false, isWritable: false),
+      AccountMeta.fromBase58(
+        systemProgramId,
+        isSigner: false,
+        isWritable: false,
+      ),
+      AccountMeta.fromBase58(
+        tokenProgramId,
+        isSigner: false,
+        isWritable: false,
+      ),
     ],
     data: Uint8List.fromList([1]), // 1 = CreateIdempotent
   );
@@ -118,23 +126,27 @@ List<SolanaInstruction> buildBurnAndCloseInstructions({
 
   // Burn tokens if amount > 0
   if (amount > BigInt.zero) {
-    instructions.add(createBurnCheckedIx(
-      tokenAccount: tokenAccount,
-      mint: mint,
-      authority: owner,
-      amount: amount,
-      decimals: decimals,
-      tokenProgramId: tokenProgramId,
-    ));
+    instructions.add(
+      createBurnCheckedIx(
+        tokenAccount: tokenAccount,
+        mint: mint,
+        authority: owner,
+        amount: amount,
+        decimals: decimals,
+        tokenProgramId: tokenProgramId,
+      ),
+    );
   }
 
   // Close the account to reclaim rent
-  instructions.add(createCloseAccountIx(
-    tokenAccount: tokenAccount,
-    destination: owner,
-    authority: owner,
-    tokenProgramId: tokenProgramId,
-  ));
+  instructions.add(
+    createCloseAccountIx(
+      tokenAccount: tokenAccount,
+      destination: owner,
+      authority: owner,
+      tokenProgramId: tokenProgramId,
+    ),
+  );
 
   return instructions;
 }

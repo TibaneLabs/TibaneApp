@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -15,6 +16,7 @@ class RpcService {
   static RpcService? testInstance;
 
   factory RpcService() => testInstance ?? RpcService.real();
+
   RpcService.real();
 
   final http.Client _client = http.Client();
@@ -59,8 +61,10 @@ class RpcService {
   /// Poll `getSignatureStatuses` until the tx hits `confirmed` (or better),
   /// or the deadline passes. Returns true if confirmed, false on timeout.
   /// Subsequent reads at `confirmed` commitment will see the tx's effects.
-  Future<bool> confirmTransaction(String signature,
-      {Duration timeout = const Duration(seconds: 30)}) async {
+  Future<bool> confirmTransaction(
+    String signature, {
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       final result = await _rpc('getSignatureStatuses', [
@@ -113,7 +117,8 @@ class RpcService {
   }
 
   /// Get account info with lamports
-  Future<({Uint8List? data, BigInt lamports, String? owner})?> getAccountInfoFull(String address) async {
+  Future<({Uint8List? data, BigInt lamports, String? owner})?>
+  getAccountInfoFull(String address) async {
     final result = await _rpc('getAccountInfo', [
       address,
       {'encoding': 'base64'},
@@ -134,7 +139,10 @@ class RpcService {
   }
 
   /// Get token accounts by owner (SPL Token program)
-  Future<List<TokenAccount>> getTokenAccountsByOwner(String owner, {bool token2022 = false}) async {
+  Future<List<TokenAccount>> getTokenAccountsByOwner(
+    String owner, {
+    bool token2022 = false,
+  }) async {
     final programId = token2022 ? token2022ProgramId : splTokenProgramId;
     final result = await _rpc('getTokenAccountsByOwner', [
       owner,
@@ -149,18 +157,21 @@ class RpcService {
       final pubkey = item['pubkey'] as String;
       final accountData = item['account'] as Map<String, dynamic>;
       final lamports = accountData['lamports'] as int;
-      final parsed = accountData['data']['parsed']['info'] as Map<String, dynamic>;
+      final parsed =
+          accountData['data']['parsed']['info'] as Map<String, dynamic>;
       final tokenAmount = parsed['tokenAmount'] as Map<String, dynamic>;
 
-      accounts.add(TokenAccount(
-        pubkey: pubkey,
-        mint: parsed['mint'] as String,
-        owner: parsed['owner'] as String,
-        amount: BigInt.parse(tokenAmount['amount'] as String),
-        decimals: tokenAmount['decimals'] as int,
-        rentLamports: BigInt.from(lamports),
-        isToken2022: token2022,
-      ));
+      accounts.add(
+        TokenAccount(
+          pubkey: pubkey,
+          mint: parsed['mint'] as String,
+          owner: parsed['owner'] as String,
+          amount: BigInt.parse(tokenAmount['amount'] as String),
+          decimals: tokenAmount['decimals'] as int,
+          rentLamports: BigInt.from(lamports),
+          isToken2022: token2022,
+        ),
+      );
     }
 
     return accounts;
@@ -173,7 +184,9 @@ class RpcService {
       {
         'encoding': 'base64',
         'filters': [
-          {'memcmp': {'offset': 0, 'bytes': base58Encode(poolDiscriminator)}},
+          {
+            'memcmp': {'offset': 0, 'bytes': base58Encode(poolDiscriminator)},
+          },
         ],
       },
     ]);
@@ -222,8 +235,15 @@ class RpcService {
         'encoding': 'base64',
         'dataSlice': {'offset': 0, 'length': 0},
         'filters': [
-          {'memcmp': {'offset': 0, 'bytes': base58Encode(userStakeDiscriminator)}},
-          {'memcmp': {'offset': 40, 'bytes': poolAddress}},
+          {
+            'memcmp': {
+              'offset': 0,
+              'bytes': base58Encode(userStakeDiscriminator),
+            },
+          },
+          {
+            'memcmp': {'offset': 40, 'bytes': poolAddress},
+          },
         ],
       },
     ]);
@@ -239,7 +259,12 @@ class RpcService {
         'encoding': 'base64',
         'dataSlice': {'offset': 40, 'length': 32},
         'filters': [
-          {'memcmp': {'offset': 0, 'bytes': base58Encode(userStakeDiscriminator)}},
+          {
+            'memcmp': {
+              'offset': 0,
+              'bytes': base58Encode(userStakeDiscriminator),
+            },
+          },
         ],
       },
     ]);
@@ -256,7 +281,10 @@ class RpcService {
   }
 
   /// Get a user's stake account for a specific pool
-  Future<UserStake?> getUserStake(String poolAddress, String userAddress) async {
+  Future<UserStake?> getUserStake(
+    String poolAddress,
+    String userAddress,
+  ) async {
     // Derive the user stake PDA
     // For now, we search by filters
     final result = await _rpc('getProgramAccounts', [
@@ -264,9 +292,18 @@ class RpcService {
       {
         'encoding': 'base64',
         'filters': [
-          {'memcmp': {'offset': 0, 'bytes': base58Encode(userStakeDiscriminator)}},
-          {'memcmp': {'offset': 8, 'bytes': userAddress}},
-          {'memcmp': {'offset': 40, 'bytes': poolAddress}},
+          {
+            'memcmp': {
+              'offset': 0,
+              'bytes': base58Encode(userStakeDiscriminator),
+            },
+          },
+          {
+            'memcmp': {'offset': 8, 'bytes': userAddress},
+          },
+          {
+            'memcmp': {'offset': 40, 'bytes': poolAddress},
+          },
         ],
       },
     ]);
@@ -274,12 +311,16 @@ class RpcService {
     final accounts = result as List;
     if (accounts.isEmpty) return null;
 
-    final data = base64Decode((accounts[0]['account']['data'] as List)[0] as String);
+    final data = base64Decode(
+      (accounts[0]['account']['data'] as List)[0] as String,
+    );
     return UserStake.deserialize(data);
   }
 
   /// Get all user stake accounts for a specific pool (for members leaderboard)
-  Future<List<({String address, UserStake stake})>> getUserStakesForPool(String poolAddress) async {
+  Future<List<({String address, UserStake stake})>> getUserStakesForPool(
+    String poolAddress,
+  ) async {
     final results = <({String address, UserStake stake})>[];
 
     // Filter by discriminator + pool only — never by dataSize. UserStake has
@@ -293,8 +334,15 @@ class RpcService {
       {
         'encoding': 'base64',
         'filters': [
-          {'memcmp': {'offset': 0, 'bytes': base58Encode(userStakeDiscriminator)}},
-          {'memcmp': {'offset': 40, 'bytes': poolAddress}},
+          {
+            'memcmp': {
+              'offset': 0,
+              'bytes': base58Encode(userStakeDiscriminator),
+            },
+          },
+          {
+            'memcmp': {'offset': 40, 'bytes': poolAddress},
+          },
         ],
       },
     ]);
@@ -312,7 +360,11 @@ class RpcService {
   }
 
   /// Get assets by owner via Helius DAS API (for NFTs and domains)
-  Future<List<Map<String, dynamic>>> getAssetsByOwner(String owner, {int page = 1, int limit = 1000}) async {
+  Future<List<Map<String, dynamic>>> getAssetsByOwner(
+    String owner, {
+    int page = 1,
+    int limit = 1000,
+  }) async {
     try {
       final body = jsonEncode({
         'jsonrpc': '2.0',
@@ -371,10 +423,10 @@ class RpcService {
 
   /// Get sharing config account for a pump.fun token
   Future<Uint8List?> getSharingConfig(String mint) async {
-    final (configAddr, _) = findProgramAddressFromStrings(
-      [utf8.encode('sharing-config'), base58Decode(mint)],
-      pumpFeesProgramId,
-    );
+    final (configAddr, _) = findProgramAddressFromStrings([
+      utf8.encode('sharing-config'),
+      base58Decode(mint),
+    ], pumpFeesProgramId);
     return getAccountInfo(configAddr);
   }
 
@@ -398,7 +450,9 @@ class RpcService {
       final json = jsonDecode(response.body);
       if (json['error'] != null || json['result'] == null) return null;
 
-      return TokenMetadata.fromHeliusAsset(json['result'] as Map<String, dynamic>);
+      return TokenMetadata.fromHeliusAsset(
+        json['result'] as Map<String, dynamic>,
+      );
     } catch (e) {
       debugPrint('getAsset error: $e');
       return null;
@@ -430,7 +484,9 @@ class RpcService {
       final result = <String, TokenMetadata>{};
       for (final item in json['result'] as List) {
         if (item != null) {
-          final meta = TokenMetadata.fromHeliusAsset(item as Map<String, dynamic>);
+          final meta = TokenMetadata.fromHeliusAsset(
+            item as Map<String, dynamic>,
+          );
           if (meta.mint.isNotEmpty) {
             result[meta.mint] = meta;
           }
@@ -451,7 +507,9 @@ class RpcService {
 
       // Get total supply for percentage calculation
       final supplyResult = await _rpc('getTokenSupply', [mint]);
-      final totalSupply = BigInt.parse(supplyResult['value']['amount'] as String);
+      final totalSupply = BigInt.parse(
+        supplyResult['value']['amount'] as String,
+      );
 
       final holders = <TokenHolder>[];
       for (final item in value.take(limit)) {
@@ -459,11 +517,13 @@ class RpcService {
         final percentage = totalSupply > BigInt.zero
             ? (amount * BigInt.from(10000) ~/ totalSupply).toDouble() / 100
             : 0.0;
-        holders.add(TokenHolder(
-          address: item['address'] as String,
-          amount: amount,
-          percentage: percentage,
-        ));
+        holders.add(
+          TokenHolder(
+            address: item['address'] as String,
+            amount: amount,
+            percentage: percentage,
+          ),
+        );
       }
       return holders;
     } catch (e) {
@@ -473,7 +533,10 @@ class RpcService {
   }
 
   /// Get recent transactions for an address
-  Future<List<Map<String, dynamic>>> getSignaturesForAddress(String address, {int limit = 20}) async {
+  Future<List<Map<String, dynamic>>> getSignaturesForAddress(
+    String address, {
+    int limit = 20,
+  }) async {
     try {
       final result = await _rpc('getSignaturesForAddress', [
         address,

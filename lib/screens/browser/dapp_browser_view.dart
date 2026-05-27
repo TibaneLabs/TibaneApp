@@ -54,27 +54,29 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
         // up the wallet.
         debugPrint('[webview console] ${m.level.name}: ${m.message}');
       })
-      ..setNavigationDelegate(NavigationDelegate(
-        onNavigationRequest: _onNavigationRequest,
-        onPageStarted: (url) {
-          if (!mounted) return;
-          setState(() {
-            _loading = true;
-            _currentUrl = url;
-            _urlCtrl.text = url;
-          });
-        },
-        onPageFinished: (url) async {
-          if (!mounted) return;
-          final canBack = await _webview.canGoBack();
-          if (!mounted) return;
-          setState(() {
-            _loading = false;
-            _canGoBack = canBack;
-          });
-          await _injectProvider(url);
-        },
-      ));
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onNavigationRequest: _onNavigationRequest,
+          onPageStarted: (url) {
+            if (!mounted) return;
+            setState(() {
+              _loading = true;
+              _currentUrl = url;
+              _urlCtrl.text = url;
+            });
+          },
+          onPageFinished: (url) async {
+            if (!mounted) return;
+            final canBack = await _webview.canGoBack();
+            if (!mounted) return;
+            setState(() {
+              _loading = false;
+              _canGoBack = canBack;
+            });
+            await _injectProvider(url);
+          },
+        ),
+      );
     _bootstrap();
   }
 
@@ -123,7 +125,9 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
   Future<NavigationDecision> _onNavigationRequest(NavigationRequest req) async {
     final uri = Uri.tryParse(req.url);
     if (uri == null) return NavigationDecision.prevent;
-    if (uri.scheme == 'http' || uri.scheme == 'https' || uri.scheme == 'about') {
+    if (uri.scheme == 'http' ||
+        uri.scheme == 'https' ||
+        uri.scheme == 'about') {
       return NavigationDecision.navigate;
     }
     // mailto, tel, solana:, wallet:, intent:, ... → external
@@ -148,18 +152,12 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
     try {
       final result = await _client!.web3.request(
         url: url,
-        query: {
-          'method': req['method'],
-          'params': req['params'],
-        },
+        query: {'method': req['method'], 'params': req['params']},
       );
       payload = jsonEncode({'result': result});
     } on LibwalletException catch (e) {
       payload = jsonEncode({
-        'error': {
-          'code': int.tryParse(e.code) ?? -32000,
-          'message': e.message,
-        },
+        'error': {'code': int.tryParse(e.code) ?? -32000, 'message': e.message},
       });
     } catch (e) {
       payload = jsonEncode({
@@ -237,7 +235,8 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
     if (!hasWhitespace) {
       // Looks like a host if it has a dot and no obvious "you mean a
       // sentence" punctuation. Allow localhost / IPv4 / TLDs.
-      final looksLikeHost = raw.contains('.') ||
+      final looksLikeHost =
+          raw.contains('.') ||
           raw.startsWith('localhost') ||
           raw.startsWith('127.0.0.1');
       if (looksLikeHost) {
@@ -277,24 +276,30 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
                     isDense: true,
                     filled: true,
                     fillColor: TibaneColors.darker,
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide.none,
                     ),
-                    prefixIcon: const Icon(Icons.lock_outline,
-                        size: 14, color: TibaneColors.textDim),
-                    prefixIconConstraints:
-                        const BoxConstraints(minWidth: 28, minHeight: 14),
+                    prefixIcon: const Icon(
+                      Icons.lock_outline,
+                      size: 14,
+                      color: TibaneColors.textDim,
+                    ),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 28,
+                      minHeight: 14,
+                    ),
                   ),
                 ),
               ),
               IconButton(
                 tooltip: 'Home',
                 icon: const Icon(Icons.home_outlined, size: 20),
-                onPressed: () =>
-                    _webview.loadRequest(Uri.parse(_homeUrl)),
+                onPressed: () => _webview.loadRequest(Uri.parse(_homeUrl)),
                 color: TibaneColors.textMuted,
                 visualDensity: VisualDensity.compact,
               ),

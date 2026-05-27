@@ -15,6 +15,7 @@ import 'create_agent_wallet_screen.dart';
 /// [AgentIdentity] pre-filled or surfaces a typed error with a retry path.
 class PairingScreen extends StatefulWidget {
   final String url;
+
   const PairingScreen({super.key, required this.url});
 
   @override
@@ -70,37 +71,34 @@ class _PairingScreenState extends State<PairingScreen> {
   (String, String) _messageFor(PairingException e) {
     return switch (e) {
       PairingURLMalformedException _ => (
-          'Pairing URL is malformed',
-          'This link is missing the agent or token, or uses the wrong scheme. Ask the agent to print a fresh URL.',
-        ),
+        'Pairing URL is malformed',
+        'This link is missing the agent or token, or uses the wrong scheme. Ask the agent to print a fresh URL.',
+      ),
       PairingAgentUnreachableException _ => (
-          'Could not reach the agent',
-          'The agent host did not answer within the timeout. Check your network connection, then open a fresh pairing URL from the agent and try again.',
-        ),
+        'Could not reach the agent',
+        'The agent host did not answer within the timeout. Check your network connection, then open a fresh pairing URL from the agent and try again.',
+      ),
       PairingTokenInvalidException _ => (
-          'Pairing code not recognised',
-          'The agent does not recognise this token — the agent may have restarted, or the URL is for a different agent. Run `clawdwallet pair` again to get a fresh URL.',
-        ),
+        'Pairing code not recognised',
+        'The agent does not recognise this token — the agent may have restarted, or the URL is for a different agent. Run `clawdwallet pair` again to get a fresh URL.',
+      ),
       PairingTokenExpiredException _ => (
-          'The pairing code expired',
-          'Pairing codes are valid for 5 minutes. Run `clawdwallet pair` again to get a fresh URL.',
-        ),
+        'The pairing code expired',
+        'Pairing codes are valid for 5 minutes. Run `clawdwallet pair` again to get a fresh URL.',
+      ),
       PairingTokenConsumedException _ => (
-          'This pairing code has already been used',
-          'Each pairing URL is single-use. Run `clawdwallet pair` again to get a fresh URL.',
-        ),
+        'This pairing code has already been used',
+        'Each pairing URL is single-use. Run `clawdwallet pair` again to get a fresh URL.',
+      ),
       PairingIdentityMismatchException _ => (
-          'Pairing identity mismatch',
-          'The agent that responded does not match the one named in the URL. Treat this as suspicious and do not proceed. Run `clawdwallet pair` again from a trusted terminal.',
-        ),
+        'Pairing identity mismatch',
+        'The agent that responded does not match the one named in the URL. Treat this as suspicious and do not proceed. Run `clawdwallet pair` again from a trusted terminal.',
+      ),
       PairingBadRequestException _ => (
-          'Agent rejected the pair request',
-          'The agent and the app may be running incompatible versions. Update the agent (and the app, if newer than what you installed) and try again.',
-        ),
-      _ => (
-          'Pairing failed',
-          e.message,
-        ),
+        'Agent rejected the pair request',
+        'The agent and the app may be running incompatible versions. Update the agent (and the app, if newer than what you installed) and try again.',
+      ),
+      _ => ('Pairing failed', e.message),
     };
   }
 

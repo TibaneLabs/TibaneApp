@@ -36,8 +36,10 @@ class _Web3ConnectionsScreenState extends State<Web3ConnectionsScreen> {
       });
     }
     try {
-      final client =
-          await context.read<WalletService>().libwallet.ensureClient();
+      final client = await context
+          .read<WalletService>()
+          .libwallet
+          .ensureClient();
       final list = await client.web3Connections.list();
       list.sort((a, b) => b.created.compareTo(a.created));
       if (!mounted) return;
@@ -83,15 +85,17 @@ class _Web3ConnectionsScreenState extends State<Web3ConnectionsScreen> {
     if (confirmed != true) return;
     if (!mounted) return;
     try {
-      final client =
-          await context.read<WalletService>().libwallet.ensureClient();
+      final client = await context
+          .read<WalletService>()
+          .libwallet
+          .ensureClient();
       await client.web3Connections.delete(c.id);
       _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Revoke failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Revoke failed: $e')));
     }
   }
 
@@ -110,65 +114,70 @@ class _Web3ConnectionsScreenState extends State<Web3ConnectionsScreen> {
         ],
       ),
       body: SafeArea(
-        child: Builder(builder: (context) {
-          if (_loading) {
-            return const Center(
-              child: CircularProgressIndicator(color: TibaneColors.orange),
-            );
-          }
-          if (_error != null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  _error!,
-                  style: const TextStyle(color: TibaneColors.textMuted),
-                  textAlign: TextAlign.center,
+        child: Builder(
+          builder: (context) {
+            if (_loading) {
+              return const Center(
+                child: CircularProgressIndicator(color: TibaneColors.orange),
+              );
+            }
+            if (_error != null) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              );
+            }
+            final list = _connections ?? const [];
+            if (list.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.link_off,
+                        size: 48,
+                        color: TibaneColors.textDim,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No connected sites',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Sites that connect via the in-app browser will show '
+                        'up here so you can revoke their access later.',
+                        style: TextStyle(color: TibaneColors.textMuted),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return RefreshIndicator(
+              color: TibaneColors.orange,
+              onRefresh: _load,
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
+                itemCount: list.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (_, i) => _ConnectionRow(
+                  connection: list[i],
+                  onRevoke: () => _revoke(list[i]),
                 ),
               ),
             );
-          }
-          final list = _connections ?? const [];
-          if (list.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.link_off,
-                        size: 48, color: TibaneColors.textDim),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No connected sites',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Sites that connect via the in-app browser will show '
-                      'up here so you can revoke their access later.',
-                      style: TextStyle(color: TibaneColors.textMuted),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-          return RefreshIndicator(
-            color: TibaneColors.orange,
-            onRefresh: _load,
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
-              itemCount: list.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (_, i) => _ConnectionRow(
-                connection: list[i],
-                onRevoke: () => _revoke(list[i]),
-              ),
-            ),
-          );
-        }),
+          },
+        ),
       ),
     );
   }
@@ -223,10 +232,7 @@ class _ConnectionRow extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   'Connected ${_formatTime(connection.created)}',
-                  style: monoStyle(
-                    fontSize: 11,
-                    color: TibaneColors.textMuted,
-                  ),
+                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
               ],
             ),

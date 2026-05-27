@@ -67,7 +67,10 @@ class _Gate extends StatelessWidget {
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: TibaneColors.textMuted, height: 1.5),
+                style: const TextStyle(
+                  color: TibaneColors.textMuted,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 28),
               FilledButton(
@@ -75,7 +78,10 @@ class _Gate extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   backgroundColor: TibaneColors.orange,
                   foregroundColor: TibaneColors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 36,
+                    vertical: 14,
+                  ),
                 ),
                 child: Text(
                   actionLabel,

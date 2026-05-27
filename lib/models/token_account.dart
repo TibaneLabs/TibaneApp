@@ -31,7 +31,8 @@ class TokenAccount {
     this.selected = false,
   });
 
-  double get displayAmount => amount.toDouble() / BigInt.from(10).pow(decimals).toDouble();
+  double get displayAmount =>
+      amount.toDouble() / BigInt.from(10).pow(decimals).toDouble();
 
   double get rentSol => rentLamports.toDouble() / 1e9;
 
@@ -96,7 +97,10 @@ class TokenMetadata {
       symbol: metadata?['symbol'] as String?,
       imageUrl: links?['image'] as String?,
       decimals: tokenInfo?['decimals'] as int? ?? 6,
-      pricePerToken: (tokenInfo?['price_info'] as Map<String, dynamic>?)?['price_per_token'] as double?,
+      pricePerToken:
+          (tokenInfo?['price_info']
+                  as Map<String, dynamic>?)?['price_per_token']
+              as double?,
       supply: BigInt.tryParse('${tokenInfo?['supply'] ?? '0'}') ?? BigInt.zero,
     );
   }
@@ -161,11 +165,14 @@ class NftItem {
       collection: collectionName,
       compressed: isCompressed,
       mint: isCompressed ? null : json['id'] as String?,
-      tokenAccount: null, // Derived at burn time via ATA
+      tokenAccount: null,
+      // Derived at burn time via ATA
       treeAddress: isCompressed ? (compression?['tree'] as String?) : null,
       leafIndex: isCompressed ? (compression?['leaf_id'] as int?) : null,
       dataHash: isCompressed ? (compression?['data_hash'] as String?) : null,
-      creatorHash: isCompressed ? (compression?['creator_hash'] as String?) : null,
+      creatorHash: isCompressed
+          ? (compression?['creator_hash'] as String?)
+          : null,
       rentLamports: isCompressed ? 0 : 15000000, // ~0.015 SOL for regular NFTs
     );
   }

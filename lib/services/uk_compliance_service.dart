@@ -20,8 +20,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// override is exposed in Settings.
 class UkComplianceService extends ChangeNotifier {
   static const _prefsForceUk = 'uk_force_enabled';
-  static const _storefrontChannel =
-      MethodChannel('net.tibane.tibaneapp/storefront');
+  static const _storefrontChannel = MethodChannel(
+    'net.tibane.tibaneapp/storefront',
+  );
 
   bool _ready = false;
   bool _ukDetected = false;
@@ -71,8 +72,9 @@ class UkComplianceService extends ChangeNotifier {
   Future<String?> _resolveCountryCode() async {
     if (Platform.isIOS) {
       try {
-        final code = await _storefrontChannel
-            .invokeMethod<String>('countryCode');
+        final code = await _storefrontChannel.invokeMethod<String>(
+          'countryCode',
+        );
         if (code != null && code.isNotEmpty) return code.toUpperCase();
       } catch (e) {
         debugPrint('storefront countryCode lookup failed: $e');

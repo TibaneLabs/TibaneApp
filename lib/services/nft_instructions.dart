@@ -43,8 +43,7 @@ SolanaInstruction buildRegularNftBurnIx(NftItem nft, String owner) {
   final edition = findEditionPda(mint);
 
   // Derive the owner's token account for this mint
-  final tokenAccount = nft.tokenAccount ??
-      _deriveNftTokenAccount(owner, mint);
+  final tokenAccount = nft.tokenAccount ?? _deriveNftTokenAccount(owner, mint);
 
   return SolanaInstruction.fromBase58(
     programId: metaplexProgramId,
@@ -54,14 +53,22 @@ SolanaInstruction buildRegularNftBurnIx(NftItem nft, String owner) {
       AccountMeta.fromBase58(mint, isSigner: false, isWritable: true),
       AccountMeta.fromBase58(tokenAccount, isSigner: false, isWritable: true),
       AccountMeta.fromBase58(edition, isSigner: false, isWritable: true),
-      AccountMeta.fromBase58(splTokenProgramId, isSigner: false, isWritable: false),
+      AccountMeta.fromBase58(
+        splTokenProgramId,
+        isSigner: false,
+        isWritable: false,
+      ),
     ],
     data: Uint8List.fromList([18]), // Burn discriminator
   );
 }
 
 /// Build a compressed NFT (cNFT) burn instruction via Bubblegum
-SolanaInstruction buildCnftBurnIx(NftItem nft, String owner, Map<String, dynamic> proof) {
+SolanaInstruction buildCnftBurnIx(
+  NftItem nft,
+  String owner,
+  Map<String, dynamic> proof,
+) {
   final treeAddress = nft.treeAddress!;
   final treeAuthority = findTreeAuthorityPda(treeAddress);
 
@@ -91,17 +98,32 @@ SolanaInstruction buildCnftBurnIx(NftItem nft, String owner, Map<String, dynamic
   final accounts = <AccountMeta>[
     AccountMeta.fromBase58(treeAuthority, isSigner: false, isWritable: false),
     AccountMeta.fromBase58(owner, isSigner: true, isWritable: false),
-    AccountMeta.fromBase58(owner, isSigner: false, isWritable: false), // leaf delegate = owner
+    AccountMeta.fromBase58(owner, isSigner: false, isWritable: false),
+    // leaf delegate = owner
     AccountMeta.fromBase58(treeAddress, isSigner: false, isWritable: true),
-    AccountMeta.fromBase58(logWrapperProgramId, isSigner: false, isWritable: false),
-    AccountMeta.fromBase58(compressionProgramId, isSigner: false, isWritable: false),
+    AccountMeta.fromBase58(
+      logWrapperProgramId,
+      isSigner: false,
+      isWritable: false,
+    ),
+    AccountMeta.fromBase58(
+      compressionProgramId,
+      isSigner: false,
+      isWritable: false,
+    ),
     AccountMeta.fromBase58(systemProgramId, isSigner: false, isWritable: false),
   ];
 
   // Append proof nodes as remaining accounts
   final proofNodes = proof['proof'] as List;
   for (final node in proofNodes) {
-    accounts.add(AccountMeta.fromBase58(node as String, isSigner: false, isWritable: false));
+    accounts.add(
+      AccountMeta.fromBase58(
+        node as String,
+        isSigner: false,
+        isWritable: false,
+      ),
+    );
   }
 
   return SolanaInstruction(

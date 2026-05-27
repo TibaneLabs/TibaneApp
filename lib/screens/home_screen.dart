@@ -60,7 +60,8 @@ class _HeroSection extends StatelessWidget {
               const CatLogo(size: 80, glow: true),
               const SizedBox(height: 24),
               ShaderMask(
-                shaderCallback: (bounds) => TibaneColors.brandGradient.createShader(bounds),
+                shaderCallback: (bounds) =>
+                    TibaneColors.brandGradient.createShader(bounds),
                 child: Text(
                   'Tibane Labs',
                   style: Theme.of(context).textTheme.displaySmall?.copyWith(
@@ -130,16 +131,15 @@ class _ToolsSection extends StatelessWidget {
               style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
             ),
             const SizedBox(width: 8),
-            Expanded(
-              child: Container(height: 1, color: TibaneColors.border),
-            ),
+            Expanded(child: Container(height: 1, color: TibaneColors.border)),
           ],
         ),
         const SizedBox(height: 20),
         FeatureCard(
           icon: Icons.local_fire_department,
           title: 'Incinerator',
-          description: 'Burn unwanted tokens, NFTs, and domains. Reclaim SOL from closed accounts.',
+          description:
+              'Burn unwanted tokens, NFTs, and domains. Reclaim SOL from closed accounts.',
           badge: 'LIVE',
           badgeColor: TibaneColors.cyan,
           onTap: () => Navigator.of(context).push(
@@ -160,7 +160,8 @@ class _ToolsSection extends StatelessWidget {
           FeatureCard(
             icon: Icons.account_balance,
             title: 'Staking',
-            description: 'Time-weighted staking pools with exponential decay rewards.',
+            description:
+                'Time-weighted staking pools with exponential decay rewards.',
             badge: 'LIVE',
             badgeColor: TibaneColors.cyan,
             onTap: () => Navigator.of(context).push(
@@ -187,13 +188,12 @@ class _ToolsSection extends StatelessWidget {
         FeatureCard(
           icon: Icons.analytics_outlined,
           title: 'Token info & Favorites',
-          description: 'Real-time token analytics, holder distribution, and transaction history.',
+          description:
+              'Real-time token analytics, holder distribution, and transaction history.',
           badge: 'LIVE',
           badgeColor: TibaneColors.cyan,
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const TokenFavoritesScreen(),
-            ),
+            MaterialPageRoute(builder: (_) => const TokenFavoritesScreen()),
           ),
         ),
       ],
@@ -218,7 +218,11 @@ class _AboutSection extends StatelessWidget {
                   color: TibaneColors.purple.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.pets, color: TibaneColors.purple, size: 20),
+                child: const Icon(
+                  Icons.pets,
+                  color: TibaneColors.purple,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -268,4 +272,3 @@ class _AboutSection extends StatelessWidget {
     );
   }
 }
-

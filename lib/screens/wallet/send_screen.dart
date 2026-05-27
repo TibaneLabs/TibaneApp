@@ -22,12 +22,7 @@ class SendScreen extends StatefulWidget {
   /// — the scale of the amount input depends on it.
   final int? decimals;
 
-  const SendScreen({
-    super.key,
-    this.mint,
-    this.symbol,
-    this.decimals,
-  });
+  const SendScreen({super.key, this.mint, this.symbol, this.decimals});
 
   @override
   State<SendScreen> createState() => _SendScreenState();
@@ -67,9 +62,8 @@ class _SendScreenState extends State<SendScreen> {
     // Only resolve when the input looks like a name (contains a dot and
     // isn't already a base58/0x-shaped address). Solana addresses are
     // 32-44 chars and don't contain dots, so a "." is a robust signal.
-    final looksLikeName = raw.contains('.') &&
-        !raw.startsWith('0x') &&
-        raw.length < 64;
+    final looksLikeName =
+        raw.contains('.') && !raw.startsWith('0x') && raw.length < 64;
     if (!looksLikeName) {
       if (_resolvedAddress != null ||
           _resolvingName != null ||
@@ -268,126 +262,159 @@ class _SendScreenState extends State<SendScreen> {
           onTap: () => FocusScope.of(context).unfocus(),
           behavior: HitTestBehavior.translucent,
           child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextField(
-                controller: _addrCtrl,
-                enabled: !_sending,
-                autocorrect: false,
-                decoration: InputDecoration(
-                  labelText: 'Recipient address or name',
-                  helperText: 'Solana address, .sol name, or .eth name',
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.paste, size: 18),
-                    onPressed: _sending
-                        ? null
-                        : () async {
-                            final clip = await Clipboard.getData('text/plain');
-                            if (clip?.text != null) _addrCtrl.text = clip!.text!;
-                          },
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _addrCtrl,
+                  enabled: !_sending,
+                  autocorrect: false,
+                  decoration: InputDecoration(
+                    labelText: 'Recipient address or name',
+                    helperText: 'Solana address, .sol name, or .eth name',
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.paste, size: 18),
+                      onPressed: _sending
+                          ? null
+                          : () async {
+                              final clip = await Clipboard.getData(
+                                'text/plain',
+                              );
+                              if (clip?.text != null)
+                                _addrCtrl.text = clip!.text!;
+                            },
+                    ),
                   ),
                 ),
-              ),
-              if (_resolvingName != null) ...[
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    const SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.5,
-                        color: TibaneColors.textMuted,
+                if (_resolvingName != null) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.5,
+                          color: TibaneColors.textMuted,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Resolving $_resolvingName…',
-                      style: const TextStyle(
-                          color: TibaneColors.textMuted, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ] else if (_resolvedAddress != null) ...[
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    const Icon(Icons.check_circle,
-                        color: TibaneColors.cyan, size: 14),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        _resolvedAddress!,
-                        overflow: TextOverflow.ellipsis,
-                        style: monoStyle(
-                            fontSize: 12, color: TibaneColors.textMuted),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Resolving $_resolvingName…',
+                        style: const TextStyle(
+                          color: TibaneColors.textMuted,
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ] else if (_resolveError != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  _resolveError!,
-                  style: const TextStyle(
-                      color: TibaneColors.error, fontSize: 12),
-                ),
-              ],
-              const SizedBox(height: 16),
-              TextField(
-                controller: _amountCtrl,
-                enabled: !_sending,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: 'Amount ($_symbol)',
-                  suffixIcon: TextButton(
-                    onPressed: _sending ? null : _setMax,
-                    child: const Text('MAX', style: TextStyle(fontSize: 12)),
+                    ],
                   ),
-                ),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!, style: const TextStyle(color: TibaneColors.error, fontSize: 13)),
-              ],
-              if (_successHash != null) ...[
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Icon(Icons.check_circle, color: TibaneColors.cyan, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Sent!', style: TextStyle(color: TibaneColors.cyan, fontWeight: FontWeight.w600)),
-                          Text(
-                            shortenAddress(_successHash!, chars: 12),
-                            style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+                ] else if (_resolvedAddress != null) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.check_circle,
+                        color: TibaneColors.cyan,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _resolvedAddress!,
+                          overflow: TextOverflow.ellipsis,
+                          style: monoStyle(
+                            fontSize: 12,
+                            color: TibaneColors.textMuted,
                           ),
-                        ],
+                        ),
                       ),
+                    ],
+                  ),
+                ] else if (_resolveError != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    _resolveError!,
+                    style: const TextStyle(
+                      color: TibaneColors.error,
+                      fontSize: 12,
                     ),
-                  ],
+                  ),
+                ],
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _amountCtrl,
+                  enabled: !_sending,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Amount ($_symbol)',
+                    suffixIcon: TextButton(
+                      onPressed: _sending ? null : _setMax,
+                      child: const Text('MAX', style: TextStyle(fontSize: 12)),
+                    ),
+                  ),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _error!,
+                    style: const TextStyle(
+                      color: TibaneColors.error,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+                if (_successHash != null) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.check_circle,
+                        color: TibaneColors.cyan,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Sent!',
+                              style: TextStyle(
+                                color: TibaneColors.cyan,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              shortenAddress(_successHash!, chars: 12),
+                              style: monoStyle(
+                                fontSize: 11,
+                                color: TibaneColors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const Spacer(),
+                FilledButton(
+                  onPressed: _sending ? null : _send,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: TibaneColors.orange,
+                    foregroundColor: TibaneColors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: Text(
+                    _sending ? 'Sending...' : 'Send',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
                 ),
               ],
-              const Spacer(),
-              FilledButton(
-                onPressed: _sending ? null : _send,
-                style: FilledButton.styleFrom(
-                  backgroundColor: TibaneColors.orange,
-                  foregroundColor: TibaneColors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                child: Text(
-                  _sending ? 'Sending...' : 'Send',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
+            ),
           ),
         ),
       ),
@@ -418,8 +445,8 @@ class _SendReviewSheet extends StatelessWidget {
     final shortTo = to.length > 14
         ? '${to.substring(0, 6)}…${to.substring(to.length - 6)}'
         : to;
-    final blocking = sim.willRevert ||
-        sim.warnings.any((w) => w.severity == 'block');
+    final blocking =
+        sim.willRevert || sim.warnings.any((w) => w.severity == 'block');
     return Padding(
       padding: EdgeInsets.only(
         left: 20,
@@ -446,9 +473,10 @@ class _SendReviewSheet extends StatelessWidget {
           const SizedBox(height: 16),
           _kv('To', shortTo),
           const SizedBox(height: 8),
-          _kv('Amount', '${amountUi.toStringAsFixed(decimals)
-              .replaceAll(RegExp(r'0+$'), '')
-              .replaceAll(RegExp(r'\.$'), '')} $symbol'),
+          _kv(
+            'Amount',
+            '${amountUi.toStringAsFixed(decimals).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '')} $symbol',
+          ),
           if (sim.unitsConsumed != null) ...[
             const SizedBox(height: 8),
             _kv('Compute', '${sim.unitsConsumed} CU'),
@@ -459,7 +487,7 @@ class _SendReviewSheet extends StatelessWidget {
               TibaneColors.error,
               Icons.error_outline,
               'Simulation predicts this will fail: '
-                  '${sim.revertReason ?? "unknown error"}',
+              '${sim.revertReason ?? "unknown error"}',
             ),
           ],
           for (final w in sim.warnings) ...[
@@ -468,8 +496,8 @@ class _SendReviewSheet extends StatelessWidget {
               w.severity == 'block'
                   ? TibaneColors.error
                   : (w.severity == 'info'
-                      ? TibaneColors.textMuted
-                      : TibaneColors.gold),
+                        ? TibaneColors.textMuted
+                        : TibaneColors.gold),
               w.severity == 'block'
                   ? Icons.error_outline
                   : Icons.warning_amber_rounded,
@@ -492,7 +520,9 @@ class _SendReviewSheet extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton(
-                  onPressed: blocking ? null : () => Navigator.pop(context, true),
+                  onPressed: blocking
+                      ? null
+                      : () => Navigator.pop(context, true),
                   style: FilledButton.styleFrom(
                     backgroundColor: TibaneColors.orange,
                     foregroundColor: TibaneColors.black,
@@ -523,7 +553,10 @@ class _SendReviewSheet extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: Text(v, style: monoStyle(fontSize: 12, color: TibaneColors.text)),
+          child: Text(
+            v,
+            style: monoStyle(fontSize: 12, color: TibaneColors.text),
+          ),
         ),
       ],
     );

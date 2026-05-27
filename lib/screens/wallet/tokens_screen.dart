@@ -91,8 +91,10 @@ class _TokensScreenState extends State<TokensScreen> {
       ),
     );
     try {
-      final client =
-          await context.read<WalletService>().libwallet.ensureClient();
+      final client = await context
+          .read<WalletService>()
+          .libwallet
+          .ensureClient();
       final discovered = await client.tokens.discover(
         network: _chainKey,
         address: address,
@@ -115,9 +117,9 @@ class _TokensScreenState extends State<TokensScreen> {
       );
       _load();
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(
-        content: Text('Added ${discovered.symbol}'),
-      ));
+      messenger.showSnackBar(
+        SnackBar(content: Text('Added ${discovered.symbol}')),
+      );
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -128,8 +130,10 @@ class _TokensScreenState extends State<TokensScreen> {
   Future<void> _addCurated(CuratedToken c) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final client =
-          await context.read<WalletService>().libwallet.ensureClient();
+      final client = await context
+          .read<WalletService>()
+          .libwallet
+          .ensureClient();
       await client.tokens.create(
         name: c.name,
         symbol: c.symbol,
@@ -178,15 +182,17 @@ class _TokensScreenState extends State<TokensScreen> {
     if (confirmed != true) return;
     if (!mounted) return;
     try {
-      final client =
-          await context.read<WalletService>().libwallet.ensureClient();
+      final client = await context
+          .read<WalletService>()
+          .libwallet
+          .ensureClient();
       await client.tokens.delete(t.id);
       _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Remove failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Remove failed: $e')));
     }
   }
 
@@ -212,79 +218,83 @@ class _TokensScreenState extends State<TokensScreen> {
         label: const Text('Add by address'),
       ),
       body: SafeArea(
-        child: Builder(builder: (context) {
-          if (_loading) {
-            return const Center(
-              child: CircularProgressIndicator(color: TibaneColors.orange),
-            );
-          }
-          if (_error != null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  _error!,
-                  style: const TextStyle(color: TibaneColors.textMuted),
-                  textAlign: TextAlign.center,
+        child: Builder(
+          builder: (context) {
+            if (_loading) {
+              return const Center(
+                child: CircularProgressIndicator(color: TibaneColors.orange),
+              );
+            }
+            if (_error != null) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-              ),
-            );
-          }
-          // Filter the tracked tokens to the current chain so the picker
-          // matches what the user expects to see when looking at this
-          // network.
-          final tracked = (_tokens ?? const <Token>[])
-              .where((t) => _chainKey.isEmpty || t.network == _chainKey)
-              .toList();
-          final trackedAddrs = tracked.map((t) => t.address).toSet();
-          final curated = (_curated ?? const <CuratedToken>[])
-              .where((c) => !trackedAddrs.contains(c.address))
-              .toList();
+              );
+            }
+            // Filter the tracked tokens to the current chain so the picker
+            // matches what the user expects to see when looking at this
+            // network.
+            final tracked = (_tokens ?? const <Token>[])
+                .where((t) => _chainKey.isEmpty || t.network == _chainKey)
+                .toList();
+            final trackedAddrs = tracked.map((t) => t.address).toSet();
+            final curated = (_curated ?? const <CuratedToken>[])
+                .where((c) => !trackedAddrs.contains(c.address))
+                .toList();
 
-          return RefreshIndicator(
-            color: TibaneColors.orange,
-            onRefresh: _load,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
-              children: [
-                _SectionLabel('Tracked tokens'),
-                const SizedBox(height: 8),
-                if (tracked.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(
-                      'No custom tokens tracked on this network.',
-                      style: monoStyle(
-                        fontSize: 12,
-                        color: TibaneColors.textMuted,
+            return RefreshIndicator(
+              color: TibaneColors.orange,
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
+                children: [
+                  _SectionLabel('Tracked tokens'),
+                  const SizedBox(height: 8),
+                  if (tracked.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        'No custom tokens tracked on this network.',
+                        style: monoStyle(
+                          fontSize: 12,
+                          color: TibaneColors.textMuted,
+                        ),
+                      ),
+                    )
+                  else
+                    ...tracked.map(
+                      (t) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _TokenRow(token: t, onDelete: () => _delete(t)),
                       ),
                     ),
-                  )
-                else
-                  ...tracked.map((t) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _TokenRow(
-                          token: t,
-                          onDelete: () => _delete(t),
-                        ),
-                      )),
-                if (curated.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  _SectionLabel(
-                      'Curated tokens on ${_network?.name ?? "this network"}'),
-                  const SizedBox(height: 8),
-                  ...curated.map((c) => Padding(
+                  if (curated.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _SectionLabel(
+                      'Curated tokens on ${_network?.name ?? "this network"}',
+                    ),
+                    const SizedBox(height: 8),
+                    ...curated.map(
+                      (c) => Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: _CuratedRow(
                           token: c,
                           onAdd: () => _addCurated(c),
                         ),
-                      )),
+                      ),
+                    ),
+                  ],
                 ],
-              ],
-            ),
-          );
-        }),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -292,18 +302,20 @@ class _TokensScreenState extends State<TokensScreen> {
 
 class _SectionLabel extends StatelessWidget {
   final String text;
+
   const _SectionLabel(this.text);
 
   @override
   Widget build(BuildContext context) => Text(
-        text.toUpperCase(),
-        style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
-      );
+    text.toUpperCase(),
+    style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+  );
 }
 
 class _TokenRow extends StatelessWidget {
   final Token token;
   final VoidCallback onDelete;
+
   const _TokenRow({required this.token, required this.onDelete});
 
   @override
@@ -331,10 +343,7 @@ class _TokenRow extends StatelessWidget {
                 ),
                 Text(
                   token.name,
-                  style: monoStyle(
-                    fontSize: 11,
-                    color: TibaneColors.textMuted,
-                  ),
+                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
                 Text(
                   preview,
@@ -358,6 +367,7 @@ class _TokenRow extends StatelessWidget {
 class _CuratedRow extends StatelessWidget {
   final CuratedToken token;
   final VoidCallback onAdd;
+
   const _CuratedRow({required this.token, required this.onAdd});
 
   @override
@@ -384,36 +394,38 @@ class _CuratedRow extends StatelessWidget {
                     ),
                     if (token.tags.isNotEmpty) ...[
                       const SizedBox(width: 6),
-                      ...token.tags.take(2).map((t) => Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: TibaneColors.cyan
-                                    .withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                t,
-                                style: monoStyle(
-                                  fontSize: 9,
-                                  color: TibaneColors.cyan,
+                      ...token.tags
+                          .take(2)
+                          .map(
+                            (t) => Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: TibaneColors.cyan.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  t,
+                                  style: monoStyle(
+                                    fontSize: 9,
+                                    color: TibaneColors.cyan,
+                                  ),
                                 ),
                               ),
                             ),
-                          )),
+                          ),
                     ],
                   ],
                 ),
                 Text(
                   token.name,
-                  style: monoStyle(
-                    fontSize: 11,
-                    color: TibaneColors.textMuted,
-                  ),
+                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
               ],
             ),
@@ -423,8 +435,7 @@ class _CuratedRow extends StatelessWidget {
             style: OutlinedButton.styleFrom(
               foregroundColor: TibaneColors.orange,
               side: const BorderSide(color: TibaneColors.orange),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               minimumSize: const Size(0, 0),
             ),
             child: const Text('Add'),
@@ -438,6 +449,7 @@ class _CuratedRow extends StatelessWidget {
 class _TokenLogo extends StatelessWidget {
   final String? url;
   final String symbol;
+
   const _TokenLogo({required this.url, required this.symbol});
 
   @override
@@ -458,21 +470,21 @@ class _TokenLogo extends StatelessWidget {
   }
 
   Widget _fallback() => Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: TibaneColors.orange.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          symbol.isEmpty ? '?' : symbol.substring(0, 1).toUpperCase(),
-          style: const TextStyle(
-            color: TibaneColors.orange,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      );
+    width: 36,
+    height: 36,
+    decoration: BoxDecoration(
+      color: TibaneColors.orange.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    alignment: Alignment.center,
+    child: Text(
+      symbol.isEmpty ? '?' : symbol.substring(0, 1).toUpperCase(),
+      style: const TextStyle(
+        color: TibaneColors.orange,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
 }
 
 class _AddressEntryDialog extends StatefulWidget {
@@ -534,6 +546,7 @@ class _AddressEntryDialogState extends State<_AddressEntryDialog> {
 
 class _DiscoveredPreviewDialog extends StatelessWidget {
   final DiscoveredToken token;
+
   const _DiscoveredPreviewDialog({required this.token});
 
   @override
@@ -575,23 +588,23 @@ class _DiscoveredPreviewDialog extends StatelessWidget {
   }
 
   Widget _row(String k, String v) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 100,
-              child: Text(
-                k,
-                style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
-              ),
-            ),
-            Expanded(
-              child: Text(
-                v,
-                style: monoStyle(fontSize: 12, color: TibaneColors.text),
-              ),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 100,
+          child: Text(
+            k,
+            style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
+          ),
         ),
-      );
+        Expanded(
+          child: Text(
+            v,
+            style: monoStyle(fontSize: 12, color: TibaneColors.text),
+          ),
+        ),
+      ],
+    ),
+  );
 }

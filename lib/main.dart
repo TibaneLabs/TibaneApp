@@ -27,17 +27,17 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Dark status bar for the dark theme
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: TibaneColors.dark,
-    systemNavigationBarIconBrightness: Brightness.light,
-  ));
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: TibaneColors.dark,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
 
   // Lock to portrait only
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-  ]);
+  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
   runApp(const TibaneApp());
 }
@@ -129,9 +129,9 @@ class TibaneShellState extends State<TibaneShell> {
     if (uri.scheme != 'tibane' || uri.host != 'pair') return;
     final nav = rootNavigatorKey.currentState;
     if (nav == null) return;
-    nav.push(MaterialPageRoute(
-      builder: (_) => PairingScreen(url: uri.toString()),
-    ));
+    nav.push(
+      MaterialPageRoute(builder: (_) => PairingScreen(url: uri.toString())),
+    );
   }
 
   @override
@@ -170,10 +170,7 @@ class TibaneShellState extends State<TibaneShell> {
             const NetworkChip(),
           ],
         ),
-        actions: const [
-          WalletButton(),
-          SizedBox(width: 12),
-        ],
+        actions: const [WalletButton(), SizedBox(width: 12)],
       ),
       body: IndexedStack(
         index: _currentIndex,
@@ -190,44 +187,46 @@ class TibaneShellState extends State<TibaneShell> {
       ),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
-          border: Border(
-            top: BorderSide(color: TibaneColors.border),
-          ),
+          border: Border(top: BorderSide(color: TibaneColors.border)),
         ),
-        child: Builder(builder: (context) {
-          final isUk = context.watch<UkComplianceService>().isUk;
-          final showSwap = _isSeekerDevice && !isUk;
-          return BottomNavigationBar(
-            currentIndex: _currentIndex,
-            onTap: _navigateTo,
-            items: [
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.home_outlined),
-                activeIcon: Icon(Icons.home),
-                label: 'Home',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(showSwap
-                    ? Icons.swap_horiz_outlined
-                    : Icons.account_balance_wallet_outlined),
-                activeIcon: Icon(showSwap
-                    ? Icons.swap_horiz
-                    : Icons.account_balance_wallet),
-                label: showSwap ? 'Swap' : 'Wallet',
-              ),
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.travel_explore_outlined),
-                activeIcon: Icon(Icons.travel_explore),
-                label: 'Browse',
-              ),
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.settings_outlined),
-                activeIcon: Icon(Icons.settings),
-                label: 'Settings',
-              ),
-            ],
-          );
-        }),
+        child: Builder(
+          builder: (context) {
+            final isUk = context.watch<UkComplianceService>().isUk;
+            final showSwap = _isSeekerDevice && !isUk;
+            return BottomNavigationBar(
+              currentIndex: _currentIndex,
+              onTap: _navigateTo,
+              items: [
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.home_outlined),
+                  activeIcon: Icon(Icons.home),
+                  label: 'Home',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(
+                    showSwap
+                        ? Icons.swap_horiz_outlined
+                        : Icons.account_balance_wallet_outlined,
+                  ),
+                  activeIcon: Icon(
+                    showSwap ? Icons.swap_horiz : Icons.account_balance_wallet,
+                  ),
+                  label: showSwap ? 'Swap' : 'Wallet',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.travel_explore_outlined),
+                  activeIcon: Icon(Icons.travel_explore),
+                  label: 'Browse',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.settings_outlined),
+                  activeIcon: Icon(Icons.settings),
+                  label: 'Settings',
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

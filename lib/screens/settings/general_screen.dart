@@ -57,8 +57,8 @@ class _UkComplianceTile extends StatelessWidget {
     final subtitle = detected
         ? 'Detected as United Kingdom. Swap and staking are hidden.'
         : (uk.isForced
-            ? 'UK mode is forced ON. Swap and staking are hidden.'
-            : 'Detected region: $country. Swap and staking are available.');
+              ? 'UK mode is forced ON. Swap and staking are hidden.'
+              : 'Detected region: $country. Swap and staking are available.');
     return TibaneCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Column(
@@ -78,10 +78,7 @@ class _UkComplianceTile extends StatelessWidget {
                   children: [
                     const Text(
                       'UK compliance',
-                      style: TextStyle(
-                        color: TibaneColors.text,
-                        fontSize: 15,
-                      ),
+                      style: TextStyle(color: TibaneColors.text, fontSize: 15),
                     ),
                     const SizedBox(height: 2),
                     Text(

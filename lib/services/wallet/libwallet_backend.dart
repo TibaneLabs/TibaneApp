@@ -81,12 +81,16 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
   @override
   String? get publicKey => _publicKey;
+
   @override
   String? get walletName => _walletName;
+
   @override
   bool get isConnected => _publicKey != null;
+
   @override
   bool get isConnecting => _connecting;
+
   @override
   String? get error => _error;
 
@@ -110,7 +114,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// created and persisted). Exposed so the wallet-details screen can
   /// render each share with its protection mechanism.
   String? get storeKeyId => _storeKeyId;
+
   String? get remoteKeyId => _remoteKeyId;
+
   String? get passwordKeyId => _passwordKeyId;
 
   /// In-memory password while the wallet is unlocked, or null. Exposed
@@ -253,8 +259,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       );
       if (resolvedSymbol.isEmpty || resolvedDecimals < 0) {
         try {
-          final d = await client.tokens
-              .discover(network: chainKey, address: mint);
+          final d = await client.tokens.discover(
+            network: chainKey,
+            address: mint,
+          );
           debugPrint(
             '[track] $mint: discover → name="${d.name}" symbol="${d.symbol}" '
             'decimals=${d.decimals} type="${d.type}"',
@@ -299,11 +307,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// Backwards-compatible shim for the hard-coded ChiefPussy path used
   /// during refreshBalances. Same contract as [ensureTokenTracked].
   Future<bool> ensureChiefPussyTracked() => ensureTokenTracked(
-        mint: chiefPussyMint,
-        name: 'Tibane Thecat',
-        symbol: 'ChiefPussy',
-        decimals: 6,
-      );
+    mint: chiefPussyMint,
+    name: 'Tibane Thecat',
+    symbol: 'ChiefPussy',
+    decimals: 6,
+  );
 
   Future<LibwalletClient> _getClient() async {
     if (_client != null) return _client!;
@@ -381,13 +389,14 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       number: isEmail ? null : identifier,
       email: isEmail ? identifier : null,
     );
-    debugPrint(
-        'remoteKey verification started: length=${session.length}');
+    debugPrint('remoteKey verification started: length=${session.length}');
     return session;
   }
 
   /// Backwards-compatible alias retained while older call sites migrate.
-  @Deprecated('use startVerification(identifier) which also handles phone numbers')
+  @Deprecated(
+    'use startVerification(identifier) which also handles phone numbers',
+  )
   Future<RemoteKeySession> startEmailVerification(String email) =>
       startVerification(email);
 
@@ -398,7 +407,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     required String code,
   }) async {
     final client = await _getClient();
-    final validation = await client.remoteKeys.validate(session: session, code: code);
+    final validation = await client.remoteKeys.validate(
+      session: session,
+      code: code,
+    );
     return validation.remoteKey;
   }
 
@@ -438,7 +450,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       final Map<String, Wallet> createdByCurve;
       if (curves.length > 1) {
         Map<String, Wallet>? both;
-        await for (final ev in client.wallets.multiCreate(name: name, keys: keys)) {
+        await for (final ev in client.wallets.multiCreate(
+          name: name,
+          keys: keys,
+        )) {
           switch (ev) {
             case Progress(:final fraction):
               yield fraction;
@@ -453,7 +468,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       } else {
         Wallet? single;
         await for (final ev in client.wallets.create(
-            name: name, curve: curves.first, keys: keys)) {
+          name: name,
+          curve: curves.first,
+          keys: keys,
+        )) {
           switch (ev) {
             case Progress(:final fraction):
               yield fraction;
@@ -562,7 +580,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         // routing the user through the 2FA recovery flow before
         // calling unlock again. We surface the absence as a typed
         // signal so the host can branch cleanly.
-        _error = 'Device share not found on this device. '
+        _error =
+            'Device share not found on this device. '
             'Recover via 2FA from the unlock screen.';
         notifyListeners();
         return false;
@@ -727,8 +746,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   }) async {
     try {
       final client = await _getClient();
-      final validation =
-          await client.remoteKeys.validate(session: session, code: code);
+      final validation = await client.remoteKeys.validate(
+        session: session,
+        code: code,
+      );
       if (validation.remoteKey.isNotEmpty &&
           validation.remoteKey != _remoteKeyId) {
         _remoteKeyId = validation.remoteKey;
@@ -772,8 +793,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // session: done`. Per libwallet 0.4.37 device_share.md, the
       // validate result's `remoteKey` field replaces it on both
       // old and new committee RemoteKey KeyDescriptions.
-      final validation = await client.remoteKeys
-          .validate(session: sessionToken, code: code);
+      final validation = await client.remoteKeys.validate(
+        session: sessionToken,
+        code: code,
+      );
       if (validation.remoteKey.isEmpty) {
         _error = '2FA validation returned no remote key';
         notifyListeners();
@@ -877,7 +900,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       final client = await _getClient();
       final acct = await client.accounts.get(accountId);
       if (acct.wallet != _walletId) {
-        _error = 'Switching to an account on a different wallet is not yet supported';
+        _error =
+            'Switching to an account on a different wallet is not yet supported';
         notifyListeners();
         return false;
       }
@@ -1017,7 +1041,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   }
 
   @override
-  Future<List<Uint8List?>> signTransactions(List<Uint8List> transactions) async {
+  Future<List<Uint8List?>> signTransactions(
+    List<Uint8List> transactions,
+  ) async {
     if (!_ensureReady()) return List.filled(transactions.length, null);
     final client = await _getClient();
     final keys = _signingKeys();
@@ -1039,7 +1065,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   }
 
   @override
-  Future<List<String?>> signAndSendTransactions(List<Uint8List> transactions) async {
+  Future<List<String?>> signAndSendTransactions(
+    List<Uint8List> transactions,
+  ) async {
     if (!_ensureReady()) return List.filled(transactions.length, null);
     final client = await _getClient();
     final keys = _signingKeys();
@@ -1157,13 +1185,15 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       if (t.symbol.toLowerCase().contains(q) ||
           t.name.toLowerCase().contains(q) ||
           t.address.toLowerCase().contains(q)) {
-        results.add(TokenSearchResult(
-          mint: t.address,
-          name: t.name,
-          symbol: t.symbol,
-          imageUrl: t.logoUri.isEmpty ? null : t.logoUri,
-          decimals: t.decimals,
-        ));
+        results.add(
+          TokenSearchResult(
+            mint: t.address,
+            name: t.name,
+            symbol: t.symbol,
+            imageUrl: t.logoUri.isEmpty ? null : t.logoUri,
+            decimals: t.decimals,
+          ),
+        );
         if (results.length >= limit) break;
       }
     }
@@ -1203,11 +1233,15 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       debugPrint('[txhist] kickHistoryBackfill: no accountId, skipping');
       return;
     }
-    debugPrint('[txhist] kickHistoryBackfill: calling accounts.setCurrent($accountId)');
+    debugPrint(
+      '[txhist] kickHistoryBackfill: calling accounts.setCurrent($accountId)',
+    );
     try {
       final client = await _getClient();
       await client.accounts.setCurrent(accountId);
-      debugPrint('[txhist] kickHistoryBackfill: setCurrent returned — backfill triggered');
+      debugPrint(
+        '[txhist] kickHistoryBackfill: setCurrent returned — backfill triggered',
+      );
     } catch (e) {
       debugPrint('[txhist] kickHistoryBackfill failed: $e');
     }
@@ -1354,7 +1388,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         final filename = raw['filename'];
         final data = raw['data'];
         if (filename is! String || data is! String) {
-          throw const FormatException('Each entry needs string filename and data');
+          throw const FormatException(
+            'Each entry needs string filename and data',
+          );
         }
         files.add({'filename': filename, 'data': data});
       }
@@ -1370,9 +1406,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         }
       }
       if (restored == null) {
-        throw StateError(
-          'Backup contains no Solana (ed25519) wallet',
-        );
+        throw StateError('Backup contains no Solana (ed25519) wallet');
       }
 
       final accounts = await client.accounts.list(wallet: restored.id);
@@ -1494,11 +1528,13 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   }) async {
     final client = await _getClient();
     final keys = _signingKeys()
-        .map((k) => SigningKey(
-              id: k['Id'] as String,
-              key: k['Key'] as String,
-              type: k['Type'] as String?,
-            ))
+        .map(
+          (k) => SigningKey(
+            id: k['Id'] as String,
+            key: k['Key'] as String,
+            type: k['Type'] as String?,
+          ),
+        )
         .toList();
     final tx = UnsignedTransaction(
       type: 'transfer',
@@ -1592,8 +1628,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     // `RemoteKeyValidation.remoteKey` here. The fresh id replaces
     // the stored one on BOTH the old and new RemoteKey
     // KeyDescriptions.
-    final remoteKeyForReshare =
-        freshRemoteKeyResource ?? oldRemoteKey?.key;
+    final remoteKeyForReshare = freshRemoteKeyResource ?? oldRemoteKey?.key;
 
     final newStorePair = await client.storeKeys.create();
     final reshareOld = <KeyDescription>[
@@ -1608,19 +1643,12 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
           key: remoteKeyForReshare,
           id: oldRemoteKey.id,
         ),
-      KeyDescription(
-        type: 'Password',
-        key: password,
-        id: oldPasswordKey.id,
-      ),
+      KeyDescription(type: 'Password', key: password, id: oldPasswordKey.id),
     ];
     final reshareNew = <KeyDescription>[
       KeyDescription.storeKey(newStorePair.publicKey),
       if (oldRemoteKey != null && remoteKeyForReshare != null)
-        KeyDescription(
-          type: 'RemoteKey',
-          key: remoteKeyForReshare,
-        ),
+        KeyDescription(type: 'RemoteKey', key: remoteKeyForReshare),
       KeyDescription.password(password),
     ];
     Wallet? afterReshare;
@@ -1686,4 +1714,3 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     return map;
   }
 }
-

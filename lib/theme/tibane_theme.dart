@@ -148,9 +148,7 @@ class TibaneTheme {
           foregroundColor: TibaneColors.black,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           textStyle: GoogleFonts.dmSans(
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -163,9 +161,7 @@ class TibaneTheme {
           foregroundColor: TibaneColors.orange,
           side: BorderSide(color: TibaneColors.orange.withValues(alpha: 0.4)),
           padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           textStyle: GoogleFonts.dmSans(
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -188,7 +184,10 @@ class TibaneTheme {
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: TibaneColors.orange),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
         hintStyle: GoogleFonts.dmSans(
           color: TibaneColors.textDim,
           fontSize: 14,
@@ -221,13 +220,8 @@ class TibaneTheme {
         backgroundColor: TibaneColors.darker,
         selectedColor: TibaneColors.orange.withValues(alpha: 0.15),
         side: const BorderSide(color: TibaneColors.border),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(6),
-        ),
-        labelStyle: GoogleFonts.spaceMono(
-          fontSize: 11,
-          letterSpacing: 0.5,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        labelStyle: GoogleFonts.spaceMono(fontSize: 11, letterSpacing: 0.5),
       ),
       progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: TibaneColors.orange,
@@ -254,7 +248,10 @@ TextStyle monoStyle({double fontSize = 13, Color color = TibaneColors.text}) {
 }
 
 /// Serif italic for decorative accents
-TextStyle serifStyle({double fontSize = 18, Color color = TibaneColors.textMuted}) {
+TextStyle serifStyle({
+  double fontSize = 18,
+  Color color = TibaneColors.textMuted,
+}) {
   return GoogleFonts.instrumentSerif(
     fontSize: fontSize,
     fontStyle: FontStyle.italic,

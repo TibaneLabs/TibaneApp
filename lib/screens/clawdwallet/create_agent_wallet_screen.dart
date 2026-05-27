@@ -56,6 +56,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
 
   _Stage _stage = _Stage.form;
   String? _error;
+
   // Populated once libwallet `Wallet:joinKeygen` is wired up.
   // Read by `_buildDone()`.
   String? _solanaAddress;
@@ -114,8 +115,10 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
     });
 
     try {
-      final client =
-          await context.read<WalletService>().libwallet.ensureClient();
+      final client = await context
+          .read<WalletService>()
+          .libwallet
+          .ensureClient();
 
       // libwallet 0.4.25 collapses the previous flow (fetch spot id → POST
       // newAgent → drive initiateKeygen) into a single high-level call. We
@@ -197,10 +200,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                   'You hold one share, the agent holds one, our signer node '
                   'holds the third. The agent cannot move funds alone; the '
                   'policy module must approve every transfer.',
-                  style: TextStyle(
-                    color: TibaneColors.textMuted,
-                    height: 1.5,
-                  ),
+                  style: TextStyle(color: TibaneColors.textMuted, height: 1.5),
                 ),
               ],
             ),
@@ -252,8 +252,8 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                   : null,
               helperText: _isVerified
                   ? (widget.verifiedIdentity!.agentVersion.isNotEmpty
-                      ? 'Agent version: ${widget.verifiedIdentity!.agentVersion}'
-                      : null)
+                        ? 'Agent version: ${widget.verifiedIdentity!.agentVersion}'
+                        : null)
                   : null,
             ),
             style: monoStyle(fontSize: 13),
@@ -263,7 +263,8 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                 ? null
                 : [
                     FilteringTextInputFormatter.allow(
-                        RegExp(r'[A-Za-z0-9\-_]')),
+                      RegExp(r'[A-Za-z0-9\-_]'),
+                    ),
                   ],
           ),
           const SizedBox(height: 24),
@@ -307,7 +308,8 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
             maxLines: 5,
             decoration: const InputDecoration(
               labelText: 'Recipient allowlist',
-              hintText: 'Comma- or space-separated Solana addresses '
+              hintText:
+                  'Comma- or space-separated Solana addresses '
                   '(empty = no restriction)',
               alignLabelWithHint: true,
             ),
@@ -363,10 +365,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
               'Coordinating with the agent and the signer node. This takes a '
               'few seconds.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: TibaneColors.textMuted,
-                height: 1.5,
-              ),
+              style: TextStyle(color: TibaneColors.textMuted, height: 1.5),
             ),
           ],
         ),
@@ -401,10 +400,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                 const SizedBox(height: 16),
                 Text(
                   'SOLANA ADDRESS',
-                  style: monoStyle(
-                    fontSize: 10,
-                    color: TibaneColors.textDim,
-                  ),
+                  style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
                 ),
                 const SizedBox(height: 6),
                 SelectableText(
@@ -456,10 +452,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                   child: Text(
                     'Fund this address with SOL (gas) and USDC, then ask the '
                     'agent to make a transfer.',
-                    style: TextStyle(
-                      color: TibaneColors.text,
-                      height: 1.4,
-                    ),
+                    style: TextStyle(color: TibaneColors.text, height: 1.4),
                   ),
                 ),
               ],
@@ -528,6 +521,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
 
 class _SectionLabel extends StatelessWidget {
   final String text;
+
   const _SectionLabel(this.text);
 
   @override

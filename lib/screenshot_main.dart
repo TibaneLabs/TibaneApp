@@ -56,6 +56,7 @@ final BigInt _chiefPussyBalance = BigInt.from(128540) * BigInt.from(1000000);
 // ---------------------------------------------------------------------------
 
 const _signalDir = '/tmp/screenshot_signals';
+
 bool get _isAndroid => !kIsWeb && Platform.isAndroid;
 
 void _cleanupSignals() {
@@ -73,7 +74,9 @@ Future<void> _signalReady(int n) async {
   }
   final dir = Directory(_signalDir);
   if (!dir.existsSync()) dir.createSync(recursive: true);
-  await File('$_signalDir/ready_$n').writeAsString(DateTime.now().toIso8601String());
+  await File(
+    '$_signalDir/ready_$n',
+  ).writeAsString(DateTime.now().toIso8601String());
   debugPrint('SCREENSHOT_SIGNAL: Screen $n ready');
 }
 
@@ -99,12 +102,14 @@ Future<void> _waitForCapture(int n) async {
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: TibaneColors.dark,
-    systemNavigationBarIconBrightness: Brightness.light,
-  ));
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: TibaneColors.dark,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
   // Install service stubs before any screen constructs the real ones.
@@ -125,8 +130,12 @@ class _ScreenshotApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider<WalletService>(create: (_) => _StubWalletService()),
-        ChangeNotifierProvider<FavoritesService>(create: (_) => FavoritesService()..load()),
+        ChangeNotifierProvider<WalletService>(
+          create: (_) => _StubWalletService(),
+        ),
+        ChangeNotifierProvider<FavoritesService>(
+          create: (_) => FavoritesService()..load(),
+        ),
       ],
       child: MaterialApp(
         title: 'Tibane',
@@ -155,7 +164,8 @@ class _ShellWithRunnerState extends State<_ShellWithRunner> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _runSequence());
   }
 
-  Future<void> _wait(int ms) => Future<void>.delayed(Duration(milliseconds: ms));
+  Future<void> _wait(int ms) =>
+      Future<void>.delayed(Duration(milliseconds: ms));
 
   Future<void> _captureAt(int n) async {
     await _signalReady(n);
@@ -188,10 +198,12 @@ class _ShellWithRunnerState extends State<_ShellWithRunner> {
     await _captureAt(2);
 
     // 3) Staking pools — now reached as a route push from Home, not a tab.
-    _push(const Scaffold(
-      backgroundColor: TibaneColors.black,
-      body: SafeArea(child: StakingPoolsScreen()),
-    ));
+    _push(
+      const Scaffold(
+        backgroundColor: TibaneColors.black,
+        body: SafeArea(child: StakingPoolsScreen()),
+      ),
+    );
     await _wait(1300); // ChiefStakerApi.listPools resolves quickly
     await _captureAt(3);
     _pop();
@@ -205,10 +217,12 @@ class _ShellWithRunnerState extends State<_ShellWithRunner> {
     await _wait(400);
 
     // 5) Incinerator (the screen has its own header, so wrap without AppBar)
-    _push(const Scaffold(
-      backgroundColor: TibaneColors.black,
-      body: SafeArea(child: IncineratorScreen()),
-    ));
+    _push(
+      const Scaffold(
+        backgroundColor: TibaneColors.black,
+        body: SafeArea(child: IncineratorScreen()),
+      ),
+    );
     await _wait(2000);
     await _captureAt(5);
     _pop();
@@ -239,35 +253,49 @@ class _StubWalletService extends WalletService {
 
   @override
   bool get isConnected => true;
+
   @override
   bool get isAuthenticated => true;
+
   @override
   bool get isConnecting => false;
+
   @override
   String? get publicKey => _demoAddress;
+
   @override
   String? get walletName => 'Tibane Wallet';
+
   @override
   WalletKind get kind => WalletKind.inapp;
+
   @override
   WalletBackend get active => _stubLib;
+
   @override
   LibwalletBackend get libwallet => _stubLib;
+
   @override
   BigInt get solBalance => _solBalance;
+
   @override
   BigInt get chiefPussyBalance => _chiefPussyBalance;
+
   @override
   String? get error => null;
 
   @override
   Future<void> tryRestore() async {}
+
   @override
   Future<void> refreshBalances() async {}
+
   @override
   Future<void> connectMwa() async {}
+
   @override
   Future<void> useLibwallet() async {}
+
   @override
   Future<void> disconnect() async {}
 }
@@ -279,16 +307,22 @@ class _StubWalletService extends WalletService {
 class _StubLibwallet extends LibwalletBackend {
   @override
   bool get hasWallet => true;
+
   @override
   bool get isUnlocked => true;
+
   @override
   bool get isConnected => true;
+
   @override
   String? get publicKey => _demoAddress;
+
   @override
   String? get walletName => 'Tibane Wallet';
+
   @override
   bool get isConnecting => false;
+
   @override
   String? get error => null;
 
@@ -434,8 +468,10 @@ class _StubRpcService extends RpcService {
   Future<BigInt> getBalance(String address) async => _solBalance;
 
   @override
-  Future<List<TokenAccount>> getTokenAccountsByOwner(String owner,
-      {bool token2022 = false}) async {
+  Future<List<TokenAccount>> getTokenAccountsByOwner(
+    String owner, {
+    bool token2022 = false,
+  }) async {
     if (token2022) return const [];
     return [
       TokenAccount(
@@ -507,19 +543,38 @@ class _StubRpcService extends RpcService {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> getAssetsByOwner(String owner,
-      {int page = 1, int limit = 1000}) async {
+  Future<List<Map<String, dynamic>>> getAssetsByOwner(
+    String owner, {
+    int page = 1,
+    int limit = 1000,
+  }) async {
     if (page > 1) return const [];
     // Mix of compressed + regular NFTs for the incinerator gallery.
     return [
-      _heliusNft('NFT01', 'Solana Monkey #4823',
-          collection: 'Solana Monkey Business', compressed: false),
-      _heliusNft('NFT02', 'Mad Lad #2104',
-          collection: 'Mad Lads', compressed: false),
-      _heliusNft('NFT03', 'Tensorian #1042',
-          collection: 'Tensorians', compressed: true),
-      _heliusNft('NFT04', 'DeGod (burned)',
-          collection: 'DeGods', compressed: false),
+      _heliusNft(
+        'NFT01',
+        'Solana Monkey #4823',
+        collection: 'Solana Monkey Business',
+        compressed: false,
+      ),
+      _heliusNft(
+        'NFT02',
+        'Mad Lad #2104',
+        collection: 'Mad Lads',
+        compressed: false,
+      ),
+      _heliusNft(
+        'NFT03',
+        'Tensorian #1042',
+        collection: 'Tensorians',
+        compressed: true,
+      ),
+      _heliusNft(
+        'NFT04',
+        'DeGod (burned)',
+        collection: 'DeGods',
+        compressed: false,
+      ),
     ];
   }
 
@@ -542,27 +597,81 @@ class _StubRpcService extends RpcService {
   @override
   Future<List<TokenHolder>> getTopHolders(String mint, {int limit = 20}) async {
     return [
-      TokenHolder(address: _poolVault, amount: BigInt.from(128540) * BigInt.from(1000000), percentage: 12.85),
-      TokenHolder(address: '2tFM8eJk9k1pqRfHm8m1Vd3hKLxPnEHbz9hDpoKw3pLp', amount: BigInt.zero, percentage: 8.42),
-      TokenHolder(address: '4nQyMP8nN1Y3VqV8BbAm6PCa5sNmRNRnFkVKjE9QWbpL', amount: BigInt.zero, percentage: 6.01),
-      TokenHolder(address: '7HxQ8wJYFC2tF7eYBKRNzJpRLgr5PoX1V3UQbHk2yVtP', amount: BigInt.zero, percentage: 4.27),
-      TokenHolder(address: '5JbF4aTzQwPLxV9wRMzbKpEf2K1HXyFvL3aRuJK7tPxc', amount: BigInt.zero, percentage: 3.92),
-      TokenHolder(address: 'GbE1n5DvkLJa4HxzmYrCpFwTQ8L2mnvN9R3kVsX7P5dx', amount: BigInt.zero, percentage: 2.84),
-      TokenHolder(address: 'CtPwLrR3vEbBnXoQjF7Tf2jZLm5uS8KhV9PaGzWpKxNc', amount: BigInt.zero, percentage: 2.41),
-      TokenHolder(address: 'AaPxR4WeBcF5LjMnQzKsX2VtN8YpDkR3HfTbJgVwUcLm', amount: BigInt.zero, percentage: 2.10),
+      TokenHolder(
+        address: _poolVault,
+        amount: BigInt.from(128540) * BigInt.from(1000000),
+        percentage: 12.85,
+      ),
+      TokenHolder(
+        address: '2tFM8eJk9k1pqRfHm8m1Vd3hKLxPnEHbz9hDpoKw3pLp',
+        amount: BigInt.zero,
+        percentage: 8.42,
+      ),
+      TokenHolder(
+        address: '4nQyMP8nN1Y3VqV8BbAm6PCa5sNmRNRnFkVKjE9QWbpL',
+        amount: BigInt.zero,
+        percentage: 6.01,
+      ),
+      TokenHolder(
+        address: '7HxQ8wJYFC2tF7eYBKRNzJpRLgr5PoX1V3UQbHk2yVtP',
+        amount: BigInt.zero,
+        percentage: 4.27,
+      ),
+      TokenHolder(
+        address: '5JbF4aTzQwPLxV9wRMzbKpEf2K1HXyFvL3aRuJK7tPxc',
+        amount: BigInt.zero,
+        percentage: 3.92,
+      ),
+      TokenHolder(
+        address: 'GbE1n5DvkLJa4HxzmYrCpFwTQ8L2mnvN9R3kVsX7P5dx',
+        amount: BigInt.zero,
+        percentage: 2.84,
+      ),
+      TokenHolder(
+        address: 'CtPwLrR3vEbBnXoQjF7Tf2jZLm5uS8KhV9PaGzWpKxNc',
+        amount: BigInt.zero,
+        percentage: 2.41,
+      ),
+      TokenHolder(
+        address: 'AaPxR4WeBcF5LjMnQzKsX2VtN8YpDkR3HfTbJgVwUcLm',
+        amount: BigInt.zero,
+        percentage: 2.10,
+      ),
     ];
   }
 
   @override
-  Future<List<Map<String, dynamic>>> getSignaturesForAddress(String address,
-      {int limit = 20}) async {
+  Future<List<Map<String, dynamic>>> getSignaturesForAddress(
+    String address, {
+    int limit = 20,
+  }) async {
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     return [
-      {'signature': '5jKvT3yWxZcMpFqL8aRnQbE2sVfKgN1HpYxJ9rWdLm6vTcXkPnB7zE3qF5R8jVtA1S2dG4hY6uW9oP', 'blockTime': now - 240},
-      {'signature': '2vMfPxL9bC7tWqRyJaE3pHkZ8nXoVdRgFbKjLm5sN1uW4yY6cP3qE2tDhV9fS8jRkXmA1BzG7vUoJ', 'blockTime': now - 1140},
-      {'signature': '8fKbMzPxC4tWqJyLaE3pHnZ7nXoVdRgFbVjLm5sN1uW4yY6cP3qE2tDhV9fS8jRkXmA1BzG7vUoFa', 'blockTime': now - 4500},
-      {'signature': '3pKjT9bWqMxLfZc4tWqRyJaE3pHkZ8nXoVdRgFbKjLm5sN1uW4yY6cP3qE2tDhV9fS8jRkXmA1BzG', 'blockTime': now - 11400},
-      {'signature': 'XbF2pKjT9MqLxZc4tWqRyJaE3pHkZ8nXoVdRgFbKjLm5sN1uW4yY6cP3qE2tDhV9fS8jRkXmA1BzG', 'blockTime': now - 28800},
+      {
+        'signature':
+            '5jKvT3yWxZcMpFqL8aRnQbE2sVfKgN1HpYxJ9rWdLm6vTcXkPnB7zE3qF5R8jVtA1S2dG4hY6uW9oP',
+        'blockTime': now - 240,
+      },
+      {
+        'signature':
+            '2vMfPxL9bC7tWqRyJaE3pHkZ8nXoVdRgFbKjLm5sN1uW4yY6cP3qE2tDhV9fS8jRkXmA1BzG7vUoJ',
+        'blockTime': now - 1140,
+      },
+      {
+        'signature':
+            '8fKbMzPxC4tWqJyLaE3pHnZ7nXoVdRgFbVjLm5sN1uW4yY6cP3qE2tDhV9fS8jRkXmA1BzG7vUoFa',
+        'blockTime': now - 4500,
+      },
+      {
+        'signature':
+            '3pKjT9bWqMxLfZc4tWqRyJaE3pHkZ8nXoVdRgFbKjLm5sN1uW4yY6cP3qE2tDhV9fS8jRkXmA1BzG',
+        'blockTime': now - 11400,
+      },
+      {
+        'signature':
+            'XbF2pKjT9MqLxZc4tWqRyJaE3pHkZ8nXoVdRgFbKjLm5sN1uW4yY6cP3qE2tDhV9fS8jRkXmA1BzG',
+        'blockTime': now - 28800,
+      },
     ];
   }
 
@@ -570,8 +679,8 @@ class _StubRpcService extends RpcService {
   Future<Uint8List?> getAccountInfo(String address) async => null;
 
   @override
-  Future<({Uint8List? data, BigInt lamports, String? owner})?> getAccountInfoFull(
-      String address) async {
+  Future<({Uint8List? data, BigInt lamports, String? owner})?>
+  getAccountInfoFull(String address) async {
     return (
       data: null,
       lamports: BigInt.from(2483100000),
@@ -580,20 +689,35 @@ class _StubRpcService extends RpcService {
   }
 
   @override
-  Future<UserStake?> getUserStake(String poolAddress, String userAddress) async {
+  Future<UserStake?> getUserStake(
+    String poolAddress,
+    String userAddress,
+  ) async {
     return UserStake(
       owner: userAddress,
       pool: poolAddress,
-      amount: BigInt.from(5000) * BigInt.from(1000000), // 5,000 $CP
-      stakeTime: BigInt.from(DateTime.now().subtract(const Duration(days: 14)).millisecondsSinceEpoch ~/ 1000),
+      amount: BigInt.from(5000) * BigInt.from(1000000),
+      // 5,000 $CP
+      stakeTime: BigInt.from(
+        DateTime.now()
+                .subtract(const Duration(days: 14))
+                .millisecondsSinceEpoch ~/
+            1000,
+      ),
       expStartFactor: BigInt.zero,
       rewardDebt: BigInt.zero,
       bump: 255,
       unstakeRequestAmount: BigInt.zero,
       unstakeRequestTime: BigInt.zero,
-      lastStakeTime: BigInt.from(DateTime.now().subtract(const Duration(days: 7)).millisecondsSinceEpoch ~/ 1000),
+      lastStakeTime: BigInt.from(
+        DateTime.now()
+                .subtract(const Duration(days: 7))
+                .millisecondsSinceEpoch ~/
+            1000,
+      ),
       baseTimeSnapshot: BigInt.zero,
-      totalRewardsClaimed: BigInt.from(123000000), // 0.123 SOL claimed
+      totalRewardsClaimed: BigInt.from(123000000),
+      // 0.123 SOL claimed
       claimedRewardsWad: BigInt.zero,
     );
   }
@@ -669,19 +793,19 @@ class _StubChiefStakerApi extends ChiefStakerApi {
 // ---------------------------------------------------------------------------
 
 StakingPool _mockTopPool() => _mockPool(
-      name: 'Tibane Thecat',
-      symbol: r'$ChiefPussy',
-      mint: _chiefPussyMint,
-      members: 412,
-      rewardSol: 34.21,
-      staked: BigInt.from(128540) * BigInt.from(1000000),
-      decimals: 6,
-      price: 0.0000374,
-      supply: BigInt.from(1000000000) * BigInt.from(1000000),
-      address: _poolAddress,
-      authority: _poolAuthority,
-      vault: _poolVault,
-    );
+  name: 'Tibane Thecat',
+  symbol: r'$ChiefPussy',
+  mint: _chiefPussyMint,
+  members: 412,
+  rewardSol: 34.21,
+  staked: BigInt.from(128540) * BigInt.from(1000000),
+  decimals: 6,
+  price: 0.0000374,
+  supply: BigInt.from(1000000000) * BigInt.from(1000000),
+  address: _poolAddress,
+  authority: _poolAuthority,
+  vault: _poolVault,
+);
 
 StakingPool _mockPool({
   required String name,
@@ -697,10 +821,10 @@ StakingPool _mockPool({
   String? authority,
   String? vault,
 }) {
-  final base = BigInt.from(DateTime.now()
-          .subtract(const Duration(days: 94))
-          .millisecondsSinceEpoch ~/
-      1000);
+  final base = BigInt.from(
+    DateTime.now().subtract(const Duration(days: 94)).millisecondsSinceEpoch ~/
+        1000,
+  );
   return StakingPool(
     address: address ?? 'PooL${name}11111111111111111111111111111111',
     mint: mint,
@@ -708,7 +832,8 @@ StakingPool _mockPool({
     authority: authority ?? 'AuTH${name}11111111111111111111111111111111',
     totalStaked: staked,
     sumStakeExp: BigInt.zero,
-    tauSeconds: BigInt.from(86400 * 7), // 7d tau
+    tauSeconds: BigInt.from(86400 * 7),
+    // 7d tau
     baseTime: base,
     accRewardPerWeightedShare: BigInt.zero,
     lastUpdateTime: BigInt.from(DateTime.now().millisecondsSinceEpoch ~/ 1000),
@@ -728,15 +853,21 @@ StakingPool _mockPool({
   );
 }
 
-Map<String, dynamic> _heliusNft(String id, String name,
-    {required String collection, required bool compressed}) {
+Map<String, dynamic> _heliusNft(
+  String id,
+  String name, {
+  required String collection,
+  required bool compressed,
+}) {
   return {
     'id': id.padRight(44, '1'),
     'content': {
       'metadata': {'name': name, 'symbol': 'NFT'},
       'links': {'image': 'https://example.invalid/$id.png'},
     },
-    'compression': compressed ? {'compressed': true, 'tree': 'tree$id', 'leaf_id': 1} : {'compressed': false},
+    'compression': compressed
+        ? {'compressed': true, 'tree': 'tree$id', 'leaf_id': 1}
+        : {'compressed': false},
     'grouping': [
       {'group_key': 'collection', 'group_value': collection},
     ],

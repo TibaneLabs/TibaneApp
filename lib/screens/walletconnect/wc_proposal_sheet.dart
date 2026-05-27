@@ -24,20 +24,16 @@ Future<WcSessionApproveResult?> showWcSessionProposalSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
-    builder: (_) => _WcProposalSheet(
-      proposal: proposal,
-      candidates: candidateAccounts,
-    ),
+    builder: (_) =>
+        _WcProposalSheet(proposal: proposal, candidates: candidateAccounts),
   );
 }
 
 class _WcProposalSheet extends StatefulWidget {
   final WcSessionProposal proposal;
   final List<WcCandidateAccount> candidates;
-  const _WcProposalSheet({
-    required this.proposal,
-    required this.candidates,
-  });
+
+  const _WcProposalSheet({required this.proposal, required this.candidates});
 
   @override
   State<_WcProposalSheet> createState() => _WcProposalSheetState();
@@ -183,9 +179,9 @@ class _WcProposalSheetState extends State<_WcProposalSheet> {
                     child: FilledButton(
                       onPressed: _selected.isEmpty
                           ? null
-                          : () => Navigator.of(context).pop(
-                                WcSessionApproveResult(_selected.toList()),
-                              ),
+                          : () => Navigator.of(
+                              context,
+                            ).pop(WcSessionApproveResult(_selected.toList())),
                       style: FilledButton.styleFrom(
                         backgroundColor: TibaneColors.orange,
                         foregroundColor: TibaneColors.black,
@@ -209,20 +205,22 @@ class _WcProposalSheetState extends State<_WcProposalSheet> {
 
 class _SectionLabel extends StatelessWidget {
   final String text;
+
   const _SectionLabel(this.text);
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: 6, bottom: 4),
-        child: Text(
-          text.toUpperCase(),
-          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
-        ),
-      );
+    padding: const EdgeInsets.only(top: 6, bottom: 4),
+    child: Text(
+      text.toUpperCase(),
+      style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+    ),
+  );
 }
 
 class _NamespaceList extends StatelessWidget {
   final Map<String, dynamic> map;
+
   const _NamespaceList({required this.map});
 
   @override
@@ -238,7 +236,7 @@ class _NamespaceList extends StatelessWidget {
             (spec['chains'] as List?)?.whereType<String>().toList() ?? const [];
         final methods =
             (spec['methods'] as List?)?.whereType<String>().toList() ??
-                const [];
+            const [];
         return Padding(
           padding: const EdgeInsets.only(bottom: 6),
           child: Column(

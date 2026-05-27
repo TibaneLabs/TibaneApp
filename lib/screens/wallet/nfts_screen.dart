@@ -37,8 +37,10 @@ class _NftsScreenState extends State<NftsScreen> {
       });
     }
     try {
-      final client =
-          await context.read<WalletService>().libwallet.ensureClient();
+      final client = await context
+          .read<WalletService>()
+          .libwallet
+          .ensureClient();
       final listing = await client.nfts.list();
       if (!mounted) return;
       setState(() {
@@ -69,74 +71,79 @@ class _NftsScreenState extends State<NftsScreen> {
         ],
       ),
       body: SafeArea(
-        child: Builder(builder: (context) {
-          if (_loading) {
-            return const Center(
-              child: CircularProgressIndicator(color: TibaneColors.orange),
-            );
-          }
-          if (_error != null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  _error!,
-                  style: const TextStyle(color: TibaneColors.textMuted),
-                  textAlign: TextAlign.center,
+        child: Builder(
+          builder: (context) {
+            if (_loading) {
+              return const Center(
+                child: CircularProgressIndicator(color: TibaneColors.orange),
+              );
+            }
+            if (_error != null) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-              ),
-            );
-          }
-          final list = _listing?.nfts ?? const [];
-          if (list.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.collections_outlined,
-                        size: 48, color: TibaneColors.textDim),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No NFTs on ${_listing?.network.name ?? "this network"}',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Switch networks via the chip in the app bar to look '
-                      'on another chain.',
-                      style: TextStyle(color: TibaneColors.textMuted),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+              );
+            }
+            final list = _listing?.nfts ?? const [];
+            if (list.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.collections_outlined,
+                        size: 48,
+                        color: TibaneColors.textDim,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No NFTs on ${_listing?.network.name ?? "this network"}',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Switch networks via the chip in the app bar to look '
+                        'on another chain.',
+                        style: TextStyle(color: TibaneColors.textMuted),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          }
-          return RefreshIndicator(
-            color: TibaneColors.orange,
-            onRefresh: _load,
-            child: GridView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 0.78,
-              ),
-              itemCount: list.length,
-              itemBuilder: (_, i) => _NftCard(
-                nft: list[i],
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => NftDetailScreen(nft: list[i]),
+              );
+            }
+            return RefreshIndicator(
+              color: TibaneColors.orange,
+              onRefresh: _load,
+              child: GridView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 0.78,
+                ),
+                itemCount: list.length,
+                itemBuilder: (_, i) => _NftCard(
+                  nft: list[i],
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => NftDetailScreen(nft: list[i]),
+                    ),
                   ),
                 ),
               ),
-            ),
-          );
-        }),
+            );
+          },
+        ),
       ),
     );
   }
@@ -211,6 +218,7 @@ class _NftCard extends StatelessWidget {
 
 class _NftImage extends StatelessWidget {
   final String? url;
+
   const _NftImage({required this.url});
 
   @override
@@ -258,13 +266,16 @@ class _NftImage extends StatelessWidget {
 
 class NftDetailScreen extends StatelessWidget {
   final Nft nft;
+
   const NftDetailScreen({super.key, required this.nft});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: Text(nft.name.isEmpty ? '#${nft.tokenId}' : nft.name)),
+      appBar: AppBar(
+        title: Text(nft.name.isEmpty ? '#${nft.tokenId}' : nft.name),
+      ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -340,46 +351,46 @@ class NftDetailScreen extends StatelessWidget {
       s.length > 14 ? '${s.substring(0, 8)}…${s.substring(s.length - 6)}' : s;
 
   Widget _kv(String k, String v) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 90,
-              child: Text(
-                k,
-                style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
-              ),
-            ),
-            Expanded(
-              child: Text(
-                v,
-                style: monoStyle(fontSize: 12, color: TibaneColors.text),
-              ),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 90,
+          child: Text(
+            k,
+            style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
+          ),
         ),
-      );
+        Expanded(
+          child: Text(
+            v,
+            style: monoStyle(fontSize: 12, color: TibaneColors.text),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _traitChip(NftAttribute a) => TibaneCard(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              a.traitType.toUpperCase(),
-              style: monoStyle(fontSize: 9, color: TibaneColors.textDim),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              a.value.toString(),
-              style: const TextStyle(
-                color: TibaneColors.text,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          a.traitType.toUpperCase(),
+          style: monoStyle(fontSize: 9, color: TibaneColors.textDim),
         ),
-      );
+        const SizedBox(height: 2),
+        Text(
+          a.value.toString(),
+          style: const TextStyle(
+            color: TibaneColors.text,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    ),
+  );
 }

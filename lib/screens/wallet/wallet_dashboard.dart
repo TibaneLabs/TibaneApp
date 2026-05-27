@@ -186,10 +186,12 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 // networks or when balances haven't loaded yet rather
                 // than printing a misleading 0.
                 final solUi = wallet.solBalance.toDouble() / 1e9;
-                final solPriceUsd =
-                    (solFiat > 0 && solUi > 0) ? solFiat / solUi : null;
-                final totalInSol =
-                    solPriceUsd != null ? totalUsd / solPriceUsd : null;
+                final solPriceUsd = (solFiat > 0 && solUi > 0)
+                    ? solFiat / solUi
+                    : null;
+                final totalInSol = solPriceUsd != null
+                    ? totalUsd / solPriceUsd
+                    : null;
                 return Column(
                   children: [
                     Text(
@@ -275,8 +277,9 @@ class _WalletDashboardState extends State<WalletDashboard> {
               ..._displayTokens(wallet).map((h) {
                 final isNativeRow = h.mint.endsWith('.NATIVE');
                 final net = wallet.libwallet.currentNetwork;
-                final assetPath =
-                    isNativeRow && net != null ? networkLogoAsset(net) : null;
+                final assetPath = isNativeRow && net != null
+                    ? networkLogoAsset(net)
+                    : null;
                 // Resolve the on-chain mint to push to TokenDetailScreen.
                 // Native rows carry a synthetic ".NATIVE" sentinel that
                 // Helius DAS doesn't understand — substitute wSOL for
@@ -295,11 +298,11 @@ class _WalletDashboardState extends State<WalletDashboard> {
                     onTap: detailMint == null
                         ? null
                         : () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    TokenDetailScreen(mint: detailMint!),
-                              ),
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  TokenDetailScreen(mint: detailMint!),
                             ),
+                          ),
                     child: Row(
                       children: [
                         TokenIcon(
@@ -429,14 +432,18 @@ class _WalletDashboardState extends State<WalletDashboard> {
       final balance = nativeAsset.amount.value;
       final decimals = nativeAsset.amount.exp;
       final divisor = BigInt.from(10).pow(decimals);
-      final uiBalance =
-          decimals > 0 ? balance.toDouble() / divisor.toDouble() : balance.toDouble();
+      final uiBalance = decimals > 0
+          ? balance.toDouble() / divisor.toDouble()
+          : balance.toDouble();
       final valueUsd = nativeAsset.fiatAmount?.toDouble();
-      final priceUsd =
-          (uiBalance > 0 && valueUsd != null && valueUsd > 0) ? valueUsd / uiBalance : null;
+      final priceUsd = (uiBalance > 0 && valueUsd != null && valueUsd > 0)
+          ? valueUsd / uiBalance
+          : null;
       return TokenHolding(
         mint: mintKey,
-        symbol: nativeAsset.symbol.isNotEmpty ? nativeAsset.symbol : net.currencySymbol,
+        symbol: nativeAsset.symbol.isNotEmpty
+            ? nativeAsset.symbol
+            : net.currencySymbol,
         name: nativeAsset.name.isNotEmpty ? nativeAsset.name : net.name,
         imageUrl: null,
         balance: balance,
@@ -453,7 +460,9 @@ class _WalletDashboardState extends State<WalletDashboard> {
     if (net.type == NetworkType.solana) {
       final uiBalance = wallet.solBalance.toDouble() / 1e9;
       final valueUsd = wallet.solFiatUsd;
-      final priceUsd = uiBalance > 0 && valueUsd > 0 ? valueUsd / uiBalance : null;
+      final priceUsd = uiBalance > 0 && valueUsd > 0
+          ? valueUsd / uiBalance
+          : null;
       return TokenHolding(
         mint: mintKey,
         symbol: 'SOL',
@@ -702,8 +711,7 @@ class _TransactionRow extends StatelessWidget {
         ? '${tx.created!.month}/${tx.created!.day} ${tx.created!.hour}:${tx.created!.minute.toString().padLeft(2, '0')}'
         : '';
     final amountColor = _isSend ? TibaneColors.error : TibaneColors.cyan;
-    final amountLine = StringBuffer(_isSend ? '-' : '+')
-      ..write(amountStr);
+    final amountLine = StringBuffer(_isSend ? '-' : '+')..write(amountStr);
     if (tokenInfo.symbol.isNotEmpty) {
       amountLine
         ..write(' ')

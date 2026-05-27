@@ -7,9 +7,13 @@ abstract class WalletBackend extends ChangeNotifier {
   String get id;
 
   String? get publicKey;
+
   String? get walletName;
+
   bool get isConnected;
+
   bool get isConnecting;
+
   String? get error;
 
   /// Best-effort restore from persistent state. Safe to call when nothing is saved.

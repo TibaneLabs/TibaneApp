@@ -60,7 +60,9 @@ class _AgentsScreenState extends State<AgentsScreen> {
       // AtOnlinePlatformException has no toString — its data field is the
       // actual server error payload (status, error code, message). Surface
       // it instead of "Instance of AtOnlinePlatformException".
-      final detail = e is AtOnlinePlatformException ? '${e.data}' : e.toString();
+      final detail = e is AtOnlinePlatformException
+          ? '${e.data}'
+          : e.toString();
       debugPrint('agents list failed: $detail');
       if (!mounted) return;
       setState(() {
@@ -119,9 +121,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
 
   Future<void> _openCreate() async {
     final newId = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        builder: (_) => const CreateAgentWalletScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const CreateAgentWalletScreen()),
     );
     if (newId != null) _load();
   }
@@ -177,10 +177,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  Icons.cloud_off_outlined,
-                  color: TibaneColors.error,
-                ),
+                const Icon(Icons.cloud_off_outlined, color: TibaneColors.error),
                 const SizedBox(height: 10),
                 Text(
                   'Could not load agents',
@@ -223,10 +220,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
               'Provision one to give a Claude-driven agent a Solana wallet '
               'with hard spending limits and a kill-switch.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: TibaneColors.textMuted,
-                height: 1.5,
-              ),
+              style: TextStyle(color: TibaneColors.textMuted, height: 1.5),
             ),
           ),
         ],
@@ -253,6 +247,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
 class _BalanceSnapshot {
   final BigInt sol;
   final BigInt usdc;
+
   const _BalanceSnapshot({required this.sol, required this.usdc});
 }
 
@@ -307,9 +302,7 @@ class _AgentCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
-                  locked
-                      ? Icons.lock
-                      : Icons.precision_manufacturing,
+                  locked ? Icons.lock : Icons.precision_manufacturing,
                   color: locked ? TibaneColors.error : TibaneColors.orange,
                   size: 22,
                 ),
@@ -364,22 +357,14 @@ class _AgentCard extends StatelessWidget {
                 Expanded(
                   child: _BalanceCell(
                     label: 'SOL',
-                    value: balance == null
-                        ? '—'
-                        : _formatSol(balance!.sol),
+                    value: balance == null ? '—' : _formatSol(balance!.sol),
                   ),
                 ),
-                Container(
-                  width: 1,
-                  height: 28,
-                  color: TibaneColors.border,
-                ),
+                Container(width: 1, height: 28, color: TibaneColors.border),
                 Expanded(
                   child: _BalanceCell(
                     label: 'USDC',
-                    value: balance == null
-                        ? '—'
-                        : _formatUsdc(balance!.usdc),
+                    value: balance == null ? '—' : _formatUsdc(balance!.usdc),
                     valueColor: TibaneColors.gold,
                   ),
                 ),
@@ -408,10 +393,7 @@ class _BalanceCell extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          label,
-          style: monoStyle(fontSize: 9, color: TibaneColors.textDim),
-        ),
+        Text(label, style: monoStyle(fontSize: 9, color: TibaneColors.textDim)),
         const SizedBox(height: 4),
         Text(
           value,

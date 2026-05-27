@@ -4,7 +4,10 @@ import 'package:atonline_api/atonline_api.dart';
 import 'package:flutter/foundation.dart';
 
 /// Shared AtOnline API instance for all Tibane server interactions.
-final tibaneApi = AtOnline('oaap-bapax4-2dgn-b2ze-oquf-bjnuzioy', prefix: 'https://www.tibane.net/_rest/');
+final tibaneApi = AtOnline(
+  'oaap-bapax4-2dgn-b2ze-oquf-bjnuzioy',
+  prefix: 'https://www.tibane.net/_rest/',
+);
 
 /// Relay service for sponsored transactions.
 class RelayService {
@@ -26,7 +29,9 @@ class RelayService {
 class AuthService {
   /// Whether the user is authenticated (has a valid token)
   bool get isAuthenticated {
-    return tibaneApi.tokenV != null && tibaneApi.tokenV!.isNotEmpty && tibaneApi.expiresV > 0;
+    return tibaneApi.tokenV != null &&
+        tibaneApi.tokenV!.isNotEmpty &&
+        tibaneApi.expiresV > 0;
   }
 
   /// Get a challenge ticket for the given Solana public key.

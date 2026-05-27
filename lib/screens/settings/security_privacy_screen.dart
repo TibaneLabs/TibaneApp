@@ -61,7 +61,8 @@ class SecurityPrivacyScreen extends StatelessWidget {
                 SettingsTile(
                   icon: Icons.cloud_outlined,
                   title: 'Cloud backup',
-                  subtitle: 'Auto-backup via iCloud Backup / Google Auto Backup',
+                  subtitle:
+                      'Auto-backup via iCloud Backup / Google Auto Backup',
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => const CloudBackupScreen(),
@@ -87,7 +88,9 @@ class SecurityPrivacyScreen extends StatelessWidget {
   }
 
   Future<void> _changePassword(
-      BuildContext context, WalletService wallet) async {
+    BuildContext context,
+    WalletService wallet,
+  ) async {
     final result = await showDialog<_PasswordChange>(
       context: context,
       builder: (_) => const _ChangePasswordDialog(),
@@ -100,17 +103,21 @@ class SecurityPrivacyScreen extends StatelessWidget {
       newPassword: result.newPassword,
     );
     if (!context.mounted) return;
-    messenger.showSnackBar(SnackBar(
-      content: Text(
-        ok
-            ? 'Password changed'
-            : (wallet.libwallet.error ?? 'Change password failed'),
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Password changed'
+              : (wallet.libwallet.error ?? 'Change password failed'),
+        ),
       ),
-    ));
+    );
   }
 
   Future<void> _rotateRemoteKey(
-      BuildContext context, WalletService wallet) async {
+    BuildContext context,
+    WalletService wallet,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -142,9 +149,11 @@ class SecurityPrivacyScreen extends StatelessWidget {
     final messenger = ScaffoldMessenger.of(context);
     final session = await wallet.libwallet.startRemoteKeyReshare();
     if (session == null) {
-      messenger.showSnackBar(SnackBar(
-        content: Text(wallet.libwallet.error ?? 'Reshare start failed'),
-      ));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(wallet.libwallet.error ?? 'Reshare start failed'),
+        ),
+      );
       return;
     }
     if (!context.mounted) return;
@@ -158,15 +167,21 @@ class SecurityPrivacyScreen extends StatelessWidget {
       code: code,
     );
     if (!context.mounted) return;
-    messenger.showSnackBar(SnackBar(
-      content: Text(ok
-          ? '2FA share rotated'
-          : (wallet.libwallet.error ?? 'Reshare failed')),
-    ));
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? '2FA share rotated'
+              : (wallet.libwallet.error ?? 'Reshare failed'),
+        ),
+      ),
+    );
   }
 
   Future<void> _rotateDeviceShare(
-      BuildContext context, WalletService wallet) async {
+    BuildContext context,
+    WalletService wallet,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -200,19 +215,22 @@ class SecurityPrivacyScreen extends StatelessWidget {
     final messenger = ScaffoldMessenger.of(context);
     final ok = await wallet.libwallet.rotateDeviceShare();
     if (!context.mounted) return;
-    messenger.showSnackBar(SnackBar(
-      content: Text(
-        ok
-            ? 'Device share rotated'
-            : (wallet.libwallet.error ?? 'Rotate failed'),
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Device share rotated'
+              : (wallet.libwallet.error ?? 'Rotate failed'),
+        ),
       ),
-    ));
+    );
   }
 }
 
 class _PasswordChange {
   final String oldPassword;
   final String newPassword;
+
   const _PasswordChange(this.oldPassword, this.newPassword);
 }
 
@@ -279,8 +297,9 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
           TextField(
             controller: _confirmCtrl,
             obscureText: true,
-            decoration:
-                const InputDecoration(labelText: 'Confirm new password'),
+            decoration: const InputDecoration(
+              labelText: 'Confirm new password',
+            ),
           ),
           if (_error != null) ...[
             const SizedBox(height: 10),
@@ -307,6 +326,7 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
 
 class _BiometricToggleTile extends StatefulWidget {
   final LibwalletBackend libwallet;
+
   const _BiometricToggleTile({required this.libwallet});
 
   @override
@@ -344,27 +364,30 @@ class _BiometricToggleTileState extends State<_BiometricToggleTile> {
         final wallet = context.read<WalletService>();
         if (!wallet.libwallet.isUnlocked) {
           final ok = await Navigator.of(context).push<bool>(
-            MaterialPageRoute(
-              builder: (_) => const _PasswordCachePrompt(),
-            ),
+            MaterialPageRoute(builder: (_) => const _PasswordCachePrompt()),
           );
           if (ok != true || !mounted) return;
         }
         final pw = wallet.libwallet.currentPassword;
         if (pw == null) {
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Could not read password — try unlocking first.'),
-          ));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not read password — try unlocking first.'),
+            ),
+          );
           return;
         }
         final ok = await widget.libwallet.enableBiometricUnlock(pw);
         if (!mounted) return;
         if (!ok) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'Biometric setup failed — your device may not support it.'),
-          ));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Biometric setup failed — your device may not support it.',
+              ),
+            ),
+          );
           return;
         }
         setState(() => _enabled = true);
@@ -468,8 +491,7 @@ class _PasswordCachePromptState extends State<_PasswordCachePrompt> {
             children: [
               const Text(
                 "Enter your wallet password so we can cache it behind your devices biometric prompt.",
-                style:
-                    TextStyle(color: TibaneColors.textMuted, height: 1.4),
+                style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
               ),
               const SizedBox(height: 24),
               TextField(
@@ -482,8 +504,10 @@ class _PasswordCachePromptState extends State<_PasswordCachePrompt> {
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
-                Text(_error!,
-                    style: const TextStyle(color: TibaneColors.error)),
+                Text(
+                  _error!,
+                  style: const TextStyle(color: TibaneColors.error),
+                ),
               ],
               const Spacer(),
               FilledButton(
@@ -508,6 +532,7 @@ class _PasswordCachePromptState extends State<_PasswordCachePrompt> {
 
 class _CodeEntryDialog extends StatefulWidget {
   final int length;
+
   const _CodeEntryDialog({required this.length});
 
   @override
