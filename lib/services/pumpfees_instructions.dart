@@ -11,74 +11,69 @@ import 'spl_instructions.dart';
 // ─── PDA derivations ────────────────────────────────────────────────────────
 
 String deriveSharingConfigPda(String mint) {
-  final (addr, _) = findProgramAddressFromStrings(
-    [utf8.encode('sharing-config'), base58Decode(mint)],
-    pumpFeesProgramId,
-  );
+  final (addr, _) = findProgramAddressFromStrings([
+    utf8.encode('sharing-config'),
+    base58Decode(mint),
+  ], pumpFeesProgramId);
   return addr;
 }
 
 String derivePumpCreatorVaultPda(String sharingConfig) {
-  final (addr, _) = findProgramAddressFromStrings(
-    [utf8.encode('creator-vault'), base58Decode(sharingConfig)],
-    pumpProgramId,
-  );
+  final (addr, _) = findProgramAddressFromStrings([
+    utf8.encode('creator-vault'),
+    base58Decode(sharingConfig),
+  ], pumpProgramId);
   return addr;
 }
 
 String deriveCoinCreatorVaultAuthorityPda(String sharingConfig) {
-  final (addr, _) = findProgramAddressFromStrings(
-    [utf8.encode('creator_vault'), base58Decode(sharingConfig)],
-    pumpSwapAmmProgramId,
-  );
+  final (addr, _) = findProgramAddressFromStrings([
+    utf8.encode('creator_vault'),
+    base58Decode(sharingConfig),
+  ], pumpSwapAmmProgramId);
   return addr;
 }
 
 String deriveBondingCurvePda(String mint) {
-  final (addr, _) = findProgramAddressFromStrings(
-    [utf8.encode('bonding-curve'), base58Decode(mint)],
-    pumpProgramId,
-  );
+  final (addr, _) = findProgramAddressFromStrings([
+    utf8.encode('bonding-curve'),
+    base58Decode(mint),
+  ], pumpProgramId);
   return addr;
 }
 
 String deriveGlobalPda() {
-  final (addr, _) = findProgramAddressFromStrings(
-    [utf8.encode('global')],
-    pumpProgramId,
-  );
+  final (addr, _) = findProgramAddressFromStrings([
+    utf8.encode('global'),
+  ], pumpProgramId);
   return addr;
 }
 
 String deriveEventAuthorityPda(String programId) {
-  final (addr, _) = findProgramAddressFromStrings(
-    [utf8.encode('__event_authority')],
-    programId,
-  );
+  final (addr, _) = findProgramAddressFromStrings([
+    utf8.encode('__event_authority'),
+  ], programId);
   return addr;
 }
 
 String derivePoolAuthorityPda(String baseMint) {
-  final (addr, _) = findProgramAddressFromStrings(
-    [utf8.encode('pool-authority'), base58Decode(baseMint)],
-    pumpProgramId,
-  );
+  final (addr, _) = findProgramAddressFromStrings([
+    utf8.encode('pool-authority'),
+    base58Decode(baseMint),
+  ], pumpProgramId);
   return addr;
 }
 
 String derivePumpSwapPoolPda(String baseMint) {
   final poolAuthority = derivePoolAuthorityPda(baseMint);
   final indexBuf = Uint8List(2); // u16 LE = 0
-  final (addr, _) = findProgramAddressFromStrings(
-    [
-      utf8.encode('pool'),
-      indexBuf,
-      base58Decode(poolAuthority),
-      base58Decode(baseMint),
-      base58Decode(wsolMint),
-    ],
-    pumpSwapAmmProgramId,
-  );
+  final (addr, _) = findProgramAddressFromStrings([
+    utf8.encode('pool'),
+    indexBuf,
+    base58Decode(poolAuthority),
+    base58Decode(baseMint),
+    base58Decode(wsolMint),
+  ], pumpSwapAmmProgramId);
   return addr;
 }
 
@@ -124,18 +119,23 @@ class SharingConfig {
     final bump = data[offset++];
     final version = data[offset++];
     final status = data[offset++];
-    final mint = base58Encode(data.sublist(offset, offset + 32)); offset += 32;
-    final admin = base58Encode(data.sublist(offset, offset + 32)); offset += 32;
+    final mint = base58Encode(data.sublist(offset, offset + 32));
+    offset += 32;
+    final admin = base58Encode(data.sublist(offset, offset + 32));
+    offset += 32;
     final adminRevoked = data[offset++] != 0;
 
     final bd = ByteData.sublistView(data);
-    final vecLen = bd.getUint32(offset, Endian.little); offset += 4;
+    final vecLen = bd.getUint32(offset, Endian.little);
+    offset += 4;
 
     final shareholders = <FeeShareHolder>[];
     for (var i = 0; i < vecLen; i++) {
       if (offset + 34 > data.length) break;
-      final addr = base58Encode(data.sublist(offset, offset + 32)); offset += 32;
-      final bps = bd.getUint16(offset, Endian.little); offset += 2;
+      final addr = base58Encode(data.sublist(offset, offset + 32));
+      offset += 32;
+      final bps = bd.getUint16(offset, Endian.little);
+      offset += 2;
       shareholders.add(FeeShareHolder(address: addr, bps: bps));
     }
 
@@ -166,8 +166,16 @@ SolanaInstruction createFeeSharingConfigIx({
   final pumpEventAuthority = deriveEventAuthorityPda(pumpProgramId);
 
   final accounts = <AccountMeta>[
-    AccountMeta.fromBase58(pfeesEventAuthority, isSigner: false, isWritable: false),
-    AccountMeta.fromBase58(pumpFeesProgramId, isSigner: false, isWritable: false),
+    AccountMeta.fromBase58(
+      pfeesEventAuthority,
+      isSigner: false,
+      isWritable: false,
+    ),
+    AccountMeta.fromBase58(
+      pumpFeesProgramId,
+      isSigner: false,
+      isWritable: false,
+    ),
     AccountMeta.fromBase58(payer, isSigner: true, isWritable: true),
     AccountMeta.fromBase58(global, isSigner: false, isWritable: false),
     AccountMeta.fromBase58(mint, isSigner: false, isWritable: false),
@@ -175,7 +183,11 @@ SolanaInstruction createFeeSharingConfigIx({
     AccountMeta.fromBase58(systemProgramId, isSigner: false, isWritable: false),
     AccountMeta.fromBase58(bondingCurve, isSigner: false, isWritable: true),
     AccountMeta.fromBase58(pumpProgramId, isSigner: false, isWritable: false),
-    AccountMeta.fromBase58(pumpEventAuthority, isSigner: false, isWritable: false),
+    AccountMeta.fromBase58(
+      pumpEventAuthority,
+      isSigner: false,
+      isWritable: false,
+    ),
   ];
 
   if (hasPumpSwapPool) {
@@ -183,8 +195,16 @@ SolanaInstruction createFeeSharingConfigIx({
     final ammEventAuthority = deriveEventAuthorityPda(pumpSwapAmmProgramId);
     accounts.addAll([
       AccountMeta.fromBase58(pool, isSigner: false, isWritable: true),
-      AccountMeta.fromBase58(pumpSwapAmmProgramId, isSigner: false, isWritable: false),
-      AccountMeta.fromBase58(ammEventAuthority, isSigner: false, isWritable: false),
+      AccountMeta.fromBase58(
+        pumpSwapAmmProgramId,
+        isSigner: false,
+        isWritable: false,
+      ),
+      AccountMeta.fromBase58(
+        ammEventAuthority,
+        isSigner: false,
+        isWritable: false,
+      ),
     ]);
   }
 
@@ -208,8 +228,14 @@ SolanaInstruction updateFeeSharesIx({
   final pfeesEventAuthority = deriveEventAuthorityPda(pumpFeesProgramId);
   final pumpCreatorVault = derivePumpCreatorVaultPda(sharingConfig);
   final pumpEventAuthority = deriveEventAuthorityPda(pumpProgramId);
-  final coinCreatorVaultAuth = deriveCoinCreatorVaultAuthorityPda(sharingConfig);
-  final coinCreatorVaultAta = deriveATA(coinCreatorVaultAuth, wsolMint, splTokenProgramId);
+  final coinCreatorVaultAuth = deriveCoinCreatorVaultAuthorityPda(
+    sharingConfig,
+  );
+  final coinCreatorVaultAta = deriveATA(
+    coinCreatorVaultAuth,
+    wsolMint,
+    splTokenProgramId,
+  );
   final pool = derivePumpSwapPoolPda(mint);
   final ammEventAuthority = deriveEventAuthorityPda(pumpSwapAmmProgramId);
 
@@ -234,22 +260,56 @@ SolanaInstruction updateFeeSharesIx({
     AccountMeta.fromBase58(bondingCurve, isSigner: false, isWritable: true),
     AccountMeta.fromBase58(pumpCreatorVault, isSigner: false, isWritable: true),
     AccountMeta.fromBase58(pumpProgramId, isSigner: false, isWritable: false),
-    AccountMeta.fromBase58(pumpEventAuthority, isSigner: false, isWritable: false),
-    AccountMeta.fromBase58(coinCreatorVaultAuth, isSigner: false, isWritable: true),
-    AccountMeta.fromBase58(coinCreatorVaultAta, isSigner: false, isWritable: true),
+    AccountMeta.fromBase58(
+      pumpEventAuthority,
+      isSigner: false,
+      isWritable: false,
+    ),
+    AccountMeta.fromBase58(
+      coinCreatorVaultAuth,
+      isSigner: false,
+      isWritable: true,
+    ),
+    AccountMeta.fromBase58(
+      coinCreatorVaultAta,
+      isSigner: false,
+      isWritable: true,
+    ),
     AccountMeta.fromBase58(wsolMint, isSigner: false, isWritable: false),
-    AccountMeta.fromBase58(splTokenProgramId, isSigner: false, isWritable: false),
+    AccountMeta.fromBase58(
+      splTokenProgramId,
+      isSigner: false,
+      isWritable: false,
+    ),
     AccountMeta.fromBase58(systemProgramId, isSigner: false, isWritable: false),
-    AccountMeta.fromBase58(associatedTokenProgramId, isSigner: false, isWritable: false),
+    AccountMeta.fromBase58(
+      associatedTokenProgramId,
+      isSigner: false,
+      isWritable: false,
+    ),
     AccountMeta.fromBase58(pool, isSigner: false, isWritable: true),
-    AccountMeta.fromBase58(pumpSwapAmmProgramId, isSigner: false, isWritable: false),
-    AccountMeta.fromBase58(ammEventAuthority, isSigner: false, isWritable: false),
-    AccountMeta.fromBase58(pfeesEventAuthority, isSigner: false, isWritable: false),
+    AccountMeta.fromBase58(
+      pumpSwapAmmProgramId,
+      isSigner: false,
+      isWritable: false,
+    ),
+    AccountMeta.fromBase58(
+      ammEventAuthority,
+      isSigner: false,
+      isWritable: false,
+    ),
+    AccountMeta.fromBase58(
+      pfeesEventAuthority,
+      isSigner: false,
+      isWritable: false,
+    ),
   ];
 
   // Append current shareholders as remaining accounts (writable for refund)
   for (final s in currentShareholders) {
-    accounts.add(AccountMeta.fromBase58(s.address, isSigner: false, isWritable: true));
+    accounts.add(
+      AccountMeta.fromBase58(s.address, isSigner: false, isWritable: true),
+    );
   }
 
   return SolanaInstruction(
@@ -275,13 +335,19 @@ SolanaInstruction distributeCreatorFeesIx({
     AccountMeta.fromBase58(sharingConfig, isSigner: false, isWritable: false),
     AccountMeta.fromBase58(pumpCreatorVault, isSigner: false, isWritable: true),
     AccountMeta.fromBase58(systemProgramId, isSigner: false, isWritable: false),
-    AccountMeta.fromBase58(pumpEventAuthority, isSigner: false, isWritable: false),
+    AccountMeta.fromBase58(
+      pumpEventAuthority,
+      isSigner: false,
+      isWritable: false,
+    ),
     AccountMeta.fromBase58(pumpProgramId, isSigner: false, isWritable: false),
   ];
 
   // Append shareholders as remaining accounts
   for (final s in shareholders) {
-    accounts.add(AccountMeta.fromBase58(s.address, isSigner: false, isWritable: true));
+    accounts.add(
+      AccountMeta.fromBase58(s.address, isSigner: false, isWritable: true),
+    );
   }
 
   return SolanaInstruction(
@@ -292,12 +358,16 @@ SolanaInstruction distributeCreatorFeesIx({
 }
 
 /// Transfer creator fees from PumpSwap AMM pool to pump creator vault
-SolanaInstruction transferCreatorFeesToPumpIx({
-  required String mint,
-}) {
+SolanaInstruction transferCreatorFeesToPumpIx({required String mint}) {
   final sharingConfig = deriveSharingConfigPda(mint);
-  final coinCreatorVaultAuth = deriveCoinCreatorVaultAuthorityPda(sharingConfig);
-  final coinCreatorVaultAta = deriveATA(coinCreatorVaultAuth, wsolMint, splTokenProgramId);
+  final coinCreatorVaultAuth = deriveCoinCreatorVaultAuthorityPda(
+    sharingConfig,
+  );
+  final coinCreatorVaultAta = deriveATA(
+    coinCreatorVaultAuth,
+    wsolMint,
+    splTokenProgramId,
+  );
   final pumpCreatorVault = derivePumpCreatorVaultPda(sharingConfig);
   final ammEventAuthority = deriveEventAuthorityPda(pumpSwapAmmProgramId);
 
@@ -305,15 +375,47 @@ SolanaInstruction transferCreatorFeesToPumpIx({
     programId: base58Decode(pumpSwapAmmProgramId),
     accounts: [
       AccountMeta.fromBase58(wsolMint, isSigner: false, isWritable: false),
-      AccountMeta.fromBase58(splTokenProgramId, isSigner: false, isWritable: false),
-      AccountMeta.fromBase58(systemProgramId, isSigner: false, isWritable: false),
-      AccountMeta.fromBase58(associatedTokenProgramId, isSigner: false, isWritable: false),
+      AccountMeta.fromBase58(
+        splTokenProgramId,
+        isSigner: false,
+        isWritable: false,
+      ),
+      AccountMeta.fromBase58(
+        systemProgramId,
+        isSigner: false,
+        isWritable: false,
+      ),
+      AccountMeta.fromBase58(
+        associatedTokenProgramId,
+        isSigner: false,
+        isWritable: false,
+      ),
       AccountMeta.fromBase58(sharingConfig, isSigner: false, isWritable: false),
-      AccountMeta.fromBase58(coinCreatorVaultAuth, isSigner: false, isWritable: true),
-      AccountMeta.fromBase58(coinCreatorVaultAta, isSigner: false, isWritable: true),
-      AccountMeta.fromBase58(pumpCreatorVault, isSigner: false, isWritable: true),
-      AccountMeta.fromBase58(ammEventAuthority, isSigner: false, isWritable: false),
-      AccountMeta.fromBase58(pumpSwapAmmProgramId, isSigner: false, isWritable: false),
+      AccountMeta.fromBase58(
+        coinCreatorVaultAuth,
+        isSigner: false,
+        isWritable: true,
+      ),
+      AccountMeta.fromBase58(
+        coinCreatorVaultAta,
+        isSigner: false,
+        isWritable: true,
+      ),
+      AccountMeta.fromBase58(
+        pumpCreatorVault,
+        isSigner: false,
+        isWritable: true,
+      ),
+      AccountMeta.fromBase58(
+        ammEventAuthority,
+        isSigner: false,
+        isWritable: false,
+      ),
+      AccountMeta.fromBase58(
+        pumpSwapAmmProgramId,
+        isSigner: false,
+        isWritable: false,
+      ),
     ],
     data: Uint8List.fromList(transferCreatorFeesToPumpDisc),
   );
@@ -334,7 +436,11 @@ SolanaInstruction transferFeeSharingAuthorityIx({
       AccountMeta.fromBase58(currentAdmin, isSigner: true, isWritable: false),
       AccountMeta.fromBase58(sharingConfig, isSigner: false, isWritable: true),
       AccountMeta.fromBase58(newAdmin, isSigner: false, isWritable: false),
-      AccountMeta.fromBase58(pfeesEventAuthority, isSigner: false, isWritable: false),
+      AccountMeta.fromBase58(
+        pfeesEventAuthority,
+        isSigner: false,
+        isWritable: false,
+      ),
     ],
     data: Uint8List.fromList(transferFeeSharingAuthorityDisc),
   );
@@ -353,7 +459,11 @@ SolanaInstruction revokeFeeSharingAuthorityIx({
     accounts: [
       AccountMeta.fromBase58(admin, isSigner: true, isWritable: false),
       AccountMeta.fromBase58(sharingConfig, isSigner: false, isWritable: true),
-      AccountMeta.fromBase58(pfeesEventAuthority, isSigner: false, isWritable: false),
+      AccountMeta.fromBase58(
+        pfeesEventAuthority,
+        isSigner: false,
+        isWritable: false,
+      ),
     ],
     data: Uint8List.fromList(revokeFeeSharingAuthorityDisc),
   );

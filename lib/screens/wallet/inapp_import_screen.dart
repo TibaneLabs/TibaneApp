@@ -57,7 +57,8 @@ class _InAppImportScreenState extends State<InAppImportScreen> {
           'Double-check you picked the right file.',
         );
       }
-      final bytes = picked.bytes ??
+      final bytes =
+          picked.bytes ??
           (picked.path != null ? await File(picked.path!).readAsBytes() : null);
       if (!mounted) return;
       if (bytes == null) {
@@ -163,7 +164,10 @@ class _InAppImportScreenState extends State<InAppImportScreen> {
                         'Open the backup file exported from another device, or paste '
                         'the backup JSON. Then enter the same password used when the '
                         'wallet was created.',
-                        style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+                        style: TextStyle(
+                          color: TibaneColors.textMuted,
+                          height: 1.4,
+                        ),
                       ),
                       const SizedBox(height: 16),
                       FilledButton.icon(
@@ -216,7 +220,10 @@ class _InAppImportScreenState extends State<InAppImportScreen> {
                         maxLines: 8,
                         keyboardType: TextInputType.multiline,
                         textAlignVertical: TextAlignVertical.top,
-                        style: monoStyle(fontSize: 11, color: TibaneColors.text),
+                        style: monoStyle(
+                          fontSize: 11,
+                          color: TibaneColors.text,
+                        ),
                         decoration: const InputDecoration(
                           labelText: 'Backup JSON',
                           alignLabelWithHint: true,
@@ -235,11 +242,16 @@ class _InAppImportScreenState extends State<InAppImportScreen> {
                         enabled: !_busy,
                         textInputAction: TextInputAction.done,
                         onSubmitted: (_) => _busy ? null : _restore(),
-                        decoration: const InputDecoration(labelText: 'Password'),
+                        decoration: const InputDecoration(
+                          labelText: 'Password',
+                        ),
                       ),
                       if (_error != null) ...[
                         const SizedBox(height: 12),
-                        Text(_error!, style: const TextStyle(color: TibaneColors.error)),
+                        Text(
+                          _error!,
+                          style: const TextStyle(color: TibaneColors.error),
+                        ),
                       ],
                     ],
                   ),

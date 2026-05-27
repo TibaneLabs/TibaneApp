@@ -239,9 +239,9 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
           onSelectionChanged: _busy
               ? null
               : (s) => setState(() {
-                    _mode = s.first;
-                    _error = null;
-                  }),
+                  _mode = s.first;
+                  _error = null;
+                }),
         ),
         const SizedBox(height: 20),
         if (_mode == _IdMode.email)
@@ -327,11 +327,11 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
           onPressed: _busy
               ? null
               : () => setState(() {
-                    _step = _Step.identifier;
-                    _codeCtrl.clear();
-                    _session = null;
-                    _error = null;
-                  }),
+                  _step = _Step.identifier;
+                  _codeCtrl.clear();
+                  _session = null;
+                  _error = null;
+                }),
           child: const Text('Use a different email or phone'),
         ),
       ],
@@ -355,7 +355,8 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
           textInputAction: TextInputAction.next,
           decoration: const InputDecoration(
             labelText: 'Wallet name',
-            helperText: 'Shown in the wallet picker — purely for your reference.',
+            helperText:
+                'Shown in the wallet picker — purely for your reference.',
           ),
         ),
         const SizedBox(height: 12),
@@ -380,18 +381,12 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
         const SizedBox(height: 6),
         SegmentedButton<_CurveChoice>(
           segments: const [
-            ButtonSegment(
-              value: _CurveChoice.ed25519,
-              label: Text('Solana'),
-            ),
+            ButtonSegment(value: _CurveChoice.ed25519, label: Text('Solana')),
             ButtonSegment(
               value: _CurveChoice.secp256k1,
               label: Text('EVM/BTC'),
             ),
-            ButtonSegment(
-              value: _CurveChoice.both,
-              label: Text('Both'),
-            ),
+            ButtonSegment(value: _CurveChoice.both, label: Text('Both')),
           ],
           selected: {_curve},
           onSelectionChanged: creating
@@ -399,17 +394,14 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
               : (s) => setState(() => _curve = s.first),
         ),
         const SizedBox(height: 4),
-        Text(
-          switch (_curve) {
-            _CurveChoice.ed25519 =>
-                'ed25519 wallet — Solana account only. Fastest to generate (a few seconds).',
-            _CurveChoice.secp256k1 =>
-                'secp256k1 wallet — Ethereum / Bitcoin family. The keygen ceremony takes substantially longer than ed25519 (often a minute or more on mobile) because secp256k1 TSS requires expensive Paillier-key generation.',
-            _CurveChoice.both =>
-                'Both curves created in one keygen ceremony — Solana + Ethereum, no second verification code. Plan for the secp256k1 step to dominate the time (often a minute or more on mobile); keep the app open.',
-          },
-          style: const TextStyle(color: TibaneColors.textMuted, fontSize: 12),
-        ),
+        Text(switch (_curve) {
+          _CurveChoice.ed25519 =>
+            'ed25519 wallet — Solana account only. Fastest to generate (a few seconds).',
+          _CurveChoice.secp256k1 =>
+            'secp256k1 wallet — Ethereum / Bitcoin family. The keygen ceremony takes substantially longer than ed25519 (often a minute or more on mobile) because secp256k1 TSS requires expensive Paillier-key generation.',
+          _CurveChoice.both =>
+            'Both curves created in one keygen ceremony — Solana + Ethereum, no second verification code. Plan for the secp256k1 step to dominate the time (often a minute or more on mobile); keep the app open.',
+        }, style: const TextStyle(color: TibaneColors.textMuted, fontSize: 12)),
         if (_error != null) ...[
           const SizedBox(height: 12),
           Text(_error!, style: const TextStyle(color: TibaneColors.error)),
@@ -433,7 +425,10 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
     );
   }
 
-  Widget _primaryButton({required String label, required VoidCallback? onPressed}) {
+  Widget _primaryButton({
+    required String label,
+    required VoidCallback? onPressed,
+  }) {
     return FilledButton(
       onPressed: onPressed,
       style: FilledButton.styleFrom(

@@ -19,12 +19,12 @@ Future<bool> showConnectSheet(
   required String accountAddress,
 }) async {
   return await _show(
-    context,
-    title: 'Connect wallet',
-    host: host,
-    approveLabel: 'Connect',
-    body: _KeyValue('Account', accountAddress),
-  ) ??
+        context,
+        title: 'Connect wallet',
+        host: host,
+        approveLabel: 'Connect',
+        body: _KeyValue('Account', accountAddress),
+      ) ??
       false;
 }
 
@@ -122,7 +122,7 @@ Widget _typedDataBody(MessageSignRequest req, String accountAddress) {
   final contractLabel = req.verifyingContractLabel;
   final message =
       (req.structuredData?['message'] as Map?)?.cast<String, dynamic>() ??
-          const <String, dynamic>{};
+      const <String, dynamic>{};
   return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -219,7 +219,10 @@ String _previewPayload(Uint8List bytes) {
     if (text.runes.every(_isPrintable)) return text;
   } catch (_) {}
   final n = bytes.length.clamp(0, 128);
-  final hex = bytes.sublist(0, n).map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+  final hex = bytes
+      .sublist(0, n)
+      .map((b) => b.toRadixString(16).padLeft(2, '0'))
+      .join(' ');
   final tail = bytes.length > n ? '  …(+${bytes.length - n} bytes)' : '';
   return '${bytes.length} bytes\n$hex$tail';
 }
@@ -265,8 +268,10 @@ Future<bool?> _show(
           const SizedBox(height: 16),
           Text(title, style: Theme.of(ctx).textTheme.titleLarge),
           const SizedBox(height: 4),
-          Text(host,
-              style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13)),
+          Text(
+            host,
+            style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+          ),
           const SizedBox(height: 16),
           body,
           const SizedBox(height: 20),
@@ -308,6 +313,7 @@ Future<bool?> _show(
 class _KeyValue extends StatelessWidget {
   final String k;
   final String v;
+
   const _KeyValue(this.k, this.v);
 
   @override
@@ -335,6 +341,7 @@ class _KeyValue extends StatelessWidget {
 
 class _SectionLabel extends StatelessWidget {
   final String text;
+
   const _SectionLabel(this.text);
 
   @override
@@ -351,6 +358,7 @@ class _SectionLabel extends StatelessWidget {
 /// fall back to JSON encoding.
 class _StructBox extends StatelessWidget {
   final Map<String, dynamic> map;
+
   const _StructBox({required this.map});
 
   @override
@@ -432,14 +440,16 @@ Future<bool> showAddNetworkSheet(
       if (!req.isKnown) ...[
         const SizedBox(height: 14),
         _WarningRow(
-          text: 'Chain ID ${n.chainId} is not in libwallet\'s known-chain '
+          text:
+              'Chain ID ${n.chainId} is not in libwallet\'s known-chain '
               'registry. Verify the network is legitimate before approving.',
         ),
       ],
       if (req.nameMismatch) ...[
         const SizedBox(height: 14),
         _WarningRow(
-          text: 'Chain ID ${n.chainId} is registered as "${req.knownName}". '
+          text:
+              'Chain ID ${n.chainId} is registered as "${req.knownName}". '
               'This dApp is proposing a different name — possible phishing.',
         ),
       ],
@@ -498,10 +508,7 @@ Future<bool> showWatchAssetSheet(
                 ),
                 Text(
                   req.assetType,
-                  style: monoStyle(
-                    fontSize: 11,
-                    color: TibaneColors.textMuted,
-                  ),
+                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
               ],
             ),
@@ -521,7 +528,8 @@ Future<bool> showWatchAssetSheet(
       if (req.addressLooksInvalid) ...[
         const SizedBox(height: 14),
         _WarningRow(
-          text: 'The contract address does not parse as a valid EVM '
+          text:
+              'The contract address does not parse as a valid EVM '
               'address. Approving could add a phishing token — verify the '
               'address before continuing.',
         ),
@@ -529,7 +537,8 @@ Future<bool> showWatchAssetSheet(
       if (req.isAlreadyTracked) ...[
         const SizedBox(height: 14),
         _WarningRow(
-          text: 'This token is already tracked in your wallet. Approving '
+          text:
+              'This token is already tracked in your wallet. Approving '
               'is a no-op.',
         ),
       ],
@@ -569,6 +578,7 @@ class _AssetIconFallback extends StatelessWidget {
 class ChainSwitchResult {
   final String? networkId;
   final String? accountId;
+
   const ChainSwitchResult({this.networkId, this.accountId});
 }
 
@@ -593,6 +603,7 @@ Future<ChainSwitchResult?> showChainSwitchSheet(
 
 class _ChainSwitchSheet extends StatefulWidget {
   final ChainSwitchRequest req;
+
   const _ChainSwitchSheet({required this.req});
 
   @override
@@ -606,7 +617,8 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
   @override
   void initState() {
     super.initState();
-    _pickedNetwork = widget.req.targetNetwork ??
+    _pickedNetwork =
+        widget.req.targetNetwork ??
         (widget.req.candidateNetworks.isNotEmpty
             ? widget.req.candidateNetworks.first
             : null);
@@ -662,8 +674,9 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
                 groupValue: _pickedNetwork?.id,
                 onChanged: (id) {
                   setState(() {
-                    _pickedNetwork =
-                        req.candidateNetworks.firstWhere((x) => x.id == id);
+                    _pickedNetwork = req.candidateNetworks.firstWhere(
+                      (x) => x.id == id,
+                    );
                   });
                 },
                 title: Text(
@@ -684,7 +697,8 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
             if (req.isNewNetwork) ...[
               const SizedBox(height: 14),
               _WarningRow(
-                text: 'This network is not in your wallet yet. Approving will '
+                text:
+                    'This network is not in your wallet yet. Approving will '
                     'add it and make it active in one step.',
               ),
             ],
@@ -699,8 +713,9 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
                 groupValue: _pickedAccount?.id,
                 onChanged: (id) {
                   setState(() {
-                    _pickedAccount =
-                        req.candidateAccounts.firstWhere((x) => x.id == id);
+                    _pickedAccount = req.candidateAccounts.firstWhere(
+                      (x) => x.id == id,
+                    );
                   });
                 },
                 title: Text(
@@ -738,12 +753,12 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
                   onPressed: _pickedNetwork == null || _pickedAccount == null
                       ? null
                       : () => Navigator.pop(
-                            context,
-                            ChainSwitchResult(
-                              networkId: pickerMode ? _pickedNetwork!.id : null,
-                              accountId: _pickedAccount!.id,
-                            ),
+                          context,
+                          ChainSwitchResult(
+                            networkId: pickerMode ? _pickedNetwork!.id : null,
+                            accountId: _pickedAccount!.id,
                           ),
+                        ),
                   style: FilledButton.styleFrom(
                     backgroundColor: TibaneColors.orange,
                     foregroundColor: TibaneColors.black,
@@ -765,6 +780,7 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
 
 class _WarningRow extends StatelessWidget {
   final String text;
+
   const _WarningRow({required this.text});
 
   @override
@@ -774,8 +790,11 @@ class _WarningRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.warning_amber_rounded,
-              color: TibaneColors.gold, size: 16),
+          const Icon(
+            Icons.warning_amber_rounded,
+            color: TibaneColors.gold,
+            size: 16,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

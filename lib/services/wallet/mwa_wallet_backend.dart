@@ -25,12 +25,16 @@ class MwaWalletBackend extends ChangeNotifier implements WalletBackend {
 
   @override
   String? get publicKey => _publicKey;
+
   @override
   String? get walletName => _walletName;
+
   @override
   bool get isConnected => _publicKey != null;
+
   @override
   bool get isConnecting => _connecting;
+
   @override
   String? get error => _error;
 
@@ -163,7 +167,9 @@ class MwaWalletBackend extends ChangeNotifier implements WalletBackend {
   }
 
   @override
-  Future<List<Uint8List?>> signTransactions(List<Uint8List> transactions) async {
+  Future<List<Uint8List?>> signTransactions(
+    List<Uint8List> transactions,
+  ) async {
     if (!_ensureConnected()) return List.filled(transactions.length, null);
     try {
       final result = await _mwaChannel.invokeMethod<Map>('signTransactions', {
@@ -192,15 +198,18 @@ class MwaWalletBackend extends ChangeNotifier implements WalletBackend {
   }
 
   @override
-  Future<List<String?>> signAndSendTransactions(List<Uint8List> transactions) async {
+  Future<List<String?>> signAndSendTransactions(
+    List<Uint8List> transactions,
+  ) async {
     if (!_ensureConnected()) return List.filled(transactions.length, null);
     try {
-      final result = await _mwaChannel.invokeMethod<Map>('signAndSendTransactions', {
-        'identityUri': _identityUri,
-        'identityName': _identityName,
-        'authToken': _authToken,
-        'transactions': transactions,
-      });
+      final result = await _mwaChannel
+          .invokeMethod<Map>('signAndSendTransactions', {
+            'identityUri': _identityUri,
+            'identityName': _identityName,
+            'authToken': _authToken,
+            'transactions': transactions,
+          });
       if (result == null) return List.filled(transactions.length, null);
       final newToken = result['authToken'] as String?;
       if (newToken != null) await _persistToken(newToken);

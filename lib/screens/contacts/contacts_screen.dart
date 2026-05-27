@@ -36,8 +36,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
       });
     }
     try {
-      final client =
-          await context.read<WalletService>().libwallet.ensureClient();
+      final client = await context
+          .read<WalletService>()
+          .libwallet
+          .ensureClient();
       final list = await client.contacts.list();
       if (!mounted) return;
       setState(() {
@@ -54,9 +56,9 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   Future<void> _add() async {
-    final saved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const _ContactEditScreen()),
-    );
+    final saved = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => const _ContactEditScreen()));
     if (saved == true) _load();
   }
 
@@ -95,15 +97,17 @@ class _ContactsScreenState extends State<ContactsScreen> {
     if (confirmed != true) return;
     if (!mounted) return;
     try {
-      final client =
-          await context.read<WalletService>().libwallet.ensureClient();
+      final client = await context
+          .read<WalletService>()
+          .libwallet
+          .ensureClient();
       await client.contacts.delete(c.id);
       _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Delete failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
     }
   }
 
@@ -120,62 +124,67 @@ class _ContactsScreenState extends State<ContactsScreen> {
         label: const Text('New contact'),
       ),
       body: SafeArea(
-        child: Builder(builder: (context) {
-          if (_loading) {
-            return const Center(
-              child: CircularProgressIndicator(color: TibaneColors.orange),
-            );
-          }
-          if (_error != null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  _error!,
-                  style: const TextStyle(color: TibaneColors.textMuted),
-                  textAlign: TextAlign.center,
+        child: Builder(
+          builder: (context) {
+            if (_loading) {
+              return const Center(
+                child: CircularProgressIndicator(color: TibaneColors.orange),
+              );
+            }
+            if (_error != null) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
+              );
+            }
+            final list = _contacts ?? const [];
+            if (list.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.people_outline,
+                        size: 48,
+                        color: TibaneColors.textDim,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No contacts yet',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Save addresses you use often so you don\'t have to '
+                        're-paste them.',
+                        style: TextStyle(color: TibaneColors.textMuted),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
+              itemCount: list.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (_, i) => _ContactRow(
+                contact: list[i],
+                onTap: () => _edit(list[i]),
+                onDelete: () => _delete(list[i]),
               ),
             );
-          }
-          final list = _contacts ?? const [];
-          if (list.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.people_outline,
-                        size: 48, color: TibaneColors.textDim),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No contacts yet',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Save addresses you use often so you don\'t have to '
-                      're-paste them.',
-                      style: TextStyle(color: TibaneColors.textMuted),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
-            itemCount: list.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) => _ContactRow(
-              contact: list[i],
-              onTap: () => _edit(list[i]),
-              onDelete: () => _delete(list[i]),
-            ),
-          );
-        }),
+          },
+        ),
       ),
     );
   }
@@ -203,8 +212,11 @@ class _ContactRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
-          const Icon(Icons.account_circle_outlined,
-              color: TibaneColors.textMuted, size: 22),
+          const Icon(
+            Icons.account_circle_outlined,
+            color: TibaneColors.textMuted,
+            size: 22,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -213,7 +225,10 @@ class _ContactRow extends StatelessWidget {
               children: [
                 Text(
                   contact.name,
-                  style: const TextStyle(color: TibaneColors.text, fontSize: 15),
+                  style: const TextStyle(
+                    color: TibaneColors.text,
+                    fontSize: 15,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -255,6 +270,7 @@ class _ContactRow extends StatelessWidget {
 
 class _ContactEditScreen extends StatefulWidget {
   final lw.Contact? initial;
+
   const _ContactEditScreen({this.initial});
 
   @override
@@ -303,8 +319,10 @@ class _ContactEditScreenState extends State<_ContactEditScreen> {
       _error = null;
     });
     try {
-      final client =
-          await context.read<WalletService>().libwallet.ensureClient();
+      final client = await context
+          .read<WalletService>()
+          .libwallet
+          .ensureClient();
       if (widget.initial == null) {
         await client.contacts.create(
           name: name,
@@ -362,23 +380,29 @@ class _ContactEditScreenState extends State<_ContactEditScreen> {
                 decoration: const InputDecoration(labelText: 'Type'),
                 items: const [
                   DropdownMenuItem(value: 'solana', child: Text('Solana')),
-                  DropdownMenuItem(value: 'ethereum', child: Text('Ethereum / EVM')),
+                  DropdownMenuItem(
+                    value: 'ethereum',
+                    child: Text('Ethereum / EVM'),
+                  ),
                   DropdownMenuItem(value: 'bitcoin', child: Text('Bitcoin')),
                 ],
-                onChanged: _busy ? null : (v) => setState(() => _type = v ?? _type),
+                onChanged: _busy
+                    ? null
+                    : (v) => setState(() => _type = v ?? _type),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _memoCtrl,
                 enabled: !_busy,
                 maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Memo (optional)',
-                ),
+                decoration: const InputDecoration(labelText: 'Memo (optional)'),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
-                Text(_error!, style: const TextStyle(color: TibaneColors.error)),
+                Text(
+                  _error!,
+                  style: const TextStyle(color: TibaneColors.error),
+                ),
               ],
               const SizedBox(height: 24),
               FilledButton(

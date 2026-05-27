@@ -126,12 +126,19 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                         Flexible(
                           child: Text(
                             addr,
-                            style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
+                            style: monoStyle(
+                              fontSize: 12,
+                              color: TibaneColors.textMuted,
+                            ),
                             textAlign: TextAlign.center,
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const Icon(Icons.copy, size: 16, color: TibaneColors.textDim),
+                        const Icon(
+                          Icons.copy,
+                          size: 16,
+                          color: TibaneColors.textDim,
+                        ),
                       ],
                     ),
                   ),

@@ -112,9 +112,10 @@ class AccentButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final labelWidget = Text(
       label,
-      style: monoStyle(fontSize: 11, color: color).copyWith(
-        fontWeight: FontWeight.w600,
-      ),
+      style: monoStyle(
+        fontSize: 11,
+        color: color,
+      ).copyWith(fontWeight: FontWeight.w600),
     );
     final style = OutlinedButton.styleFrom(
       foregroundColor: color,

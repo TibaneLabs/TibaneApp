@@ -119,11 +119,7 @@ class LibwalletRequestBridge {
       await _reject(req.id);
       return;
     }
-    final ok = await showMessageSignSheet(
-      ctx,
-      req: req,
-      accountAddress: addr,
-    );
+    final ok = await showMessageSignSheet(ctx, req: req, accountAddress: addr);
     if (!ok) {
       await _reject(req.id);
       return;
@@ -176,11 +172,13 @@ class LibwalletRequestBridge {
 
   List<SigningKey> _signingKeys() {
     return backend.currentSigningKeys
-        .map((k) => SigningKey(
-              id: k['Id'] as String,
-              key: k['Key'] as String,
-              type: k['Type'] as String?,
-            ))
+        .map(
+          (k) => SigningKey(
+            id: k['Id'] as String,
+            key: k['Key'] as String,
+            type: k['Type'] as String?,
+          ),
+        )
         .toList();
   }
 

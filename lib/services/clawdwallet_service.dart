@@ -20,6 +20,7 @@ class ClawdWalletService {
   static ClawdWalletService? testInstance;
 
   factory ClawdWalletService() => testInstance ?? ClawdWalletService.real();
+
   ClawdWalletService.real();
 
   /// Create a new agent wallet + skill policy + open keygen Verify session
@@ -62,11 +63,7 @@ class ClawdWalletService {
       final res = await tibaneApi.authReq(
         'Crypto/WalletSign',
         method: 'GET',
-        body: {
-          'results_per_page': 50,
-          'page_no': page,
-          'Type': 'agent',
-        },
+        body: {'results_per_page': 50, 'page_no': page, 'Type': 'agent'},
       );
       final rows = (res.data as List?) ?? const [];
       for (final row in rows) {
@@ -86,10 +83,7 @@ class ClawdWalletService {
 
   /// Fetch metadata for a single agent wallet (normalized).
   Future<Map<String, dynamic>> get(String id) async {
-    final res = await tibaneApi.authReq(
-      'Crypto/WalletSign/$id',
-      method: 'GET',
-    );
+    final res = await tibaneApi.authReq('Crypto/WalletSign/$id', method: 'GET');
     return _normalize(Map<String, dynamic>.from(res.data as Map));
   }
 
@@ -155,7 +149,9 @@ class ClawdWalletService {
       try {
         final decoded = json.decode(raw);
         if (decoded is Map) object = Map<String, dynamic>.from(decoded);
-      } catch (_) {/* leave object null */}
+      } catch (_) {
+        /* leave object null */
+      }
     } else if (raw is Map) {
       object = Map<String, dynamic>.from(raw);
     }

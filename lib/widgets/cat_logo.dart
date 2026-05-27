@@ -12,9 +12,7 @@ class CatLogo extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(
-        painter: _CatLogoPainter(glow: glow),
-      ),
+      child: CustomPaint(painter: _CatLogoPainter(glow: glow)),
     );
   }
 }

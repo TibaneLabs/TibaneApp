@@ -10,12 +10,7 @@ class FavoriteToken {
   final String? symbol;
   final String? imageUrl;
 
-  FavoriteToken({
-    required this.mint,
-    this.name,
-    this.symbol,
-    this.imageUrl,
-  });
+  FavoriteToken({required this.mint, this.name, this.symbol, this.imageUrl});
 
   Map<String, dynamic> toJson() => {
     'mint': mint,
@@ -47,18 +42,22 @@ class FavoritesService extends ChangeNotifier {
     if (raw != null) {
       try {
         final list = jsonDecode(raw) as List;
-        _favorites = list.map((e) => FavoriteToken.fromJson(e as Map<String, dynamic>)).toList();
+        _favorites = list
+            .map((e) => FavoriteToken.fromJson(e as Map<String, dynamic>))
+            .toList();
       } catch (_) {
         _favorites = [];
       }
     }
     // Seed default favorite on first run
     if (_favorites.isEmpty) {
-      _favorites.add(FavoriteToken(
-        mint: 'DRtvTCzfiKGhCVREmBbZdN9sB8PHeq9KdRZ3VmFhpump',
-        name: 'Tibane Thecat',
-        symbol: 'ChiefPussy',
-      ));
+      _favorites.add(
+        FavoriteToken(
+          mint: 'DRtvTCzfiKGhCVREmBbZdN9sB8PHeq9KdRZ3VmFhpump',
+          name: 'Tibane Thecat',
+          symbol: 'ChiefPussy',
+        ),
+      );
       await _save();
     }
     notifyListeners();
@@ -66,22 +65,42 @@ class FavoritesService extends ChangeNotifier {
 
   Future<void> _save() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_key, jsonEncode(_favorites.map((f) => f.toJson()).toList()));
+    await prefs.setString(
+      _key,
+      jsonEncode(_favorites.map((f) => f.toJson()).toList()),
+    );
   }
 
   /// Toggle favorite. Provide metadata so it can be displayed without re-fetching.
-  Future<void> toggle(String mint, {String? name, String? symbol, String? imageUrl}) async {
+  Future<void> toggle(
+    String mint, {
+    String? name,
+    String? symbol,
+    String? imageUrl,
+  }) async {
     if (isFavorite(mint)) {
       _favorites.removeWhere((f) => f.mint == mint);
     } else {
-      _favorites.add(FavoriteToken(mint: mint, name: name, symbol: symbol, imageUrl: imageUrl));
+      _favorites.add(
+        FavoriteToken(
+          mint: mint,
+          name: name,
+          symbol: symbol,
+          imageUrl: imageUrl,
+        ),
+      );
     }
     notifyListeners();
     await _save();
   }
 
   /// Update cached metadata for a favorite (e.g. if name was unknown at toggle time)
-  Future<void> updateMetadata(String mint, {String? name, String? symbol, String? imageUrl}) async {
+  Future<void> updateMetadata(
+    String mint, {
+    String? name,
+    String? symbol,
+    String? imageUrl,
+  }) async {
     final idx = _favorites.indexWhere((f) => f.mint == mint);
     if (idx < 0) return;
     _favorites[idx] = FavoriteToken(

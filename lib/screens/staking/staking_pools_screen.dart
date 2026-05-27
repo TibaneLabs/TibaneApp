@@ -8,6 +8,7 @@ import '../../services/favorites_service.dart';
 import '../../services/uk_compliance_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../widgets/token_icon.dart';
 import 'staking_detail_screen.dart';
 
 class StakingPoolsScreen extends StatefulWidget {
@@ -109,17 +110,27 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
                   color: TibaneColors.orange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.account_balance, color: TibaneColors.orange, size: 24),
+                child: const Icon(
+                  Icons.account_balance,
+                  color: TibaneColors.orange,
+                  size: 24,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Staking Pools', style: Theme.of(context).textTheme.titleLarge),
+                    Text(
+                      'Staking Pools',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
                     Text(
                       '${_pools.length} pools',
-                      style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
+                      style: monoStyle(
+                        fontSize: 12,
+                        color: TibaneColors.textMuted,
+                      ),
                     ),
                   ],
                 ),
@@ -141,7 +152,11 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
               hintText: 'Search by name, symbol, or mint...',
-              prefixIcon: const Icon(Icons.search, size: 20, color: TibaneColors.textDim),
+              prefixIcon: const Icon(
+                Icons.search,
+                size: 20,
+                color: TibaneColors.textDim,
+              ),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
                       onPressed: () {
@@ -162,17 +177,47 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 20),
             children: [
-              _SortChip(label: 'Members', value: 'members', current: _sortBy, onTap: (v) => setState(() => _sortBy = v)),
+              _SortChip(
+                label: 'Members',
+                value: 'members',
+                current: _sortBy,
+                onTap: (v) => setState(() => _sortBy = v),
+              ),
               const SizedBox(width: 8),
-              _SortChip(label: 'MCap', value: 'mcap', current: _sortBy, onTap: (v) => setState(() => _sortBy = v)),
+              _SortChip(
+                label: 'MCap',
+                value: 'mcap',
+                current: _sortBy,
+                onTap: (v) => setState(() => _sortBy = v),
+              ),
               const SizedBox(width: 8),
-              _SortChip(label: 'Staked', value: 'staked', current: _sortBy, onTap: (v) => setState(() => _sortBy = v)),
+              _SortChip(
+                label: 'Staked',
+                value: 'staked',
+                current: _sortBy,
+                onTap: (v) => setState(() => _sortBy = v),
+              ),
               const SizedBox(width: 8),
-              _SortChip(label: 'Rewards', value: 'rewards', current: _sortBy, onTap: (v) => setState(() => _sortBy = v)),
+              _SortChip(
+                label: 'Rewards',
+                value: 'rewards',
+                current: _sortBy,
+                onTap: (v) => setState(() => _sortBy = v),
+              ),
               const SizedBox(width: 8),
-              _SortChip(label: 'Age', value: 'age', current: _sortBy, onTap: (v) => setState(() => _sortBy = v)),
+              _SortChip(
+                label: 'Age',
+                value: 'age',
+                current: _sortBy,
+                onTap: (v) => setState(() => _sortBy = v),
+              ),
               const SizedBox(width: 8),
-              _SortChip(label: 'Name', value: 'name', current: _sortBy, onTap: (v) => setState(() => _sortBy = v)),
+              _SortChip(
+                label: 'Name',
+                value: 'name',
+                current: _sortBy,
+                onTap: (v) => setState(() => _sortBy = v),
+              ),
             ],
           ),
         ),
@@ -180,47 +225,59 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
         // Pool list
         Expanded(
           child: _loading
-              ? const Center(child: CircularProgressIndicator(color: TibaneColors.orange))
+              ? const Center(
+                  child: CircularProgressIndicator(color: TibaneColors.orange),
+                )
               : _error != null
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.error_outline, size: 48, color: TibaneColors.error),
-                          const SizedBox(height: 16),
-                          Text(_error!, style: const TextStyle(color: TibaneColors.textMuted)),
-                          const SizedBox(height: 16),
-                          OutlinedButton(onPressed: _loadPools, child: const Text('Retry')),
-                        ],
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        size: 48,
+                        color: TibaneColors.error,
                       ),
-                    )
-                  : _filteredPools.isEmpty
-                      ? Center(
-                          child: Text(
-                            _searchController.text.isNotEmpty
-                                ? 'No pools match your search'
-                                : 'No staking pools found',
-                            style: const TextStyle(color: TibaneColors.textMuted),
-                          ),
-                        )
-                      : RefreshIndicator(
-                          onRefresh: _loadPools,
-                          color: TibaneColors.orange,
-                          child: ListView.builder(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            itemCount: _filteredPools.length,
-                            itemBuilder: (context, index) {
-                              final pool = _filteredPools[index];
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: _PoolCard(
-                                  pool: pool,
-                                  onTap: () => _navigateToPool(pool),
-                                ),
-                              );
-                            },
-                          ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _error!,
+                        style: const TextStyle(color: TibaneColors.textMuted),
+                      ),
+                      const SizedBox(height: 16),
+                      OutlinedButton(
+                        onPressed: _loadPools,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                )
+              : _filteredPools.isEmpty
+              ? Center(
+                  child: Text(
+                    _searchController.text.isNotEmpty
+                        ? 'No pools match your search'
+                        : 'No staking pools found',
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadPools,
+                  color: TibaneColors.orange,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    itemCount: _filteredPools.length,
+                    itemBuilder: (context, index) {
+                      final pool = _filteredPools[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _PoolCard(
+                          pool: pool,
+                          onTap: () => _navigateToPool(pool),
                         ),
+                      );
+                    },
+                  ),
+                ),
         ),
       ],
     );
@@ -229,9 +286,7 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
   void _navigateToPool(StakingPool pool) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => StakingDetailScreen(pool: pool),
-      ),
+      MaterialPageRoute(builder: (context) => StakingDetailScreen(pool: pool)),
     );
   }
 }
@@ -257,10 +312,14 @@ class _SortChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? TibaneColors.orange.withValues(alpha: 0.15) : TibaneColors.darker,
+          color: selected
+              ? TibaneColors.orange.withValues(alpha: 0.15)
+              : TibaneColors.darker,
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
-            color: selected ? TibaneColors.orange.withValues(alpha: 0.3) : TibaneColors.border,
+            color: selected
+                ? TibaneColors.orange.withValues(alpha: 0.3)
+                : TibaneColors.border,
           ),
         ),
         child: Text(
@@ -299,30 +358,11 @@ class _PoolCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              // Token image
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: TibaneColors.darker,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: pool.tokenImage != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.network(
-                          pool.tokenImage!,
-                          width: 40,
-                          height: 40,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, e, s) => const Icon(
-                            Icons.token,
-                            size: 20,
-                            color: TibaneColors.textDim,
-                          ),
-                        ),
-                      )
-                    : const Icon(Icons.token, size: 20, color: TibaneColors.textDim),
+              TokenIcon(
+                imageUrl: pool.tokenImage,
+                mint: pool.mint,
+                symbol: pool.tokenSymbol ?? pool.tokenName ?? '',
+                size: 40,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -340,45 +380,58 @@ class _PoolCard extends StatelessWidget {
                     ),
                     Text(
                       pool.tokenSymbol ?? shortenAddress(pool.mint),
-                      style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+                      style: monoStyle(
+                        fontSize: 11,
+                        color: TibaneColors.textMuted,
+                      ),
                     ),
                   ],
                 ),
               ),
-              Builder(builder: (context) {
-                final favs = context.watch<FavoritesService>();
-                final isFav = favs.isFavorite(pool.mint);
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    GestureDetector(
-                      onTap: () => favs.toggle(
-                        pool.mint,
-                        name: pool.tokenName,
-                        symbol: pool.tokenSymbol,
-                        imageUrl: pool.tokenImage,
+              Builder(
+                builder: (context) {
+                  final favs = context.watch<FavoritesService>();
+                  final isFav = favs.isFavorite(pool.mint);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      GestureDetector(
+                        onTap: () => favs.toggle(
+                          pool.mint,
+                          name: pool.tokenName,
+                          symbol: pool.tokenSymbol,
+                          imageUrl: pool.tokenImage,
+                        ),
+                        child: Icon(
+                          isFav ? Icons.star : Icons.star_border,
+                          color: isFav
+                              ? TibaneColors.gold
+                              : TibaneColors.textDim,
+                          size: 22,
+                        ),
                       ),
-                      child: Icon(
-                        isFav ? Icons.star : Icons.star_border,
-                        color: isFav ? TibaneColors.gold : TibaneColors.textDim,
-                        size: 22,
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: TibaneColors.cyan.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'tau ${pool.tauFormatted}',
+                          style: monoStyle(
+                            fontSize: 10,
+                            color: TibaneColors.cyan,
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: TibaneColors.cyan.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        'tau ${pool.tauFormatted}',
-                        style: monoStyle(fontSize: 10, color: TibaneColors.cyan),
-                      ),
-                    ),
-                  ],
-                );
-              }),
+                    ],
+                  );
+                },
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -399,10 +452,7 @@ class _PoolCard extends StatelessWidget {
                 value: '${formatSol(pool.rewardBalance, decimals: 2)} SOL',
                 valueColor: TibaneColors.gold,
               ),
-              _PoolStat(
-                label: 'Members',
-                value: '${pool.memberCount}',
-              ),
+              _PoolStat(label: 'Members', value: '${pool.memberCount}'),
             ],
           ),
         ],
@@ -457,11 +507,7 @@ class _StakingUnavailableInRegion extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.public_off,
-              color: TibaneColors.textDim,
-              size: 48,
-            ),
+            const Icon(Icons.public_off, color: TibaneColors.textDim, size: 48),
             const SizedBox(height: 16),
             Text(
               'Staking not available in your region',

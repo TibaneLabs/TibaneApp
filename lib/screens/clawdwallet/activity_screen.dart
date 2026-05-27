@@ -105,10 +105,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  Icons.cloud_off_outlined,
-                  color: TibaneColors.error,
-                ),
+                const Icon(Icons.cloud_off_outlined, color: TibaneColors.error),
                 const SizedBox(height: 10),
                 Text(
                   'Could not load activity',
@@ -150,10 +147,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                   'When the agent attempts a transfer, the request and its '
                   'outcome will appear here.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: TibaneColors.textMuted,
-                    height: 1.4,
-                  ),
+                  style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
                 ),
               ],
             ),
@@ -172,6 +166,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
 class _ActivityRow extends StatelessWidget {
   final Map<String, dynamic> row;
+
   const _ActivityRow({required this.row});
 
   String _description() {
@@ -190,10 +185,7 @@ class _ActivityRow extends StatelessWidget {
     if (effects is Map) {
       final amount = effects['amount'];
       final recipient = effects['recipient'] ?? effects['to'];
-      return (
-        amount: amount?.toString(),
-        recipient: recipient?.toString(),
-      );
+      return (amount: amount?.toString(), recipient: recipient?.toString());
     }
     return (amount: null, recipient: null);
   }
@@ -245,20 +237,14 @@ class _ActivityRow extends StatelessWidget {
               Expanded(
                 child: Text(
                   _timestamp(),
-                  style: monoStyle(
-                    fontSize: 10,
-                    color: TibaneColors.textDim,
-                  ),
+                  style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
                 ),
               ),
               _StatusBadge(status: status),
             ],
           ),
           const SizedBox(height: 10),
-          Text(
-            _description(),
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text(_description(), style: Theme.of(context).textTheme.titleMedium),
           if (effects.amount != null || effects.recipient != null) ...[
             const SizedBox(height: 10),
             Row(
@@ -272,10 +258,7 @@ class _ActivityRow extends StatelessWidget {
                   const SizedBox(width: 4),
                   Text(
                     effects.amount!,
-                    style: monoStyle(
-                      fontSize: 13,
-                      color: TibaneColors.gold,
-                    ),
+                    style: monoStyle(fontSize: 13, color: TibaneColors.gold),
                   ),
                   const SizedBox(width: 12),
                 ],
@@ -300,6 +283,7 @@ class _ActivityRow extends StatelessWidget {
 
 class _StatusBadge extends StatelessWidget {
   final String status;
+
   const _StatusBadge({required this.status});
 
   @override

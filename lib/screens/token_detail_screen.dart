@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../constants/solana_constants.dart';
 import '../models/staking_pool.dart';
 import '../models/token_account.dart';
+import '../services/chiefstaker_api.dart';
 import '../services/favorites_service.dart';
 import '../services/jupiter_service.dart';
 import '../services/rpc_service.dart';
@@ -14,6 +15,7 @@ import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
+import '../widgets/token_icon.dart';
 import 'fee_sharing_screen.dart';
 import 'staking/staking_detail_screen.dart';
 import 'swap_screen.dart';
@@ -43,6 +45,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
   StakingPool? _stakingPool;
   bool _loading = true;
   String? _error;
+
   // User's on-chain balance for this token (raw, scaled by decimals).
   // null until the first lookup completes; the Send button stays
   // disabled until we have a positive value to send.
@@ -130,9 +133,9 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
       onSelected: (action) {
         switch (action) {
           case _TokenAction.receive:
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ReceiveScreen()),
-            );
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const ReceiveScreen()));
           case _TokenAction.send:
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -218,17 +221,40 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
     }
   }
 
+  /// Resolve the staking pool for this mint from the ChiefStaker API
+  /// so it carries the same enrichment (name, symbol, image, decimals,
+  /// price, supply, member count) that the pools-list screen has —
+  /// otherwise the detail screen we push into renders with a bare
+  /// 'Pool' title and missing stats. Falls back to on-chain
+  /// deserialization for pools the API doesn't know about, enriching
+  /// what we can from the token metadata already loaded above.
   Future<void> _checkStakingPool() async {
     try {
+      final api = ChiefStakerApi();
+      final pool = await api.getByMint(widget.mint);
+      if (!mounted) return;
+      if (pool != null) {
+        setState(() => _stakingPool = pool);
+        return;
+      }
       final poolAddr = derivePoolPDA(widget.mint);
       final data = await _rpc.getAccountInfo(poolAddr);
-      if (data != null && mounted) {
-        final pool = StakingPool.deserialize(poolAddr, data);
-        if (pool != null) {
-          setState(() => _stakingPool = pool);
-        }
+      if (!mounted || data == null) return;
+      final onChain = StakingPool.deserialize(poolAddr, data);
+      if (onChain == null) return;
+      final token = _token;
+      if (token != null) {
+        onChain.tokenName = token.name;
+        onChain.tokenSymbol = token.symbol;
+        onChain.tokenImage = token.imageUrl;
+        onChain.tokenDecimals = token.decimals;
+        onChain.tokenPrice = token.pricePerToken;
+        onChain.tokenSupply = token.supply;
       }
-    } catch (_) {}
+      setState(() => _stakingPool = onChain);
+    } catch (e) {
+      debugPrint('[token-detail] staking pool lookup failed: $e');
+    }
   }
 
   @override
@@ -237,9 +263,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
         title: const Text('Token info'),
-        actions: [
-          if (_token != null) _buildActionsMenu(context),
-        ],
+        actions: [if (_token != null) _buildActionsMenu(context)],
       ),
       body: _loading
           ? const Center(
@@ -428,33 +452,11 @@ class _TokenHeader extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: TibaneColors.darker,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: token.imageUrl != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.network(
-                          token.imageUrl!,
-                          width: 56,
-                          height: 56,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, e, s) => const Icon(
-                            Icons.token,
-                            size: 28,
-                            color: TibaneColors.textDim,
-                          ),
-                        ),
-                      )
-                    : const Icon(
-                        Icons.token,
-                        size: 28,
-                        color: TibaneColors.textDim,
-                      ),
+              TokenIcon(
+                imageUrl: token.imageUrl,
+                mint: token.mint,
+                symbol: token.symbol ?? token.name ?? '',
+                size: 56,
               ),
               const SizedBox(width: 16),
               Expanded(

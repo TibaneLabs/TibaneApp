@@ -28,6 +28,7 @@ class WalletConnectBridge extends ChangeNotifier {
   String? _error;
 
   bool get isStarted => _started;
+
   String? get error => _error;
 
   Future<bool> start({required String projectId}) async {
@@ -105,8 +106,10 @@ class WalletConnectBridge extends ChangeNotifier {
     }
     final accounts = await _enumerateAccounts(p);
     if (accounts.isEmpty) {
-      await _safeReject(p.pairingTopic,
-          'No matching accounts for the requested chains');
+      await _safeReject(
+        p.pairingTopic,
+        'No matching accounts for the requested chains',
+      );
       return;
     }
     final ctx = rootNavigatorKey.currentContext;
@@ -158,14 +161,16 @@ class WalletConnectBridge extends ChangeNotifier {
         final chains = wanted[ns];
         if (chains == null || chains.isEmpty) continue;
         for (final chain in chains) {
-          out.add(WcCandidateAccount(
-            accountId: acct.id,
-            address: acct.address,
-            chainId: chain,
-            type: acct.type,
-            namespace: ns,
-            caip10: '$chain:${acct.address}',
-          ));
+          out.add(
+            WcCandidateAccount(
+              accountId: acct.id,
+              address: acct.address,
+              chainId: chain,
+              type: acct.type,
+              namespace: ns,
+              caip10: '$chain:${acct.address}',
+            ),
+          );
         }
       }
     } catch (e) {
@@ -181,12 +186,13 @@ class WalletConnectBridge extends ChangeNotifier {
       if (raw is! Map) return;
       raw.forEach((ns, spec) {
         if (spec is! Map) return;
-        final chains = (spec['chains'] as List?)?.whereType<String>().toList()
-            ?? const [];
+        final chains =
+            (spec['chains'] as List?)?.whereType<String>().toList() ?? const [];
         if (chains.isEmpty) return;
         (out[ns as String] ??= <String>[]).addAll(chains);
       });
     }
+
     absorb(p.proposal['requiredNamespaces']);
     absorb(p.proposal['optionalNamespaces']);
     // De-dup.
@@ -210,10 +216,7 @@ class WalletConnectBridge extends ChangeNotifier {
     try {
       final result = await client.web3.request(
         url: url,
-        query: <String, dynamic>{
-          'method': r.method,
-          'params': r.params,
-        },
+        query: <String, dynamic>{'method': r.method, 'params': r.params},
       );
       await client.walletConnect.respond(r.topic, r.id, result);
     } catch (e) {
@@ -246,6 +249,7 @@ class WcCandidateAccount {
   final String type; // libwallet account type (ethereum/solana/bitcoin)
   final String namespace; // eip155 / solana / bip122
   final String caip10;
+
   const WcCandidateAccount({
     required this.accountId,
     required this.address,

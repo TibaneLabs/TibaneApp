@@ -34,20 +34,110 @@ const walletConnectProjectId = '';
 const chiefPussyMint = 'DRtvTCzfiKGhCVREmBbZdN9sB8PHeq9KdRZ3VmFhpump';
 
 // Account discriminators
-final poolDiscriminator = Uint8List.fromList([0xc7, 0x5f, 0x7e, 0x2d, 0x3b, 0x1a, 0x9c, 0x4e]);
-final userStakeDiscriminator = Uint8List.fromList([0xa3, 0x8b, 0x5d, 0x2f, 0x7c, 0x4a, 0x1e, 0x9d]);
-final sharingConfigDiscriminator = Uint8List.fromList([216, 74, 9, 0, 56, 140, 93, 75]);
+final poolDiscriminator = Uint8List.fromList([
+  0xc7,
+  0x5f,
+  0x7e,
+  0x2d,
+  0x3b,
+  0x1a,
+  0x9c,
+  0x4e,
+]);
+final userStakeDiscriminator = Uint8List.fromList([
+  0xa3,
+  0x8b,
+  0x5d,
+  0x2f,
+  0x7c,
+  0x4a,
+  0x1e,
+  0x9d,
+]);
+final sharingConfigDiscriminator = Uint8List.fromList([
+  216,
+  74,
+  9,
+  0,
+  56,
+  140,
+  93,
+  75,
+]);
 
 // Bubblegum burn discriminator
-final bubblegumBurnDiscriminator = Uint8List.fromList([116, 110, 29, 56, 107, 219, 42, 93]);
+final bubblegumBurnDiscriminator = Uint8List.fromList([
+  116,
+  110,
+  29,
+  56,
+  107,
+  219,
+  42,
+  93,
+]);
 
 // PumpFees instruction discriminators
-final createFeeSharingConfigDisc = Uint8List.fromList([195, 78, 86, 76, 111, 52, 251, 213]);
-final updateFeeSharesDisc = Uint8List.fromList([189, 13, 136, 99, 187, 164, 237, 35]);
-final distributeCreatorFeesDisc = Uint8List.fromList([165, 114, 103, 0, 121, 206, 247, 81]);
-final transferCreatorFeesToPumpDisc = Uint8List.fromList([139, 52, 134, 85, 228, 229, 108, 241]);
-final transferFeeSharingAuthorityDisc = Uint8List.fromList([202, 10, 75, 200, 164, 34, 210, 96]);
-final revokeFeeSharingAuthorityDisc = Uint8List.fromList([18, 233, 158, 39, 185, 207, 58, 104]);
+final createFeeSharingConfigDisc = Uint8List.fromList([
+  195,
+  78,
+  86,
+  76,
+  111,
+  52,
+  251,
+  213,
+]);
+final updateFeeSharesDisc = Uint8List.fromList([
+  189,
+  13,
+  136,
+  99,
+  187,
+  164,
+  237,
+  35,
+]);
+final distributeCreatorFeesDisc = Uint8List.fromList([
+  165,
+  114,
+  103,
+  0,
+  121,
+  206,
+  247,
+  81,
+]);
+final transferCreatorFeesToPumpDisc = Uint8List.fromList([
+  139,
+  52,
+  134,
+  85,
+  228,
+  229,
+  108,
+  241,
+]);
+final transferFeeSharingAuthorityDisc = Uint8List.fromList([
+  202,
+  10,
+  75,
+  200,
+  164,
+  34,
+  210,
+  96,
+]);
+final revokeFeeSharingAuthorityDisc = Uint8List.fromList([
+  18,
+  233,
+  158,
+  39,
+  185,
+  207,
+  58,
+  104,
+]);
 
 // Seeds
 final poolSeed = utf8.encode('pool');
@@ -92,10 +182,32 @@ String formatSol(BigInt lamports, {int decimals = 4}) {
 }
 
 /// Format token amount with decimals
-String formatTokenAmount(BigInt amount, int tokenDecimals, {int displayDecimals = 2}) {
-  final value = amount.toDouble() / (BigInt.from(10).pow(tokenDecimals)).toDouble();
+String formatTokenAmount(
+  BigInt amount,
+  int tokenDecimals, {
+  int displayDecimals = 2,
+}) {
+  final value =
+      amount.toDouble() / (BigInt.from(10).pow(tokenDecimals)).toDouble();
   if (value >= 1e9) return '${(value / 1e9).toStringAsFixed(displayDecimals)}B';
   if (value >= 1e6) return '${(value / 1e6).toStringAsFixed(displayDecimals)}M';
   if (value >= 1e3) return '${(value / 1e3).toStringAsFixed(displayDecimals)}K';
   return value.toStringAsFixed(displayDecimals);
+}
+
+/// Render a raw token amount with at most [maxDecimals] fractional
+/// digits, stripping insignificant trailing zeros (and the dangling
+/// `.`). `0.006000000` becomes `0.006`; `1.0` becomes `1`. Use this
+/// for transaction rows where libwallet's `Amount.toString()` pads
+/// to the full asset exponent and produces noisy decimals.
+String formatAmountTrimmed(BigInt value, int exp, {int maxDecimals = 8}) {
+  final decimals = exp < maxDecimals ? exp : maxDecimals;
+  final divisor = BigInt.from(10).pow(exp);
+  final dv = value.toDouble() / divisor.toDouble();
+  var s = dv.toStringAsFixed(decimals);
+  if (s.contains('.')) {
+    s = s.replaceFirst(RegExp(r'0+$'), '');
+    s = s.replaceFirst(RegExp(r'\.$'), '');
+  }
+  return s;
 }

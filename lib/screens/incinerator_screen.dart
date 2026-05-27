@@ -1,9 +1,8 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
-import 'dart:typed_data';
 
 import '../constants/solana_constants.dart';
 import '../models/token_account.dart';
@@ -15,9 +14,10 @@ import '../services/solana_common.dart';
 import '../services/spl_instructions.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
-import 'wallet/inapp_unlock_screen.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
+import '../widgets/token_icon.dart';
+import 'wallet/inapp_unlock_screen.dart';
 
 class IncineratorScreen extends StatefulWidget {
   const IncineratorScreen({super.key});
@@ -207,7 +207,9 @@ class _IncineratorScreenState extends State<IncineratorScreen>
   // Selection helpers
   List<TokenAccount> get _selectedTokens =>
       _tokenAccounts.where((a) => a.selected).toList();
+
   List<NftItem> get _selectedNfts => _nfts.where((n) => n.selected).toList();
+
   List<DomainItem> get _selectedDomains =>
       _domains.where((d) => d.selected).toList();
 
@@ -1142,33 +1144,11 @@ class _TokenAccountTile extends StatelessWidget {
                 visualDensity: VisualDensity.compact,
               ),
               const SizedBox(width: 8),
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: TibaneColors.darker,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: account.imageUrl != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          account.imageUrl!,
-                          width: 36,
-                          height: 36,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, e, s) => const Icon(
-                            Icons.token,
-                            size: 18,
-                            color: TibaneColors.textDim,
-                          ),
-                        ),
-                      )
-                    : const Icon(
-                        Icons.token,
-                        size: 18,
-                        color: TibaneColors.textDim,
-                      ),
+              TokenIcon(
+                imageUrl: account.imageUrl,
+                mint: account.mint,
+                symbol: account.symbol ?? account.displayName,
+                size: 36,
               ),
               const SizedBox(width: 12),
               Expanded(

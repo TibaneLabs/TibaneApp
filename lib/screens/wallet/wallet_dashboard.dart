@@ -186,10 +186,12 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 // networks or when balances haven't loaded yet rather
                 // than printing a misleading 0.
                 final solUi = wallet.solBalance.toDouble() / 1e9;
-                final solPriceUsd =
-                    (solFiat > 0 && solUi > 0) ? solFiat / solUi : null;
-                final totalInSol =
-                    solPriceUsd != null ? totalUsd / solPriceUsd : null;
+                final solPriceUsd = (solFiat > 0 && solUi > 0)
+                    ? solFiat / solUi
+                    : null;
+                final totalInSol = solPriceUsd != null
+                    ? totalUsd / solPriceUsd
+                    : null;
                 return Column(
                   children: [
                     Text(
@@ -275,8 +277,16 @@ class _WalletDashboardState extends State<WalletDashboard> {
               ..._displayTokens(wallet).map((h) {
                 final isNativeRow = h.mint.endsWith('.NATIVE');
                 final net = wallet.libwallet.currentNetwork;
-                final assetPath =
-                    isNativeRow && net != null ? networkLogoAsset(net) : null;
+                final isSolanaNative =
+                    isNativeRow && net?.type == NetworkType.solana;
+                // Defer to TokenIcon's wsolMint → sol.png branch for
+                // Solana so it matches every other surface that shows
+                // SOL. Other networks fall back to the bundled brand
+                // logo since TokenIcon has no equivalent shortcut for
+                // them.
+                final assetPath = isNativeRow && !isSolanaNative && net != null
+                    ? networkLogoAsset(net)
+                    : null;
                 // Resolve the on-chain mint to push to TokenDetailScreen.
                 // Native rows carry a synthetic ".NATIVE" sentinel that
                 // Helius DAS doesn't understand — substitute wSOL for
@@ -284,10 +294,15 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 // there's no equivalent analytics surface for them.
                 String? detailMint;
                 if (isNativeRow) {
-                  if (net?.type == NetworkType.solana) detailMint = wsolMint;
+                  if (isSolanaNative) detailMint = wsolMint;
                 } else {
                   detailMint = h.mint;
                 }
+                // The mint we hand to TokenIcon: for Solana-native, use
+                // wsolMint so the bundled sol.png wins; otherwise pass
+                // the row's mint untouched (synthetic `.NATIVE` sentinel
+                // for non-Solana native, real on-chain mint for SPL).
+                final iconMint = isSolanaNative ? wsolMint : h.mint;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: TibaneCard(
@@ -295,17 +310,17 @@ class _WalletDashboardState extends State<WalletDashboard> {
                     onTap: detailMint == null
                         ? null
                         : () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    TokenDetailScreen(mint: detailMint!),
-                              ),
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  TokenDetailScreen(mint: detailMint!),
                             ),
+                          ),
                     child: Row(
                       children: [
                         TokenIcon(
                           imageUrl: h.imageUrl,
                           assetPath: assetPath,
-                          mint: h.mint,
+                          mint: iconMint,
                           symbol: h.symbol.isNotEmpty ? h.symbol : h.name,
                           size: 32,
                         ),
@@ -379,7 +394,11 @@ class _WalletDashboardState extends State<WalletDashboard> {
               )
             else
               ..._transactions.map(
-                (tx) => _TransactionRow(tx: tx, myAddr: addr),
+                (tx) => _TransactionRow(
+                  tx: tx,
+                  myAddr: addr,
+                  tokenInfo: _resolveTokenInfo(tx, wallet),
+                ),
               ),
           ],
         ],
@@ -425,14 +444,18 @@ class _WalletDashboardState extends State<WalletDashboard> {
       final balance = nativeAsset.amount.value;
       final decimals = nativeAsset.amount.exp;
       final divisor = BigInt.from(10).pow(decimals);
-      final uiBalance =
-          decimals > 0 ? balance.toDouble() / divisor.toDouble() : balance.toDouble();
+      final uiBalance = decimals > 0
+          ? balance.toDouble() / divisor.toDouble()
+          : balance.toDouble();
       final valueUsd = nativeAsset.fiatAmount?.toDouble();
-      final priceUsd =
-          (uiBalance > 0 && valueUsd != null && valueUsd > 0) ? valueUsd / uiBalance : null;
+      final priceUsd = (uiBalance > 0 && valueUsd != null && valueUsd > 0)
+          ? valueUsd / uiBalance
+          : null;
       return TokenHolding(
         mint: mintKey,
-        symbol: nativeAsset.symbol.isNotEmpty ? nativeAsset.symbol : net.currencySymbol,
+        symbol: nativeAsset.symbol.isNotEmpty
+            ? nativeAsset.symbol
+            : net.currencySymbol,
         name: nativeAsset.name.isNotEmpty ? nativeAsset.name : net.name,
         imageUrl: null,
         balance: balance,
@@ -449,7 +472,9 @@ class _WalletDashboardState extends State<WalletDashboard> {
     if (net.type == NetworkType.solana) {
       final uiBalance = wallet.solBalance.toDouble() / 1e9;
       final valueUsd = wallet.solFiatUsd;
-      final priceUsd = uiBalance > 0 && valueUsd > 0 ? valueUsd / uiBalance : null;
+      final priceUsd = uiBalance > 0 && valueUsd > 0
+          ? valueUsd / uiBalance
+          : null;
       return TokenHolding(
         mint: mintKey,
         symbol: 'SOL',
@@ -474,6 +499,57 @@ class _WalletDashboardState extends State<WalletDashboard> {
       balance: BigInt.zero,
       decimals: 0,
       uiBalance: 0,
+    );
+  }
+
+  /// Resolve display info (symbol + icon) for a transaction's asset by
+  /// joining `tx.asset` against the data we've already loaded: the
+  /// libwallet `Asset` list for native + tracked tokens, and Jupiter
+  /// `_holdings` for everything else. Falls back to the active
+  /// network's native ticker when nothing matches (libwallet's tx
+  /// table is shared across networks and the asset key may reference
+  /// a chain we haven't fetched assets for yet).
+  _TxTokenInfo _resolveTokenInfo(Transaction tx, WalletService wallet) {
+    final assetKey = tx.asset;
+    final lastDot = assetKey.lastIndexOf('.');
+    final tail = lastDot >= 0 ? assetKey.substring(lastDot + 1) : assetKey;
+    final isNative = tail == 'NATIVE';
+    // Native Solana → swap in wSOL's mint so TokenIcon's
+    // `mint == wsolMint` branch picks up the bundled sol.png.
+    // Without this the row would land on the letter-S placeholder
+    // since libwallet doesn't carry a logo URL for native assets.
+    final isNativeSol = isNative && assetKey.startsWith('solana.');
+
+    for (final a in _assets) {
+      if (a.key == assetKey) {
+        return _TxTokenInfo(
+          symbol: a.symbol,
+          mint: isNativeSol ? wsolMint : (isNative ? null : a.tokenAddress),
+          imageUrl: null,
+          isNative: isNative,
+        );
+      }
+    }
+    if (!isNative) {
+      for (final h in _holdings) {
+        if (h.mint == tail) {
+          return _TxTokenInfo(
+            symbol: h.symbol.isNotEmpty ? h.symbol : h.name,
+            mint: h.mint,
+            imageUrl: h.imageUrl,
+            isNative: false,
+          );
+        }
+      }
+    }
+    final net = wallet.libwallet.currentNetwork;
+    return _TxTokenInfo(
+      symbol: isNative
+          ? (net?.currencySymbol.isNotEmpty == true ? net!.currencySymbol : '')
+          : '',
+      mint: isNativeSol ? wsolMint : (isNative ? null : tail),
+      imageUrl: null,
+      isNative: isNative,
     );
   }
 
@@ -607,24 +683,57 @@ class _TabSwitcher extends StatelessWidget {
   }
 }
 
+/// Resolved display info for a transaction row's asset — symbol +
+/// optional logo. Built once per render by [_resolveTokenInfo] and
+/// passed into [_TransactionRow] so the row can show the token's
+/// ticker and icon instead of just an up/down arrow.
+class _TxTokenInfo {
+  final String symbol;
+  final String? mint;
+  final String? imageUrl;
+  final bool isNative;
+
+  const _TxTokenInfo({
+    required this.symbol,
+    required this.mint,
+    required this.imageUrl,
+    required this.isNative,
+  });
+}
+
 class _TransactionRow extends StatelessWidget {
   final Transaction tx;
   final String myAddr;
+  final _TxTokenInfo tokenInfo;
 
-  const _TransactionRow({required this.tx, required this.myAddr});
+  const _TransactionRow({
+    required this.tx,
+    required this.myAddr,
+    required this.tokenInfo,
+  });
 
   bool get _isSend => tx.from == myAddr;
 
   @override
   Widget build(BuildContext context) {
     final counterparty = _isSend ? tx.to : tx.from;
-    final amountStr = tx.amount != null ? tx.amount!.toString() : '';
+    final amt = tx.amount;
+    final amountStr = amt != null && !amt.isMax
+        ? formatAmountTrimmed(amt.value, amt.exp)
+        : '';
     final fiatStr = tx.fiatAmount != null
         ? '\$${tx.fiatAmount!.toDouble().toStringAsFixed(2)}'
         : null;
     final timeStr = tx.created != null
         ? '${tx.created!.month}/${tx.created!.day} ${tx.created!.hour}:${tx.created!.minute.toString().padLeft(2, '0')}'
         : '';
+    final amountColor = _isSend ? TibaneColors.error : TibaneColors.cyan;
+    final amountLine = StringBuffer(_isSend ? '-' : '+')..write(amountStr);
+    if (tokenInfo.symbol.isNotEmpty) {
+      amountLine
+        ..write(' ')
+        ..write(tokenInfo.symbol);
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
@@ -635,12 +744,34 @@ class _TransactionRow extends StatelessWidget {
             : null,
         child: Row(
           children: [
-            Icon(
-              _isSend ? Icons.arrow_upward : Icons.arrow_downward,
-              size: 18,
-              color: _isSend ? TibaneColors.error : TibaneColors.cyan,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                TokenIcon(
+                  imageUrl: tokenInfo.imageUrl,
+                  mint: tokenInfo.mint ?? '',
+                  symbol: tokenInfo.symbol,
+                  size: 32,
+                ),
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: TibaneColors.card,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      _isSend ? Icons.arrow_upward : Icons.arrow_downward,
+                      size: 12,
+                      color: amountColor,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -666,9 +797,9 @@ class _TransactionRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  '${_isSend ? '-' : '+'}$amountStr',
+                  amountLine.toString(),
                   style: TextStyle(
-                    color: _isSend ? TibaneColors.error : TibaneColors.cyan,
+                    color: amountColor,
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
                   ),

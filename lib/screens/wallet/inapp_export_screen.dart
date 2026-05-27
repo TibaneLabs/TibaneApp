@@ -41,13 +41,15 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
     _tempFile = null;
     if (f == null) return;
     // Best-effort: file may already be gone if share completed.
-    unawaited(f.exists().then((e) async {
-      if (e) {
-        try {
-          await f.delete();
-        } catch (_) {}
-      }
-    }));
+    unawaited(
+      f.exists().then((e) async {
+        if (e) {
+          try {
+            await f.delete();
+          } catch (_) {}
+        }
+      }),
+    );
   }
 
   Future<void> _export() async {
@@ -106,7 +108,9 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
 
       await SharePlus.instance.share(
         ShareParams(
-          files: [XFile(file.path, mimeType: 'application/json', name: filename)],
+          files: [
+            XFile(file.path, mimeType: 'application/json', name: filename),
+          ],
           subject: filename,
           fileNameOverrides: [filename],
           sharePositionOrigin: anchor,
@@ -142,9 +146,9 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
       return;
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Backup copied to clipboard')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Backup copied to clipboard')));
   }
 
   Future<void> _showErrorDialog(String title, String body) {

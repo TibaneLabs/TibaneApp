@@ -123,7 +123,8 @@ class _TokenSearchState extends State<TokenSearch> {
     // on (cleared the field, retyped, pasted a different value).
     _searchSeq++;
     _debounce?.cancel();
-    final willDebounceSearch = value.isNotEmpty &&
+    final willDebounceSearch =
+        value.isNotEmpty &&
         !(_isMintShaped(value) && widget.onMintSubmitted != null);
     setState(() {
       _query = value;
@@ -135,8 +136,10 @@ class _TokenSearchState extends State<TokenSearch> {
       _searching = willDebounceSearch;
     });
     if (!willDebounceSearch) return;
-    _debounce =
-        Timer(const Duration(milliseconds: 350), () => _runSearch(value));
+    _debounce = Timer(
+      const Duration(milliseconds: 350),
+      () => _runSearch(value),
+    );
   }
 
   Future<void> _runSearch(String query) async {
@@ -204,17 +207,16 @@ class _TokenSearchState extends State<TokenSearch> {
                       ),
                     )
                   : _query.isNotEmpty
-                      ? (widget.onMintSubmitted != null &&
-                              _isMintShaped(_query)
-                          ? IconButton(
-                              onPressed: () => _onSubmit(_controller.text),
-                              icon: const Icon(Icons.arrow_forward, size: 18),
-                            )
-                          : IconButton(
-                              onPressed: () => _controller.clear(),
-                              icon: const Icon(Icons.close, size: 18),
-                            ))
-                      : null,
+                  ? (widget.onMintSubmitted != null && _isMintShaped(_query)
+                        ? IconButton(
+                            onPressed: () => _onSubmit(_controller.text),
+                            icon: const Icon(Icons.arrow_forward, size: 18),
+                          )
+                        : IconButton(
+                            onPressed: () => _controller.clear(),
+                            icon: const Icon(Icons.close, size: 18),
+                          ))
+                  : null,
             ),
           ),
         ),
@@ -269,11 +271,11 @@ class _TokenSearchState extends State<TokenSearch> {
           onTap: () => widget.onResultSelected(r),
           onToggleFavorite: widget.showFavoriteToggle
               ? () => favs.toggle(
-                    r.mint,
-                    name: r.name,
-                    symbol: r.symbol,
-                    imageUrl: r.imageUrl,
-                  )
+                  r.mint,
+                  name: r.name,
+                  symbol: r.symbol,
+                  imageUrl: r.imageUrl,
+                )
               : null,
         );
       },
@@ -342,8 +344,7 @@ class _SearchResultTile extends StatelessWidget {
                 onTap: onToggleFavorite,
                 child: Icon(
                   isFavorite ? Icons.star : Icons.star_border,
-                  color:
-                      isFavorite ? TibaneColors.gold : TibaneColors.textDim,
+                  color: isFavorite ? TibaneColors.gold : TibaneColors.textDim,
                   size: 22,
                 ),
               ),

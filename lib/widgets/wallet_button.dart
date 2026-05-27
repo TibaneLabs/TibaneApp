@@ -42,10 +42,7 @@ class WalletButton extends StatelessWidget {
                 SizedBox(width: 8),
                 Text(
                   'Connecting...',
-                  style: TextStyle(
-                    color: TibaneColors.textMuted,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(color: TibaneColors.textMuted, fontSize: 13),
                 ),
               ],
             ),
@@ -80,7 +77,11 @@ class _ConnectButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.account_balance_wallet_outlined, size: 16, color: TibaneColors.black),
+              Icon(
+                Icons.account_balance_wallet_outlined,
+                size: 16,
+                color: TibaneColors.black,
+              ),
               SizedBox(width: 6),
               Text(
                 'Connect',
@@ -132,9 +133,9 @@ class _ConnectButton extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Connect your Solana wallet to use Tibane tools',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: TibaneColors.textMuted,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
@@ -278,17 +279,21 @@ class _ConnectedButton extends StatelessWidget {
               const SizedBox(width: 8),
               if (wallet.chiefPussyBalance > BigInt.zero) ...[
                 Text(
-                  formatTokenAmount(wallet.chiefPussyBalance, 6, displayDecimals: 0),
+                  formatTokenAmount(
+                    wallet.chiefPussyBalance,
+                    6,
+                    displayDecimals: 0,
+                  ),
                   style: monoStyle(fontSize: 12, color: TibaneColors.gold),
                 ),
                 const SizedBox(width: 6),
-                const Text('|', style: TextStyle(color: TibaneColors.textDim, fontSize: 12)),
+                const Text(
+                  '|',
+                  style: TextStyle(color: TibaneColors.textDim, fontSize: 12),
+                ),
                 const SizedBox(width: 6),
               ],
-              Text(
-                wallet.shortAddress,
-                style: monoStyle(fontSize: 12),
-              ),
+              Text(wallet.shortAddress, style: monoStyle(fontSize: 12)),
             ],
           ),
         ),
@@ -422,7 +427,9 @@ class _ConnectedButton extends StatelessWidget {
                 label: const Text('Disconnect'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: TibaneColors.error,
-                  side: BorderSide(color: TibaneColors.error.withValues(alpha: 0.4)),
+                  side: BorderSide(
+                    color: TibaneColors.error.withValues(alpha: 0.4),
+                  ),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),

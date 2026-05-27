@@ -69,9 +69,9 @@ class _NetworksScreenState extends State<NetworksScreen> {
     if (!mounted) return;
     setState(() => _switchingId = null);
     if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(wallet.libwallet.error ?? 'Switch failed'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(wallet.libwallet.error ?? 'Switch failed')),
+      );
     } else {
       wallet.refreshBalances();
     }
@@ -94,52 +94,54 @@ class _NetworksScreenState extends State<NetworksScreen> {
         ],
       ),
       body: SafeArea(
-        child: Builder(builder: (context) {
-          if (_loading) {
-            return const Center(
-              child: CircularProgressIndicator(color: TibaneColors.orange),
-            );
-          }
-          if (_error != null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  _error!,
-                  style: const TextStyle(color: TibaneColors.textMuted),
-                  textAlign: TextAlign.center,
+        child: Builder(
+          builder: (context) {
+            if (_loading) {
+              return const Center(
+                child: CircularProgressIndicator(color: TibaneColors.orange),
+              );
+            }
+            if (_error != null) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              );
+            }
+            final list = _networks ?? const [];
+            if (list.isEmpty) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Text(
+                    'No networks configured.',
+                    style: TextStyle(color: TibaneColors.textMuted),
+                  ),
+                ),
+              );
+            }
+            return RefreshIndicator(
+              color: TibaneColors.orange,
+              onRefresh: _load,
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
+                itemCount: list.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (_, i) => _NetworkRow(
+                  net: list[i],
+                  active: list[i].id == activeId,
+                  switching: _switchingId == list[i].id,
+                  onTap: () => _pick(list[i]),
                 ),
               ),
             );
-          }
-          final list = _networks ?? const [];
-          if (list.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: Text(
-                  'No networks configured.',
-                  style: TextStyle(color: TibaneColors.textMuted),
-                ),
-              ),
-            );
-          }
-          return RefreshIndicator(
-            color: TibaneColors.orange,
-            onRefresh: _load,
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
-              itemCount: list.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (_, i) => _NetworkRow(
-                net: list[i],
-                active: list[i].id == activeId,
-                switching: _switchingId == list[i].id,
-                onTap: () => _pick(list[i]),
-              ),
-            ),
-          );
-        }),
+          },
+        ),
       ),
     );
   }
@@ -240,10 +242,7 @@ class _NetworkRow extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '${net.type.name} · chainId ${net.chainId} · ${net.currencySymbol}',
-                  style: monoStyle(
-                    fontSize: 11,
-                    color: TibaneColors.textMuted,
-                  ),
+                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
               ],
             ),
@@ -260,8 +259,11 @@ class _NetworkRow extends StatelessWidget {
           else if (active)
             const Icon(Icons.check, color: TibaneColors.orange, size: 18)
           else
-            const Icon(Icons.chevron_right,
-                color: TibaneColors.textDim, size: 18),
+            const Icon(
+              Icons.chevron_right,
+              color: TibaneColors.textDim,
+              size: 18,
+            ),
         ],
       ),
     );

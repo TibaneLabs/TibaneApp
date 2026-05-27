@@ -68,9 +68,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     await _refresh();
     if (!mounted) return;
     if (ts != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Backup written')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Backup written')));
     }
   }
 
@@ -116,9 +116,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     if (ok) {
       await wallet.useLibwallet();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Wallet restored')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Wallet restored')));
     }
   }
 
@@ -205,8 +205,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     final wallet = context.watch<WalletService>();
     final hasWallet = wallet.libwallet.hasWallet;
     final hasBackup = _lastBackup != null;
-    final platformLabel =
-        Platform.isIOS ? 'iCloud Backup' : 'Google Auto Backup';
+    final platformLabel = Platform.isIOS
+        ? 'iCloud Backup'
+        : 'Google Auto Backup';
 
     return Scaffold(
       backgroundColor: TibaneColors.black,
@@ -245,12 +246,12 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                         Text(
                           Platform.isIOS
                               ? 'Files in the app\'s documents directory are '
-                                  'included in iCloud Backup when you have it '
-                                  'enabled in Settings > Apple ID > iCloud > '
-                                  'iCloud Backup.'
+                                    'included in iCloud Backup when you have it '
+                                    'enabled in Settings > Apple ID > iCloud > '
+                                    'iCloud Backup.'
                               : 'Files in the app\'s data directory are '
-                                  'included in Google Auto Backup when '
-                                  'enabled in Settings > System > Backup.',
+                                    'included in Google Auto Backup when '
+                                    'enabled in Settings > System > Backup.',
                           style: monoStyle(
                             fontSize: 11,
                             color: TibaneColors.textMuted,
@@ -320,7 +321,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                     ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
-                    onPressed: !hasBackup || hasWallet || _busy ? null : _restore,
+                    onPressed: !hasBackup || hasWallet || _busy
+                        ? null
+                        : _restore,
                     icon: const Icon(Icons.cloud_download_outlined),
                     label: const Text('Restore from auto-backup'),
                     style: OutlinedButton.styleFrom(

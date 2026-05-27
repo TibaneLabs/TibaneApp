@@ -16,7 +16,8 @@ SolanaInstruction buildDomainDeleteIx({
     accounts: [
       AccountMeta.fromBase58(nameAccount, isSigner: false, isWritable: true),
       AccountMeta.fromBase58(owner, isSigner: true, isWritable: false),
-      AccountMeta.fromBase58(owner, isSigner: false, isWritable: true), // refund target
+      AccountMeta.fromBase58(owner, isSigner: false, isWritable: true),
+      // refund target
     ],
     data: Uint8List.fromList([3]), // Delete discriminator
   );

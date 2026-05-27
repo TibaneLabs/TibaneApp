@@ -327,8 +327,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
       children: [
         Row(
           children: [
-            const Icon(Icons.check_circle,
-                color: TibaneColors.cyan, size: 28),
+            const Icon(Icons.check_circle, color: TibaneColors.cyan, size: 28),
             const SizedBox(width: 12),
             Text(
               'Import complete',
@@ -357,8 +356,11 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.shield_outlined,
-                      color: TibaneColors.orange, size: 18),
+                  const Icon(
+                    Icons.shield_outlined,
+                    color: TibaneColors.orange,
+                    size: 18,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -372,7 +374,9 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
                         Text(
                           '${w.curve} · ${w.pubkey.length > 14 ? "${w.pubkey.substring(0, 6)}…${w.pubkey.substring(w.pubkey.length - 6)}" : w.pubkey}',
                           style: monoStyle(
-                              fontSize: 11, color: TibaneColors.textMuted),
+                            fontSize: 11,
+                            color: TibaneColors.textMuted,
+                          ),
                         ),
                       ],
                     ),
@@ -389,8 +393,10 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
             foregroundColor: TibaneColors.black,
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          child: const Text('Done',
-              style: TextStyle(fontWeight: FontWeight.w600)),
+          child: const Text(
+            'Done',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
         ),
       ],
     );
@@ -430,8 +436,10 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
             foregroundColor: TibaneColors.black,
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          child: const Text('Start over',
-              style: TextStyle(fontWeight: FontWeight.w600)),
+          child: const Text(
+            'Start over',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
         ),
       ],
     );

@@ -62,18 +62,18 @@ class WalletsAccountsScreen extends StatelessWidget {
                 icon: Icons.token_outlined,
                 title: 'Tokens',
                 subtitle: 'Add custom tokens or pick from the curated list',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const TokensScreen()),
-                ),
+                onTap: () => Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const TokensScreen())),
               ),
               const SizedBox(height: 6),
               SettingsTile(
                 icon: Icons.collections_outlined,
                 title: 'NFTs',
                 subtitle: 'View NFTs held on the active network',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const NftsScreen()),
-                ),
+                onTap: () => Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const NftsScreen())),
               ),
               const SizedBox(height: 6),
               SettingsTile(

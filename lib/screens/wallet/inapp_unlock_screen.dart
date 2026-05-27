@@ -39,9 +39,9 @@ class InAppUnlockScreen extends StatefulWidget {
       return true;
     }
     if (!context.mounted) return false;
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const InAppUnlockScreen()),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const InAppUnlockScreen()));
     if (!context.mounted) return false;
     return wallet.libwallet.isUnlocked;
   }
@@ -192,8 +192,8 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
           padding: const EdgeInsets.all(24),
           child: switch (_mode) {
             _Mode.probing => const Center(
-                child: CircularProgressIndicator(color: TibaneColors.orange),
-              ),
+              child: CircularProgressIndicator(color: TibaneColors.orange),
+            ),
             _Mode.password => _buildPasswordBody(),
             _Mode.recovery => _buildRecoveryBody(),
           },
@@ -270,10 +270,10 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
         Text(
           codeSent
               ? 'Enter the verification code we just sent to your registered '
-                  'email or phone. We\'ll set up the device share for this '
-                  'phone — takes a few seconds after you verify.'
+                    'email or phone. We\'ll set up the device share for this '
+                    'phone — takes a few seconds after you verify.'
               : 'Verify via 2FA to set up the device share for this phone. '
-                  'We\'ll send a code to your registered email or phone.',
+                    'We\'ll send a code to your registered email or phone.',
           style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         const SizedBox(height: 24),
@@ -312,8 +312,10 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
                       _error = null;
                     });
                   },
-            child: const Text('Resend code',
-                style: TextStyle(color: TibaneColors.orange)),
+            child: const Text(
+              'Resend code',
+              style: TextStyle(color: TibaneColors.orange),
+            ),
           ),
           const SizedBox(height: 4),
         ],

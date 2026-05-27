@@ -79,12 +79,19 @@ class FeatureCard extends StatelessWidget {
               if (badge != null) ...[
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: (badgeColor ?? TibaneColors.cyan).withValues(alpha: 0.08),
+                    color: (badgeColor ?? TibaneColors.cyan).withValues(
+                      alpha: 0.08,
+                    ),
                     borderRadius: BorderRadius.circular(4),
                     border: Border.all(
-                      color: (badgeColor ?? TibaneColors.cyan).withValues(alpha: 0.15),
+                      color: (badgeColor ?? TibaneColors.cyan).withValues(
+                        alpha: 0.15,
+                      ),
                     ),
                   ),
                   child: Text(
@@ -101,9 +108,9 @@ class FeatureCard extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: TibaneColors.text,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(color: TibaneColors.text),
           ),
           const SizedBox(height: 8),
           Text(
@@ -176,9 +183,9 @@ class StatCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               subtitle!,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: TibaneColors.textMuted,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: TibaneColors.textMuted),
             ),
           ],
         ],
@@ -215,11 +222,7 @@ class InfoIcon extends StatelessWidget {
       ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      child: Icon(
-        Icons.info_outline,
-        size: size,
-        color: TibaneColors.textDim,
-      ),
+      child: Icon(Icons.info_outline, size: size, color: TibaneColors.textDim),
     );
   }
 }

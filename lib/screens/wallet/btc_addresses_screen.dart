@@ -16,6 +16,7 @@ import '../../widgets/tibane_card.dart';
 /// fresh visit.
 class BtcAddressesScreen extends StatefulWidget {
   final String accountId;
+
   const BtcAddressesScreen({super.key, required this.accountId});
 
   @override
@@ -44,8 +45,10 @@ class _BtcAddressesScreenState extends State<BtcAddressesScreen> {
   Future<void> _load() async {
     if (mounted) setState(() => _loading = true);
     try {
-      final client =
-          await context.read<WalletService>().libwallet.ensureClient();
+      final client = await context
+          .read<WalletService>()
+          .libwallet
+          .ensureClient();
       final results = await Future.wait([
         client.accounts.nextAddress(widget.accountId),
         client.accounts.allAddresses(widget.accountId),
@@ -72,8 +75,10 @@ class _BtcAddressesScreenState extends State<BtcAddressesScreen> {
     if (_rotating) return;
     setState(() => _rotating = true);
     try {
-      final client =
-          await context.read<WalletService>().libwallet.ensureClient();
+      final client = await context
+          .read<WalletService>()
+          .libwallet
+          .ensureClient();
       // Rotating only makes sense for the default format (rotation is a
       // derivation-path advance, not a script change). Re-fetch + reset
       // the picker so the user lands on the fresh address.
@@ -148,79 +153,83 @@ class _BtcAddressesScreenState extends State<BtcAddressesScreen> {
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: const Text('Bitcoin addresses')),
       body: SafeArea(
-        child: Builder(builder: (context) {
-          if (_loading) {
-            return const Center(
-              child: CircularProgressIndicator(color: TibaneColors.orange),
-            );
-          }
-          if (_error != null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  _error!,
-                  style: const TextStyle(color: TibaneColors.textMuted),
-                  textAlign: TextAlign.center,
+        child: Builder(
+          builder: (context) {
+            if (_loading) {
+              return const Center(
+                child: CircularProgressIndicator(color: TibaneColors.orange),
+              );
+            }
+            if (_error != null) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
+              );
+            }
+            return RefreshIndicator(
+              color: TibaneColors.orange,
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
+                children: [
+                  if (_displayedAddress != null)
+                    _AddressCard(
+                      address: _displayedAddress!,
+                      path: _displayedPath ?? '',
+                      label: _displayedLabel ?? '',
+                      rotating: _rotating,
+                      onRotate: _selectedFormatKind == null ? _rotate : null,
+                    ),
+                  const SizedBox(height: 16),
+                  if ((_formats?.formats.length ?? 0) > 1)
+                    _FormatPicker(
+                      formats: _formats!.formats,
+                      selectedKind: _selectedFormatKind,
+                      onSelect: (kind) =>
+                          setState(() => _selectedFormatKind = kind),
+                    ),
+                  if (_isNonSegwitSelected && _hasSegwitFormats) ...[
+                    const SizedBox(height: 12),
+                    _WarningCard(
+                      text:
+                          'Receiving on a legacy address will cost more in '
+                          'fees when you later spend the funds. Prefer the '
+                          'default (SegWit) format unless the sender explicitly '
+                          'requires legacy.',
+                    ),
+                  ],
+                  if (_selectedFormatKind != null) ...[
+                    const SizedBox(height: 12),
+                    _InfoCard(
+                      text:
+                          'This is the root receive address (m/0/0) rendered '
+                          'in an alternate format. Return to the default to '
+                          'use a fresh, rotated address.',
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  if (_listing != null && _listing!.receive.isNotEmpty) ...[
+                    _SectionLabel('Receive history (m/0/*)'),
+                    const SizedBox(height: 8),
+                    ..._listing!.receive.map((a) => _HdRow(addr: a)),
+                    const SizedBox(height: 16),
+                  ],
+                  if (_listing != null && _listing!.change.isNotEmpty) ...[
+                    _SectionLabel('Change (m/1/*)'),
+                    const SizedBox(height: 8),
+                    ..._listing!.change.map((a) => _HdRow(addr: a)),
+                  ],
+                ],
               ),
             );
-          }
-          return RefreshIndicator(
-            color: TibaneColors.orange,
-            onRefresh: _load,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
-              children: [
-                if (_displayedAddress != null)
-                  _AddressCard(
-                    address: _displayedAddress!,
-                    path: _displayedPath ?? '',
-                    label: _displayedLabel ?? '',
-                    rotating: _rotating,
-                    onRotate: _selectedFormatKind == null ? _rotate : null,
-                  ),
-                const SizedBox(height: 16),
-                if ((_formats?.formats.length ?? 0) > 1)
-                  _FormatPicker(
-                    formats: _formats!.formats,
-                    selectedKind: _selectedFormatKind,
-                    onSelect: (kind) =>
-                        setState(() => _selectedFormatKind = kind),
-                  ),
-                if (_isNonSegwitSelected && _hasSegwitFormats) ...[
-                  const SizedBox(height: 12),
-                  _WarningCard(
-                    text: 'Receiving on a legacy address will cost more in '
-                        'fees when you later spend the funds. Prefer the '
-                        'default (SegWit) format unless the sender explicitly '
-                        'requires legacy.',
-                  ),
-                ],
-                if (_selectedFormatKind != null) ...[
-                  const SizedBox(height: 12),
-                  _InfoCard(
-                    text: 'This is the root receive address (m/0/0) rendered '
-                        'in an alternate format. Return to the default to '
-                        'use a fresh, rotated address.',
-                  ),
-                ],
-                const SizedBox(height: 24),
-                if (_listing != null && _listing!.receive.isNotEmpty) ...[
-                  _SectionLabel('Receive history (m/0/*)'),
-                  const SizedBox(height: 8),
-                  ..._listing!.receive.map((a) => _HdRow(addr: a)),
-                  const SizedBox(height: 16),
-                ],
-                if (_listing != null && _listing!.change.isNotEmpty) ...[
-                  _SectionLabel('Change (m/1/*)'),
-                  const SizedBox(height: 8),
-                  ..._listing!.change.map((a) => _HdRow(addr: a)),
-                ],
-              ],
-            ),
-          );
-        }),
+          },
+        ),
       ),
     );
   }
@@ -270,10 +279,12 @@ class _AddressCard extends StatelessWidget {
             onTap: () async {
               await Clipboard.setData(ClipboardData(text: address));
               if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                content: Text('Address copied'),
-                duration: Duration(seconds: 1),
-              ));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Address copied'),
+                  duration: Duration(seconds: 1),
+                ),
+              );
             },
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -394,6 +405,7 @@ class _Chip extends StatelessWidget {
 
 class _WarningCard extends StatelessWidget {
   final String text;
+
   const _WarningCard({required this.text});
 
   @override
@@ -432,6 +444,7 @@ class _WarningCard extends StatelessWidget {
 
 class _InfoCard extends StatelessWidget {
   final String text;
+
   const _InfoCard({required this.text});
 
   @override
@@ -470,17 +483,19 @@ class _InfoCard extends StatelessWidget {
 
 class _SectionLabel extends StatelessWidget {
   final String text;
+
   const _SectionLabel(this.text);
 
   @override
   Widget build(BuildContext context) => Text(
-        text.toUpperCase(),
-        style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
-      );
+    text.toUpperCase(),
+    style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+  );
 }
 
 class _HdRow extends StatelessWidget {
   final lw.HdAddress addr;
+
   const _HdRow({required this.addr});
 
   @override
@@ -507,7 +522,10 @@ class _HdRow extends StatelessWidget {
                   Text(preview, style: monoStyle(fontSize: 12)),
                   Text(
                     '${addr.path}${addr.clean ? ' · unused' : ''}',
-                    style: monoStyle(fontSize: 10, color: TibaneColors.textMuted),
+                    style: monoStyle(
+                      fontSize: 10,
+                      color: TibaneColors.textMuted,
+                    ),
                   ),
                 ],
               ),
@@ -517,10 +535,12 @@ class _HdRow extends StatelessWidget {
               icon: const Icon(Icons.copy, size: 16),
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: addr.address));
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Address copied'),
-                  duration: Duration(seconds: 1),
-                ));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Address copied'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
               },
             ),
           ],

@@ -171,7 +171,9 @@ class SecureKeystore {
         iOptions: _iosPlain,
         aOptions: _androidPlain,
       );
-    } catch (_) {/* best-effort */}
+    } catch (_) {
+      /* best-effort */
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_spFallbackBlob);
   }
@@ -217,7 +219,9 @@ class SecureKeystore {
         iOptions: _iosBio,
         aOptions: _androidBio,
       );
-    } catch (_) {/* best-effort */}
+    } catch (_) {
+      /* best-effort */
+    }
   }
 
   /// Best-effort probe for whether the biometric path can be used. Right
@@ -296,6 +300,7 @@ class SecureKeystore {
 
 class WrongPasswordException implements Exception {
   const WrongPasswordException();
+
   @override
   String toString() => 'WrongPasswordException: wrong wallet password';
 }

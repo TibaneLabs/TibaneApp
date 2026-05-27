@@ -63,7 +63,8 @@ class StakingPool {
   /// Market cap in USD, or null if price unavailable
   double? get marketCap {
     if (tokenPrice == null || tokenSupply == BigInt.zero) return null;
-    final supplyDouble = tokenSupply.toDouble() / BigInt.from(10).pow(tokenDecimals).toDouble();
+    final supplyDouble =
+        tokenSupply.toDouble() / BigInt.from(10).pow(tokenDecimals).toDouble();
     return supplyDouble * tokenPrice!;
   }
 
@@ -86,7 +87,8 @@ class StakingPool {
   /// the on-chain `Pool_Data` blob, so no follow-up RPC calls are required
   /// to render the list view.
   factory StakingPool.fromApi(Map<String, dynamic> row) {
-    final poolData = (row['Pool_Data'] as Map?)?.cast<String, dynamic>() ??
+    final poolData =
+        (row['Pool_Data'] as Map?)?.cast<String, dynamic>() ??
         const <String, dynamic>{};
     final solBalance = _asDouble(row['Sol_Balance']) ?? 0.0;
     return StakingPool(
@@ -98,7 +100,9 @@ class StakingPool {
       sumStakeExp: _asBigInt(poolData['sumStakeExp']),
       tauSeconds: _asBigInt(poolData['tauSeconds']),
       baseTime: _asBigInt(poolData['baseTime']),
-      accRewardPerWeightedShare: _asBigInt(poolData['accRewardPerWeightedShare']),
+      accRewardPerWeightedShare: _asBigInt(
+        poolData['accRewardPerWeightedShare'],
+      ),
       lastUpdateTime: _asBigInt(poolData['lastUpdateTime']),
       bump: _asInt(poolData['bump']),
       lastSyncedLamports: _asBigInt(poolData['lastSyncedLamports']),
@@ -128,21 +132,35 @@ class StakingPool {
     final bd = ByteData.sublistView(data);
     int offset = 8;
 
-    final mint = _readBase58(data, offset); offset += 32;
-    final tokenVault = _readBase58(data, offset); offset += 32;
+    final mint = _readBase58(data, offset);
+    offset += 32;
+    final tokenVault = _readBase58(data, offset);
+    offset += 32;
     offset += 32; // reward_vault (deprecated)
-    final authority = _readBase58(data, offset); offset += 32;
-    final totalStaked = _readU128(bd, offset); offset += 16;
-    final sumStakeExp = _readU256(bd, offset); offset += 32;
-    final tauSeconds = _readU64(bd, offset); offset += 8;
-    final baseTime = _readI64(bd, offset); offset += 8;
-    final accRewardPerWeightedShare = _readU128(bd, offset); offset += 16;
-    final lastUpdateTime = _readI64(bd, offset); offset += 8;
-    final bump = data[offset]; offset += 1;
-    final lastSyncedLamports = _readU64(bd, offset); offset += 8;
-    final minStakeAmount = _readU64(bd, offset); offset += 8;
-    final lockDurationSeconds = _readU64(bd, offset); offset += 8;
-    final unstakeCooldownSeconds = _readU64(bd, offset); offset += 8;
+    final authority = _readBase58(data, offset);
+    offset += 32;
+    final totalStaked = _readU128(bd, offset);
+    offset += 16;
+    final sumStakeExp = _readU256(bd, offset);
+    offset += 32;
+    final tauSeconds = _readU64(bd, offset);
+    offset += 8;
+    final baseTime = _readI64(bd, offset);
+    offset += 8;
+    final accRewardPerWeightedShare = _readU128(bd, offset);
+    offset += 16;
+    final lastUpdateTime = _readI64(bd, offset);
+    offset += 8;
+    final bump = data[offset];
+    offset += 1;
+    final lastSyncedLamports = _readU64(bd, offset);
+    offset += 8;
+    final minStakeAmount = _readU64(bd, offset);
+    offset += 8;
+    final lockDurationSeconds = _readU64(bd, offset);
+    offset += 8;
+    final unstakeCooldownSeconds = _readU64(bd, offset);
+    offset += 8;
     final initialBaseTime = _readI64(bd, offset);
 
     return StakingPool(
@@ -209,19 +227,35 @@ class UserStake {
     final bd = ByteData.sublistView(data);
     int offset = 8;
 
-    final owner = _readBase58(data, offset); offset += 32;
-    final pool = _readBase58(data, offset); offset += 32;
-    final amount = _readU64(bd, offset); offset += 8;
-    final stakeTime = _readI64(bd, offset); offset += 8;
-    final expStartFactor = _readU128(bd, offset); offset += 16;
-    final rewardDebt = _readU128(bd, offset); offset += 16;
-    final bump = data[offset]; offset += 1;
-    final unstakeRequestAmount = _readU64(bd, offset); offset += 8;
-    final unstakeRequestTime = _readI64(bd, offset); offset += 8;
-    final lastStakeTime = _readI64(bd, offset); offset += 8;
-    final baseTimeSnapshot = _readI64(bd, offset); offset += 8;
-    final totalRewardsClaimed = data.length >= offset + 8 ? _readU64(bd, offset) : BigInt.zero; offset += 8;
-    final claimedRewardsWad = data.length >= offset + 16 ? _readU128(bd, offset) : BigInt.zero;
+    final owner = _readBase58(data, offset);
+    offset += 32;
+    final pool = _readBase58(data, offset);
+    offset += 32;
+    final amount = _readU64(bd, offset);
+    offset += 8;
+    final stakeTime = _readI64(bd, offset);
+    offset += 8;
+    final expStartFactor = _readU128(bd, offset);
+    offset += 16;
+    final rewardDebt = _readU128(bd, offset);
+    offset += 16;
+    final bump = data[offset];
+    offset += 1;
+    final unstakeRequestAmount = _readU64(bd, offset);
+    offset += 8;
+    final unstakeRequestTime = _readI64(bd, offset);
+    offset += 8;
+    final lastStakeTime = _readI64(bd, offset);
+    offset += 8;
+    final baseTimeSnapshot = _readI64(bd, offset);
+    offset += 8;
+    final totalRewardsClaimed = data.length >= offset + 8
+        ? _readU64(bd, offset)
+        : BigInt.zero;
+    offset += 8;
+    final claimedRewardsWad = data.length >= offset + 16
+        ? _readU128(bd, offset)
+        : BigInt.zero;
 
     return UserStake(
       owner: owner,
@@ -295,7 +329,11 @@ BigInt estimateImmatureRewards(StakingPool pool, UserStake stake) {
 }
 
 /// Calculate current weight percentage (0-100)
-double calculateWeightPercent(BigInt tauSeconds, BigInt baseTime, BigInt expStartFactor) {
+double calculateWeightPercent(
+  BigInt tauSeconds,
+  BigInt baseTime,
+  BigInt expStartFactor,
+) {
   final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
   final age = now - baseTime.toInt();
   if (age <= 0) return 0;
@@ -345,7 +383,9 @@ BigInt _expNegWad(int age, int tau) {
 }
 
 BigInt _wadMul(BigInt a, BigInt b) => (a * b) ~/ wad;
-BigInt _wadDiv(BigInt a, BigInt b) => b == BigInt.zero ? BigInt.zero : (a * wad) ~/ b;
+
+BigInt _wadDiv(BigInt a, BigInt b) =>
+    b == BigInt.zero ? BigInt.zero : (a * wad) ~/ b;
 
 // API field coercion: the Tibane backend serializes numeric columns as
 // strings; Pool_Data blobs may arrive as ints, strings, or bigint strings.

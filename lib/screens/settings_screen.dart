@@ -45,9 +45,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Wallets & Accounts',
             subtitle: 'Accounts, networks, tokens, NFTs, contacts',
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const WalletsAccountsScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const WalletsAccountsScreen()),
             ),
           ),
           const SizedBox(height: 6),
@@ -56,9 +54,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Security & Privacy',
             subtitle: 'Password, biometrics, TSS shares, backups',
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const SecurityPrivacyScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const SecurityPrivacyScreen()),
             ),
           ),
           const SizedBox(height: 6),
@@ -75,9 +71,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.tune,
             title: 'General',
             subtitle: 'Region, about',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const GeneralScreen()),
-            ),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const GeneralScreen())),
           ),
 
           if (wallet.isConnected) ...[
@@ -97,7 +93,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _confirmDisconnect(
-      BuildContext context, WalletService wallet) async {
+    BuildContext context,
+    WalletService wallet,
+  ) async {
     final inapp = wallet.kind == WalletKind.inapp;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -132,6 +130,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
 class _SectionLabel extends StatelessWidget {
   final String text;
+
   const _SectionLabel(this.text);
 
   @override
@@ -145,6 +144,7 @@ class _SectionLabel extends StatelessWidget {
 
 class _ActiveWalletCard extends StatelessWidget {
   final WalletService wallet;
+
   const _ActiveWalletCard({required this.wallet});
 
   @override
@@ -173,9 +173,9 @@ class _ActiveWalletCard extends StatelessWidget {
         : address;
 
     return TibaneCard(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const WalletDetailsScreen()),
-      ),
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const WalletDetailsScreen())),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -207,8 +207,10 @@ class _ActiveWalletCard extends StatelessWidget {
                     ),
                     Text(
                       kindLabel,
-                      style:
-                          monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+                      style: monoStyle(
+                        fontSize: 11,
+                        color: TibaneColors.textMuted,
+                      ),
                     ),
                   ],
                 ),
@@ -290,14 +292,19 @@ class SettingsTile extends StatelessWidget {
                   Text(
                     subtitle!,
                     style: monoStyle(
-                        fontSize: 11, color: TibaneColors.textMuted),
+                      fontSize: 11,
+                      color: TibaneColors.textMuted,
+                    ),
                   ),
                 ],
               ],
             ),
           ),
-          const Icon(Icons.chevron_right,
-              color: TibaneColors.textDim, size: 18),
+          const Icon(
+            Icons.chevron_right,
+            color: TibaneColors.textDim,
+            size: 18,
+          ),
         ],
       ),
     );

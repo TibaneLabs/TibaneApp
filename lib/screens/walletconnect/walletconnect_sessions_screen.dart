@@ -79,9 +79,9 @@ class _WalletConnectSessionsScreenState
     if (!mounted) return;
     setState(() => _starting = false);
     if (!ok && bridge.error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(bridge.error!)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(bridge.error!)));
     }
   }
 
@@ -109,9 +109,9 @@ class _WalletConnectSessionsScreenState
     final text = data?.text?.trim();
     if (text == null || text.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Clipboard is empty')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Clipboard is empty')));
       return;
     }
     _uriCtrl.text = text;
@@ -143,8 +143,10 @@ class _WalletConnectSessionsScreenState
     if (topic != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Pairing in progress — wait for the dApp to send a '
-              'session proposal'),
+          content: Text(
+            'Pairing in progress — wait for the dApp to send a '
+            'session proposal',
+          ),
         ),
       );
     }
@@ -225,7 +227,8 @@ class _WalletConnectSessionsScreenState
                     _Banner(
                       icon: Icons.power_settings_new,
                       title: 'Relay offline',
-                      body: bridge.error ??
+                      body:
+                          bridge.error ??
                           'Start the relay to begin pairing with dApps.',
                     ),
                     const SizedBox(height: 12),
@@ -278,8 +281,10 @@ class _WalletConnectSessionsScreenState
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 8),
-                  Text(_error!,
-                      style: const TextStyle(color: TibaneColors.error)),
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: TibaneColors.error),
+                  ),
                 ],
                 const SizedBox(height: 20),
                 _SectionLabel('Sessions'),
@@ -302,13 +307,15 @@ class _WalletConnectSessionsScreenState
                     ),
                   )
                 else
-                  ...(_sessions!).map((s) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _SessionRow(
-                          session: s,
-                          onDisconnect: () => _disconnect(s),
-                        ),
-                      )),
+                  ...(_sessions!).map(
+                    (s) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _SessionRow(
+                        session: s,
+                        onDisconnect: () => _disconnect(s),
+                      ),
+                    ),
+                  ),
               ],
             ],
           ),
@@ -320,63 +327,59 @@ class _WalletConnectSessionsScreenState
 
 class _SectionLabel extends StatelessWidget {
   final String text;
+
   const _SectionLabel(this.text);
 
   @override
   Widget build(BuildContext context) => Text(
-        text.toUpperCase(),
-        style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
-      );
+    text.toUpperCase(),
+    style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+  );
 }
 
 class _Banner extends StatelessWidget {
   final IconData icon;
   final String title;
   final String body;
-  const _Banner({
-    required this.icon,
-    required this.title,
-    required this.body,
-  });
+
+  const _Banner({required this.icon, required this.title, required this.body});
 
   @override
   Widget build(BuildContext context) => TibaneCard(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: TibaneColors.textMuted, size: 22),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: TibaneColors.text,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    body,
-                    style: monoStyle(
-                      fontSize: 11,
-                      color: TibaneColors.textMuted,
-                    ),
-                  ),
-                ],
+    padding: const EdgeInsets.all(14),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: TibaneColors.textMuted, size: 22),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: TibaneColors.text,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 4),
+              Text(
+                body,
+                style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+              ),
+            ],
+          ),
         ),
-      );
+      ],
+    ),
+  );
 }
 
 class _SessionRow extends StatelessWidget {
   final WcSession session;
   final VoidCallback onDisconnect;
+
   const _SessionRow({required this.session, required this.onDisconnect});
 
   @override
@@ -394,11 +397,7 @@ class _SessionRow extends StatelessWidget {
               color: TibaneColors.orange.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.link,
-              color: TibaneColors.orange,
-              size: 16,
-            ),
+            child: const Icon(Icons.link, color: TibaneColors.orange, size: 16),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -422,10 +421,7 @@ class _SessionRow extends StatelessWidget {
                   ),
                 Text(
                   'state: ${session.state}',
-                  style: monoStyle(
-                    fontSize: 10,
-                    color: TibaneColors.textDim,
-                  ),
+                  style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
                 ),
               ],
             ),

@@ -53,9 +53,7 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
       if (!mounted) return;
       setState(() {
         _accounts = results[0] as List<lw.Account>;
-        _walletsById = {
-          for (final w in results[1] as List<lw.Wallet>) w.id: w,
-        };
+        _walletsById = {for (final w in results[1] as List<lw.Wallet>) w.id: w};
         _loading = false;
       });
     } catch (e) {
@@ -73,9 +71,11 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
     final ok = await ws.libwallet.switchAccount(account.id);
     if (!mounted) return;
     if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(ws.libwallet.error ?? 'Could not switch account'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ws.libwallet.error ?? 'Could not switch account'),
+        ),
+      );
       return;
     }
     // Refresh balances for the new active account so the UI updates.
@@ -111,14 +111,17 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
     if (confirmed != true) return;
     if (!mounted) return;
     try {
-      final client = await context.read<WalletService>().libwallet.ensureClient();
+      final client = await context
+          .read<WalletService>()
+          .libwallet
+          .ensureClient();
       await client.accounts.delete(account.id);
       _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Remove failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Remove failed: $e')));
     }
   }
 
@@ -135,69 +138,75 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
         // which is rarely what the user wants (privacy + recovery
         // ambiguity). Route the "more addresses" intent to a fresh
         // wallet instead — each wallet has its own TSS shares.
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const InAppCreateScreen()),
-        ),
+        onPressed: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const InAppCreateScreen())),
         icon: const Icon(Icons.add),
         label: const Text('New wallet'),
       ),
       body: SafeArea(
-        child: Builder(builder: (context) {
-          if (_loading) {
-            return const Center(
-              child: CircularProgressIndicator(color: TibaneColors.orange),
-            );
-          }
-          if (_error != null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(_error!,
-                    style:
-                        const TextStyle(color: TibaneColors.textMuted),
-                    textAlign: TextAlign.center),
-              ),
-            );
-          }
-          final list = _accounts ?? const [];
-          if (list.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.account_circle_outlined,
-                        size: 48, color: TibaneColors.textDim),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No accounts yet',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Tap "New account" once a wallet exists.',
-                      style: TextStyle(color: TibaneColors.textMuted),
-                    ),
-                  ],
+        child: Builder(
+          builder: (context) {
+            if (_loading) {
+              return const Center(
+                child: CircularProgressIndicator(color: TibaneColors.orange),
+              );
+            }
+            if (_error != null) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
+              );
+            }
+            final list = _accounts ?? const [];
+            if (list.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.account_circle_outlined,
+                        size: 48,
+                        color: TibaneColors.textDim,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No accounts yet',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Tap "New account" once a wallet exists.',
+                        style: TextStyle(color: TibaneColors.textMuted),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+            final activeId = context.watch<WalletService>().libwallet.accountId;
+            return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
+              itemCount: list.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (_, i) => _AccountTile(
+                account: list[i],
+                walletName: _walletsById[list[i].wallet]?.name ?? '',
+                active: list[i].id == activeId,
+                onTap: () => _setActive(list[i]),
+                onRemove: () => _remove(list[i]),
               ),
             );
-          }
-          final activeId = context.watch<WalletService>().libwallet.accountId;
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
-            itemCount: list.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) => _AccountTile(
-              account: list[i],
-              walletName: _walletsById[list[i].wallet]?.name ?? '',
-              active: list[i].id == activeId,
-              onTap: () => _setActive(list[i]),
-              onRemove: () => _remove(list[i]),
-            ),
-          );
-        }),
+          },
+        ),
       ),
     );
   }
@@ -242,22 +251,28 @@ class _AccountTile extends StatelessWidget {
                     Expanded(
                       child: Text(
                         account.name.isEmpty ? account.type : account.name,
-                        style:
-                            const TextStyle(color: TibaneColors.text, fontSize: 15),
+                        style: const TextStyle(
+                          color: TibaneColors.text,
+                          fontSize: 15,
+                        ),
                       ),
                     ),
                     if (active)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: TibaneColors.cyan.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           'Active',
-                          style:
-                              monoStyle(fontSize: 9, color: TibaneColors.cyan),
+                          style: monoStyle(
+                            fontSize: 9,
+                            color: TibaneColors.cyan,
+                          ),
                         ),
                       ),
                   ],
@@ -270,7 +285,9 @@ class _AccountTile extends StatelessWidget {
                         '${account.type} · $addr',
                         overflow: TextOverflow.ellipsis,
                         style: monoStyle(
-                            fontSize: 11, color: TibaneColors.textMuted),
+                          fontSize: 11,
+                          color: TibaneColors.textMuted,
+                        ),
                       ),
                     ),
                     InkWell(
@@ -285,7 +302,11 @@ class _AccountTile extends StatelessWidget {
                       },
                       child: const Padding(
                         padding: EdgeInsets.all(4),
-                        child: Icon(Icons.copy, size: 12, color: TibaneColors.textDim),
+                        child: Icon(
+                          Icons.copy,
+                          size: 12,
+                          color: TibaneColors.textDim,
+                        ),
                       ),
                     ),
                   ],
@@ -314,4 +335,3 @@ class _AccountTile extends StatelessWidget {
     );
   }
 }
-

@@ -14,6 +14,7 @@ import 'share_labels.dart';
 /// fetched by id via libwallet.
 class WalletDetailsScreen extends StatefulWidget {
   final String? walletId;
+
   const WalletDetailsScreen({super.key, this.walletId});
 
   @override
@@ -64,9 +65,9 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
   }
 
   Future<void> _backup() async {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const InAppExportScreen()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const InAppExportScreen()));
   }
 
   Future<void> _remove() async {
@@ -110,9 +111,9 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Remove failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Remove failed: $e')));
     }
   }
 
@@ -122,40 +123,42 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: const Text('Wallet')),
       body: SafeArea(
-        child: Builder(builder: (context) {
-          if (_loading) {
-            return const Center(
-              child: CircularProgressIndicator(color: TibaneColors.orange),
-            );
-          }
-          if (_loadError != null || _wallet == null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  _loadError ?? 'No wallet',
-                  style: const TextStyle(color: TibaneColors.textMuted),
-                  textAlign: TextAlign.center,
+        child: Builder(
+          builder: (context) {
+            if (_loading) {
+              return const Center(
+                child: CircularProgressIndicator(color: TibaneColors.orange),
+              );
+            }
+            if (_loadError != null || _wallet == null) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    _loadError ?? 'No wallet',
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
+              );
+            }
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _HeaderCard(wallet: _wallet!),
+                  const SizedBox(height: 20),
+                  _SharesCard(wallet: _wallet!),
+                  const SizedBox(height: 20),
+                  _AccountsCard(accounts: _accounts),
+                  const SizedBox(height: 20),
+                  _ActionsRow(onBackup: _backup, onRemove: _remove),
+                ],
               ),
             );
-          }
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _HeaderCard(wallet: _wallet!),
-                const SizedBox(height: 20),
-                _SharesCard(wallet: _wallet!),
-                const SizedBox(height: 20),
-                _AccountsCard(accounts: _accounts),
-                const SizedBox(height: 20),
-                _ActionsRow(onBackup: _backup, onRemove: _remove),
-              ],
-            ),
-          );
-        }),
+          },
+        ),
       ),
     );
   }
@@ -163,6 +166,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
 
 class _HeaderCard extends StatelessWidget {
   final lw.Wallet wallet;
+
   const _HeaderCard({required this.wallet});
 
   @override
@@ -219,6 +223,7 @@ class _HeaderCard extends StatelessWidget {
 
 class _SharesCard extends StatelessWidget {
   final lw.Wallet wallet;
+
   const _SharesCard({required this.wallet});
 
   @override
@@ -249,6 +254,7 @@ class _SharesCard extends StatelessWidget {
 
 class _ShareRow extends StatelessWidget {
   final String type;
+
   const _ShareRow({required this.type});
 
   @override
@@ -274,7 +280,10 @@ class _ShareRow extends StatelessWidget {
               children: [
                 Text(
                   shareTypeLabel(type),
-                  style: const TextStyle(color: TibaneColors.text, fontSize: 14),
+                  style: const TextStyle(
+                    color: TibaneColors.text,
+                    fontSize: 14,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -330,6 +339,7 @@ class _ShareRow extends StatelessWidget {
 
 class _AccountsCard extends StatelessWidget {
   final List<lw.Account> accounts;
+
   const _AccountsCard({required this.accounts});
 
   @override
@@ -338,8 +348,11 @@ class _AccountsCard extends StatelessWidget {
       return TibaneCard(
         child: Row(
           children: const [
-            Icon(Icons.account_circle_outlined,
-                color: TibaneColors.textMuted, size: 18),
+            Icon(
+              Icons.account_circle_outlined,
+              color: TibaneColors.textMuted,
+              size: 18,
+            ),
             SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -370,6 +383,7 @@ class _AccountsCard extends StatelessWidget {
 
 class _AccountRow extends StatelessWidget {
   final lw.Account account;
+
   const _AccountRow({required this.account});
 
   @override
@@ -382,8 +396,11 @@ class _AccountRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
-          const Icon(Icons.account_circle_outlined,
-              color: TibaneColors.textMuted, size: 20),
+          const Icon(
+            Icons.account_circle_outlined,
+            color: TibaneColors.textMuted,
+            size: 20,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -392,7 +409,10 @@ class _AccountRow extends StatelessWidget {
               children: [
                 Text(
                   account.name.isEmpty ? account.type : account.name,
-                  style: const TextStyle(color: TibaneColors.text, fontSize: 14),
+                  style: const TextStyle(
+                    color: TibaneColors.text,
+                    fontSize: 14,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -416,6 +436,7 @@ class _AccountRow extends StatelessWidget {
 class _ActionsRow extends StatelessWidget {
   final VoidCallback onBackup;
   final VoidCallback onRemove;
+
   const _ActionsRow({required this.onBackup, required this.onRemove});
 
   @override

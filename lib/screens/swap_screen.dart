@@ -133,8 +133,7 @@ class _SwapScreenState extends State<SwapScreen> {
     final initOutMint = widget.initialOutputMint ?? chiefPussyMint;
     final fallback = commonTokens.firstWhere(
       (t) => t.mint == initOutMint,
-      orElse: () =>
-          const CommonToken(mint: '', symbol: '', name: ''),
+      orElse: () => const CommonToken(mint: '', symbol: '', name: ''),
     );
     _selectedOutput = _SwapToken(
       mint: initOutMint,

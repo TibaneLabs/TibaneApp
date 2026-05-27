@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -17,9 +18,9 @@ import 'wallet/walletconnect_bridge.dart';
 enum WalletKind { mwa, inapp }
 
 WalletKind _parseKind(String? s) => switch (s) {
-      'inapp' => WalletKind.inapp,
-      _ => WalletKind.mwa,
-    };
+  'inapp' => WalletKind.inapp,
+  _ => WalletKind.mwa,
+};
 
 String _kindToString(WalletKind k) => k == WalletKind.inapp ? 'inapp' : 'mwa';
 
@@ -49,6 +50,7 @@ class WalletService extends ChangeNotifier {
 
   /// Direct access to specific backends for setup flows (create wallet, unlock).
   MwaWalletBackend get mwa => _mwa;
+
   LibwalletBackend get libwallet => _libwallet;
 
   WalletConnectBridge? _wc;
@@ -75,12 +77,19 @@ class WalletService extends ChangeNotifier {
   WalletConnectBridge? get wcOrNull => _wc;
 
   String? get publicKey => active.publicKey;
+
   String? get walletName => active.walletName;
+
   BigInt get solBalance => _solBalance;
+
   BigInt get chiefPussyBalance => _chiefPussyBalance;
+
   bool get isConnected => active.isConnected;
+
   bool get isAuthenticated => _auth.isAuthenticated;
+
   bool get isConnecting => active.isConnecting;
+
   String? get error => active.error;
 
   String get shortAddress {
@@ -95,6 +104,12 @@ class WalletService extends ChangeNotifier {
     _kind = _parseKind(prefs.getString('wallet_backend'));
     await _mwa.tryRestore();
     await _libwallet.tryRestore();
+    // libwallet's built-in default is Ethereum mainnet, so a fresh
+    // install (no wallet, no explicit pick) shows the wrong network
+    // chip on the dashboard. Normalize to Solana mainnet on every
+    // cold start — ensureSolanaDefault no-ops once the user has
+    // explicitly picked a network via NetworksScreen.
+    unawaited(_libwallet.ensureSolanaDefault());
     if (isConnected) {
       refreshBalances();
       if (!_auth.isAuthenticated) {
@@ -145,7 +160,9 @@ class WalletService extends ChangeNotifier {
   /// [_solBalance] / [_chiefPussyBalance] on every successful refresh.
   double _solFiatUsd = 0;
   double _chiefPussyFiatUsd = 0;
+
   double get solFiatUsd => _solFiatUsd;
+
   double get chiefPussyFiatUsd => _chiefPussyFiatUsd;
 
   /// Bumped by the swap screen after every successful swap. Listened to by
@@ -198,7 +215,9 @@ class WalletService extends ChangeNotifier {
       return;
     }
     if (_kind != WalletKind.inapp || !_libwallet.hasWallet) {
-      debugPrint('[holdings] skip: kind=$_kind hasWallet=${_libwallet.hasWallet}');
+      debugPrint(
+        '[holdings] skip: kind=$_kind hasWallet=${_libwallet.hasWallet}',
+      );
       return;
     }
     // The dashboard fires this from initState before NetworkChip /
@@ -226,8 +245,7 @@ class WalletService extends ChangeNotifier {
         '[holdings] RPC returned ${results[0].length} SPL + '
         '${results[1].length} Token-2022 accounts',
       );
-      final onChain =
-          <String, ({int decimals, String type})>{};
+      final onChain = <String, ({int decimals, String type})>{};
       for (final acc in [...results[0], ...results[1]]) {
         if (acc.amount <= BigInt.zero) continue;
         onChain[acc.mint] = (
@@ -290,8 +308,9 @@ class WalletService extends ChangeNotifier {
         // Asset:list, but users who set up before 0.4.28 had the
         // discovery gate flipped without success. If ChiefPussy isn't
         // in the list yet, register it explicitly and re-fetch.
-        final hasCp = assets.any((a) =>
-            a.symbol == 'ChiefPussy' || a.key.contains(chiefPussyMint));
+        final hasCp = assets.any(
+          (a) => a.symbol == 'ChiefPussy' || a.key.contains(chiefPussyMint),
+        );
         if (!hasCp) {
           if (await _libwallet.ensureChiefPussyTracked()) {
             assets = await _libwallet.getAssets();
@@ -401,7 +420,9 @@ class WalletService extends ChangeNotifier {
       final addr = publicKey;
       if (addr == null) return;
       final (:message, :ticket) = await _auth.getTicket(addr);
-      final signature = await signMessage(Uint8List.fromList(utf8.encode(message)));
+      final signature = await signMessage(
+        Uint8List.fromList(utf8.encode(message)),
+      );
       if (signature == null) return;
       await _auth.login(ticket, signature);
       notifyListeners();

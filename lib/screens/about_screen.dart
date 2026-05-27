@@ -27,8 +27,10 @@ class _AboutScreenState extends State<AboutScreen> {
 
   Future<void> _loadVersion() async {
     try {
-      final client =
-          await context.read<WalletService>().libwallet.ensureClient();
+      final client = await context
+          .read<WalletService>()
+          .libwallet
+          .ensureClient();
       final v = await client.info.versionInfo();
       if (!mounted) return;
       setState(() => _versionInfo = v);
@@ -53,7 +55,8 @@ class _AboutScreenState extends State<AboutScreen> {
                 const CatLogo(size: 96, glow: true),
                 const SizedBox(height: 20),
                 ShaderMask(
-                  shaderCallback: (bounds) => TibaneColors.brandGradient.createShader(bounds),
+                  shaderCallback: (bounds) =>
+                      TibaneColors.brandGradient.createShader(bounds),
                   child: Text(
                     'Tibane Labs',
                     style: Theme.of(context).textTheme.headlineLarge?.copyWith(
@@ -65,7 +68,10 @@ class _AboutScreenState extends State<AboutScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'Building on Solana',
-                  style: serifStyle(fontSize: 18, color: TibaneColors.textMuted),
+                  style: serifStyle(
+                    fontSize: 18,
+                    color: TibaneColors.textMuted,
+                  ),
                 ),
               ],
             ),
@@ -79,9 +85,9 @@ class _AboutScreenState extends State<AboutScreen> {
               children: [
                 Text(
                   'The Story',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: TibaneColors.text,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleMedium?.copyWith(color: TibaneColors.text),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -122,7 +128,11 @@ class _AboutScreenState extends State<AboutScreen> {
                         color: TibaneColors.gold.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(Icons.pets, color: TibaneColors.gold, size: 20),
+                      child: const Icon(
+                        Icons.pets,
+                        color: TibaneColors.gold,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Text(
@@ -145,7 +155,10 @@ class _AboutScreenState extends State<AboutScreen> {
           const SizedBox(height: 16),
 
           // Links
-          Text('LINKS', style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+          Text(
+            'LINKS',
+            style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+          ),
           const SizedBox(height: 12),
           _LinkCard(
             icon: Icons.language,
@@ -161,8 +174,10 @@ class _AboutScreenState extends State<AboutScreen> {
           const SizedBox(height: 32),
 
           // Diagnostics
-          Text('DIAGNOSTICS',
-              style: monoStyle(fontSize: 10, color: TibaneColors.textDim)),
+          Text(
+            'DIAGNOSTICS',
+            style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+          ),
           const SizedBox(height: 12),
           _VersionInfoCard(info: _versionInfo, error: _versionError),
           const SizedBox(height: 32),
@@ -213,7 +228,10 @@ class _DetailRow extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+              style: const TextStyle(
+                color: TibaneColors.textMuted,
+                fontSize: 13,
+              ),
             ),
           ),
         ],
@@ -227,17 +245,14 @@ class _LinkCard extends StatelessWidget {
   final String label;
   final String url;
 
-  const _LinkCard({
-    required this.icon,
-    required this.label,
-    required this.url,
-  });
+  const _LinkCard({required this.icon, required this.label, required this.url});
 
   @override
   Widget build(BuildContext context) {
     return TibaneCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+      onTap: () =>
+          launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
       child: Row(
         children: [
           Icon(icon, size: 20, color: TibaneColors.orange),
@@ -266,6 +281,7 @@ class _LinkCard extends StatelessWidget {
 class _VersionInfoCard extends StatelessWidget {
   final VersionInfo? info;
   final String? error;
+
   const _VersionInfoCard({required this.info, required this.error});
 
   @override
@@ -275,11 +291,13 @@ class _VersionInfoCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _kv('libwallet', info?.version.isNotEmpty == true
-              ? info!.version
-              : (error != null ? 'unavailable' : 'loading…')),
-          if (info != null && info!.gitTag.isNotEmpty)
-            _kv('git', info!.gitTag),
+          _kv(
+            'libwallet',
+            info?.version.isNotEmpty == true
+                ? info!.version
+                : (error != null ? 'unavailable' : 'loading…'),
+          ),
+          if (info != null && info!.gitTag.isNotEmpty) _kv('git', info!.gitTag),
           if (info != null && info!.dateTag.isNotEmpty)
             _kv('build', info!.dateTag),
           if (error != null)
@@ -296,23 +314,23 @@ class _VersionInfoCard extends StatelessWidget {
   }
 
   Widget _kv(String k, String v) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 80,
-              child: Text(
-                k,
-                style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
-              ),
-            ),
-            Expanded(
-              child: Text(
-                v,
-                style: monoStyle(fontSize: 11, color: TibaneColors.text),
-              ),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 80,
+          child: Text(
+            k,
+            style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
+          ),
         ),
-      );
+        Expanded(
+          child: Text(
+            v,
+            style: monoStyle(fontSize: 11, color: TibaneColors.text),
+          ),
+        ),
+      ],
+    ),
+  );
 }

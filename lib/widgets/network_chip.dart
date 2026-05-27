@@ -57,9 +57,9 @@ class _NetworkChipState extends State<NetworkChip> {
     final label = net?.name.isNotEmpty == true ? net!.name : 'Network';
     if (widget.iconOnly) {
       return InkWell(
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const NetworksScreen()),
-        ),
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const NetworksScreen())),
         borderRadius: BorderRadius.circular(20),
         child: Tooltip(
           message: 'Switch network ($label)',
@@ -71,9 +71,9 @@ class _NetworkChipState extends State<NetworkChip> {
       );
     }
     return InkWell(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const NetworksScreen()),
-      ),
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const NetworksScreen())),
       borderRadius: BorderRadius.circular(4),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -92,18 +92,12 @@ class _NetworkChipState extends State<NetworkChip> {
                 color: color,
                 shape: BoxShape.circle,
                 boxShadow: [
-                  BoxShadow(
-                    color: color.withValues(alpha: 0.5),
-                    blurRadius: 4,
-                  ),
+                  BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 4),
                 ],
               ),
             ),
             const SizedBox(width: 5),
-            Text(
-              label,
-              style: monoStyle(fontSize: 9, color: color),
-            ),
+            Text(label, style: monoStyle(fontSize: 9, color: color)),
             const SizedBox(width: 4),
             Icon(Icons.expand_more, size: 10, color: color),
           ],

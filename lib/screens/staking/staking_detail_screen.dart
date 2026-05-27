@@ -9,11 +9,11 @@ import '../../models/staking_pool.dart';
 import '../../services/rpc_service.dart';
 import '../../services/solana_common.dart';
 import '../../services/staker_instructions.dart';
+import '../../services/uk_compliance_service.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
-import '../../services/uk_compliance_service.dart';
 import '../swap_screen.dart';
 import '../wallet/inapp_unlock_screen.dart';
 import 'staking_members_screen.dart';
@@ -69,6 +69,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
         _fetchWalletBalance(wallet.publicKey!),
         _rpc.getStakingPool(pool.address),
       ]);
+      if (!mounted) return;
       setState(() {
         _userStake = results[0] as UserStake?;
         _walletBalance = results[1] as BigInt;
@@ -92,6 +93,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
         _loadingStake = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = 'Failed to load stake: $e';
         _loadingStake = false;
@@ -410,9 +412,11 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
-      setState(() => _staking = false);
-      _loadUserStake();
-      wallet.refreshBalances();
+      if (mounted) {
+        setState(() => _staking = false);
+        _loadUserStake();
+        wallet.refreshBalances();
+      }
     }
   }
 
@@ -456,9 +460,11 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
-      setState(() => _staking = false);
-      _loadUserStake();
-      wallet.refreshBalances();
+      if (mounted) {
+        setState(() => _staking = false);
+        _loadUserStake();
+        wallet.refreshBalances();
+      }
     }
   }
 
@@ -596,9 +602,11 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
-      setState(() => _staking = false);
-      _loadUserStake();
-      wallet.refreshBalances();
+      if (mounted) {
+        setState(() => _staking = false);
+        _loadUserStake();
+        wallet.refreshBalances();
+      }
     }
   }
 }
