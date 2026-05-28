@@ -119,73 +119,58 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
     }
   }
 
-  /// AppBar overflow menu — collects Receive / Send / Swap into one
-  /// trigger so the actions don't crowd the title row. Send disables
+  /// Receive / Send / Swap as three AppBar icon buttons. Send disables
   /// itself when the balance lookup returns zero; Swap is hidden in
   /// UK mode for the same reason it's hidden on other screens.
-  Widget _buildActionsMenu(BuildContext context) {
+  List<Widget> _buildAppBarActions(BuildContext context) {
     final token = _token!;
     final isUk = context.watch<UkComplianceService>().isUk;
     final canSend = _userBalance != null && _userBalance! > BigInt.zero;
-    return PopupMenuButton<_TokenAction>(
-      tooltip: 'Actions',
-      icon: const Icon(Icons.more_vert),
-      onSelected: (action) {
-        switch (action) {
-          case _TokenAction.receive:
-            Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const ReceiveScreen()));
-          case _TokenAction.send:
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => SendScreen(
-                  mint: token.mint,
-                  symbol: token.symbol,
-                  decimals: token.decimals,
-                ),
-              ),
-            );
-          case _TokenAction.swap:
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => Scaffold(
-                  backgroundColor: TibaneColors.black,
-                  appBar: AppBar(title: const Text('Swap')),
-                  body: SwapScreen(
-                    initialInputMint: wsolMint,
-                    initialOutputMint: token.mint,
-                    initialOutputSymbol: token.symbol,
-                    initialOutputName: token.name,
-                    initialOutputImageUrl: token.imageUrl,
-                    initialOutputDecimals: token.decimals,
+    return [
+      IconButton(
+        tooltip: 'Receive',
+        icon: const Icon(Icons.arrow_downward),
+        onPressed: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const ReceiveScreen())),
+      ),
+      IconButton(
+        tooltip: 'Send',
+        icon: const Icon(Icons.arrow_upward),
+        onPressed: canSend
+            ? () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => SendScreen(
+                    mint: token.mint,
+                    symbol: token.symbol,
+                    decimals: token.decimals,
                   ),
                 ),
+              )
+            : null,
+      ),
+      if (!isUk)
+        IconButton(
+          tooltip: 'Swap',
+          icon: const Icon(Icons.swap_horiz),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => Scaffold(
+                backgroundColor: TibaneColors.black,
+                appBar: AppBar(title: const Text('Swap')),
+                body: SwapScreen(
+                  initialInputMint: wsolMint,
+                  initialOutputMint: token.mint,
+                  initialOutputSymbol: token.symbol,
+                  initialOutputName: token.name,
+                  initialOutputImageUrl: token.imageUrl,
+                  initialOutputDecimals: token.decimals,
+                ),
               ),
-            );
-        }
-      },
-      itemBuilder: (_) => [
-        const PopupMenuItem<_TokenAction>(
-          value: _TokenAction.receive,
-          child: _MenuRow(icon: Icons.arrow_downward, label: 'Receive'),
-        ),
-        PopupMenuItem<_TokenAction>(
-          value: _TokenAction.send,
-          enabled: canSend,
-          child: _MenuRow(
-            icon: Icons.arrow_upward,
-            label: 'Send',
-            dimmed: !canSend,
+            ),
           ),
         ),
-        if (!isUk)
-          const PopupMenuItem<_TokenAction>(
-            value: _TokenAction.swap,
-            child: _MenuRow(icon: Icons.swap_horiz, label: 'Swap'),
-          ),
-      ],
-    );
+    ];
   }
 
   /// Fetch the connected wallet's balance for this token so the Send
@@ -263,7 +248,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
         title: const Text('Token info'),
-        actions: [if (_token != null) _buildActionsMenu(context)],
+        actions: _token != null ? _buildAppBarActions(context) : null,
       ),
       body: _loading
           ? const Center(
@@ -757,33 +742,3 @@ class _TransactionsSection extends StatelessWidget {
   }
 }
 
-/// Actions surfaced in the AppBar overflow menu.
-enum _TokenAction { receive, send, swap }
-
-/// Single row inside the overflow menu: icon + label. The colour
-/// drops to `textDim` when [dimmed] is true so a disabled Send item
-/// reads as obviously not-tappable (Flutter's default disabled menu
-/// item is barely greyer than the enabled state on a dark theme).
-class _MenuRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool dimmed;
-
-  const _MenuRow({
-    required this.icon,
-    required this.label,
-    this.dimmed = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = dimmed ? TibaneColors.textDim : TibaneColors.text;
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: color),
-        const SizedBox(width: 12),
-        Text(label, style: TextStyle(color: color)),
-      ],
-    );
-  }
-}
