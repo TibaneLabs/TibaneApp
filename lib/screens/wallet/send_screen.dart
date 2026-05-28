@@ -6,8 +6,11 @@ import 'package:libwallet/libwallet.dart' show Amount, TransactionSimulation;
 import 'package:provider/provider.dart';
 
 import '../../constants/solana_constants.dart';
+import '../../services/jupiter_service.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../widgets/tibane_card.dart';
+import '../../widgets/token_icon.dart';
 import 'inapp_unlock_screen.dart';
 
 class SendScreen extends StatefulWidget {
@@ -42,10 +45,30 @@ class _SendScreenState extends State<SendScreen> {
   String? _resolvedName;
   String? _resolveError;
 
+  // Currently selected token. A null [_mint] means native SOL; non-null
+  // is the SPL mint address. [_symbol] / [_decimals] / [_imageUrl] are
+  // mirrored as state so the picker can update them without losing the
+  // widget-supplied default.
+  String? _mint;
+  String _symbol = 'SOL';
+  int _decimals = 9;
+  String? _imageUrl;
+
+  // Tokens to offer in the picker. Loaded once on mount; empty list
+  // until the fetch resolves (in which case the picker still shows the
+  // native SOL row built from [WalletService.solBalance]).
+  final JupiterService _jupiter = JupiterService();
+  List<TokenHolding> _holdings = [];
+  bool _loadingHoldings = true;
+
   @override
   void initState() {
     super.initState();
+    _mint = widget.mint;
+    _symbol = widget.symbol ?? 'SOL';
+    _decimals = widget.decimals ?? 9;
     _addrCtrl.addListener(_onAddrChanged);
+    _loadHoldings();
   }
 
   @override
@@ -54,7 +77,91 @@ class _SendScreenState extends State<SendScreen> {
     _resolveDebounce?.cancel();
     _addrCtrl.dispose();
     _amountCtrl.dispose();
+    _jupiter.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadHoldings() async {
+    final wallet = context.read<WalletService>();
+    final addr = wallet.publicKey;
+    if (addr == null) {
+      if (mounted) setState(() => _loadingHoldings = false);
+      return;
+    }
+    try {
+      // wsolMint is excluded so it doesn't duplicate the native SOL row
+      // the picker always renders from wallet.solBalance.
+      final holdings = await _jupiter.fetchHoldings(
+        addr,
+        excludeMint: wsolMint,
+      );
+      if (!mounted) return;
+      setState(() {
+        _holdings = holdings;
+        _loadingHoldings = false;
+        // If we were opened for a specific SPL mint, pull its imageUrl
+        // from the freshly-loaded holdings so the selector chip shows a
+        // proper logo instead of the letter-placeholder.
+        if (_mint != null && _imageUrl == null) {
+          for (final h in holdings) {
+            if (h.mint == _mint) {
+              _imageUrl = h.imageUrl;
+              break;
+            }
+          }
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingHoldings = false);
+      debugPrint('[send] holdings load failed: $e');
+    }
+  }
+
+  void _selectToken({
+    required String? mint,
+    required String symbol,
+    required int decimals,
+    String? imageUrl,
+  }) {
+    if (mint == _mint) return;
+    setState(() {
+      _mint = mint;
+      _symbol = symbol;
+      _decimals = decimals;
+      _imageUrl = imageUrl;
+      _amountCtrl.clear();
+      _error = null;
+      _successHash = null;
+    });
+  }
+
+  Future<void> _openTokenPicker() async {
+    if (_sending) return;
+    final wallet = context.read<WalletService>();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: TibaneColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _SendTokenPicker(
+        holdings: _holdings,
+        loading: _loadingHoldings,
+        solBalance: wallet.solBalance,
+        selectedMint: _mint,
+        onSelect: (mint, symbol, decimals, imageUrl) {
+          Navigator.pop(ctx);
+          _selectToken(
+            mint: mint,
+            symbol: symbol,
+            decimals: decimals,
+            imageUrl: imageUrl,
+          );
+        },
+      ),
+    );
   }
 
   void _onAddrChanged() {
@@ -137,17 +244,10 @@ class _SendScreenState extends State<SendScreen> {
   /// Asset key passed to libwallet (`solana.mainnet.<mint>`) when an
   /// SPL mint is selected, else null for the native-SOL path.
   String? get _assetKey {
-    final mint = widget.mint;
+    final mint = _mint;
     if (mint == null) return null;
     return 'solana.mainnet.$mint';
   }
-
-  /// Decimals for the active asset — SPL value when [SendScreen.mint]
-  /// is set, otherwise SOL's 9.
-  int get _decimals => widget.decimals ?? 9;
-
-  /// Ticker used in labels and the review sheet.
-  String get _symbol => widget.symbol ?? 'SOL';
 
   Future<void> _send() async {
     final typed = _addrCtrl.text.trim();
@@ -266,6 +366,14 @@ class _SendScreenState extends State<SendScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                _TokenSelector(
+                  mint: _mint,
+                  symbol: _symbol,
+                  imageUrl: _imageUrl,
+                  loading: _loadingHoldings,
+                  onTap: _sending ? null : _openTokenPicker,
+                ),
+                const SizedBox(height: 16),
                 TextField(
                   controller: _addrCtrl,
                   enabled: !_sending,
@@ -573,5 +681,252 @@ class _SendReviewSheet extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+/// Tap target at the top of the send screen showing which token is
+/// active. Acts like a dropdown — pressing it opens the picker sheet.
+class _TokenSelector extends StatelessWidget {
+  final String? mint;
+  final String symbol;
+  final String? imageUrl;
+  final bool loading;
+  final VoidCallback? onTap;
+
+  const _TokenSelector({
+    required this.mint,
+    required this.symbol,
+    required this.imageUrl,
+    required this.loading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // TokenIcon's wsolMint branch picks up the bundled sol.png; for the
+    // null-mint native-SOL state we hand it wsolMint so the same logo
+    // wins, rather than the letter-S placeholder.
+    final iconMint = mint ?? wsolMint;
+    return TibaneCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      onTap: onTap,
+      child: Row(
+        children: [
+          TokenIcon(
+            imageUrl: imageUrl,
+            mint: iconMint,
+            symbol: symbol,
+            size: 32,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'TOKEN',
+                  style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  symbol,
+                  style: const TextStyle(
+                    color: TibaneColors.text,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (loading)
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.5,
+                color: TibaneColors.textMuted,
+              ),
+            )
+          else
+            const Icon(
+              Icons.keyboard_arrow_down,
+              size: 22,
+              color: TibaneColors.textMuted,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Bottom-sheet list of tokens the user can send. Always renders a
+/// native SOL row at the top (built from [solBalance]) followed by the
+/// SPL holdings returned by Jupiter. Tapping a row reports the picked
+/// token via [onSelect].
+class _SendTokenPicker extends StatelessWidget {
+  final List<TokenHolding> holdings;
+  final bool loading;
+  final BigInt solBalance;
+  final String? selectedMint;
+
+  /// `mint` is null for the native SOL row, the SPL mint otherwise.
+  final void Function(
+    String? mint,
+    String symbol,
+    int decimals,
+    String? imageUrl,
+  )
+  onSelect;
+
+  const _SendTokenPicker({
+    required this.holdings,
+    required this.loading,
+    required this.solBalance,
+    required this.selectedMint,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      maxChildSize: 0.9,
+      minChildSize: 0.3,
+      expand: false,
+      builder: (context, scrollController) => Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Text(
+                  'Select token to send',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close, size: 20),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.builder(
+              controller: scrollController,
+              itemCount: holdings.length + 1,
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return _row(
+                    mint: null,
+                    symbol: 'SOL',
+                    name: 'Solana',
+                    imageUrl: null,
+                    iconMint: wsolMint,
+                    decimals: 9,
+                    uiBalance: solBalance.toDouble() / 1e9,
+                    valueUsd: null,
+                    selected: selectedMint == null,
+                  );
+                }
+                final h = holdings[index - 1];
+                return _row(
+                  mint: h.mint,
+                  symbol: h.symbol.isNotEmpty ? h.symbol : h.name,
+                  name: h.name,
+                  imageUrl: h.imageUrl,
+                  iconMint: h.mint,
+                  decimals: h.decimals,
+                  uiBalance: h.uiBalance,
+                  valueUsd: h.valueUsd,
+                  selected: selectedMint == h.mint,
+                );
+              },
+            ),
+          ),
+          if (loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: TibaneColors.textMuted,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _row({
+    required String? mint,
+    required String symbol,
+    required String name,
+    required String? imageUrl,
+    required String iconMint,
+    required int decimals,
+    required double uiBalance,
+    required double? valueUsd,
+    required bool selected,
+  }) {
+    return ListTile(
+      leading: TokenIcon(
+        imageUrl: imageUrl,
+        mint: iconMint,
+        symbol: symbol,
+        size: 36,
+      ),
+      title: Row(
+        children: [
+          Text(
+            symbol,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          if (selected) ...[
+            const SizedBox(width: 6),
+            const Icon(Icons.check, size: 14, color: TibaneColors.cyan),
+          ],
+        ],
+      ),
+      subtitle: name.isNotEmpty && name != symbol
+          ? Text(
+              name,
+              style: const TextStyle(
+                color: TibaneColors.textMuted,
+                fontSize: 12,
+              ),
+            )
+          : null,
+      trailing: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            _formatBalance(uiBalance),
+            style: monoStyle(fontSize: 12),
+          ),
+          if (valueUsd != null)
+            Text(
+              '\$${valueUsd.toStringAsFixed(2)}',
+              style: monoStyle(fontSize: 10, color: TibaneColors.textMuted),
+            ),
+        ],
+      ),
+      onTap: () => onSelect(mint, symbol, decimals, imageUrl),
+    );
+  }
+
+  String _formatBalance(double balance) {
+    if (balance >= 1e6) return '${(balance / 1e6).toStringAsFixed(2)}M';
+    if (balance >= 1e3) return '${(balance / 1e3).toStringAsFixed(2)}K';
+    if (balance >= 1) return balance.toStringAsFixed(4);
+    return balance.toStringAsFixed(6);
   }
 }

@@ -128,13 +128,19 @@ class _WalletDashboardState extends State<WalletDashboard> {
         _holdings = holdings;
         _loadingTxs = false;
       });
-      // First load came back with an empty tx list — libwallet's
-      // background backfill may have silently failed on env init. Re-fire
-      // it once per dashboard mount; results land via txHistoryUpdates.
-      if (txs.isEmpty && !_kickedHistoryBackfill) {
+      // Always kick libwallet's tx-history backfill once per dashboard
+      // mount, not just when the filtered list comes back empty. The
+      // previous "only if empty" gate missed the case where the user
+      // has *outgoing* txs (so the filter returns non-empty) but
+      // *incoming* SPL transfers were never indexed — the backfill
+      // would never re-fire and the receives stayed invisible.
+      // kickHistoryBackfill itself is idempotent / cheap, so re-firing
+      // it on every dashboard mount is safe.
+      if (!_kickedHistoryBackfill) {
         _kickedHistoryBackfill = true;
         debugPrint(
-          '[dashboard] tx list empty on first load — kicking backfill',
+          '[dashboard] kicking tx-history backfill on mount '
+          '(txs=${txs.length})',
         );
         unawaited(lw.kickHistoryBackfill());
       }
@@ -157,6 +163,10 @@ class _WalletDashboardState extends State<WalletDashboard> {
         // load (or missed on first launch if the network cache wasn't
         // ready) show up after a pull-to-refresh.
         unawaited(wallet.discoverHoldings());
+        // Pull-to-refresh is the user's explicit "I expect new
+        // activity to show up" gesture, so force a fresh backfill
+        // sweep here regardless of whether the mount-time one ran.
+        unawaited(wallet.libwallet.kickHistoryBackfill());
         await _loadData();
       },
       color: TibaneColors.orange,

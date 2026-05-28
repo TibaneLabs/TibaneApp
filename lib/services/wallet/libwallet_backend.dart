@@ -1131,7 +1131,13 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     );
     if (forAddress == null || forAddress.isEmpty) return firstPage;
 
-    bool isMine(Transaction t) => t.from == forAddress || t.to == forAddress;
+    // Case-insensitive match: defensive against libwallet ever returning
+    // EVM addresses in non-checksum form. No-op for Solana (base58 is
+    // case-significant, so the lowercased values still match the
+    // lowercased user address byte-for-byte).
+    final me = forAddress.toLowerCase();
+    bool isMine(Transaction t) =>
+        t.from.toLowerCase() == me || t.to.toLowerCase() == me;
     final matches = firstPage.where(isMine).toList();
     if (matches.isNotEmpty || firstPage.length < limit) return matches;
 
