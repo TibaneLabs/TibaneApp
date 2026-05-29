@@ -1,14 +1,37 @@
 default_platform(:ios)
 
+# Mirrors OKX's iOS app-availability list
+# (https://www.okx.com/en-gb/app-availability/ios). The in-app OKX DEX
+# is the licensed-availability surface of the app, so we ship in the
+# same set of storefronts OKX themselves expose iOS in. Refresh this
+# list when OKX revises their page.
+OKX_AVAILABILITY = %w[
+  AE AG AI AM AR AT AU AZ BB BE BG BH BM BO BR BS BW BY BZ
+  CA CF CH CI CL CM CO CR CZ
+  DE DK DM DO EC EE ES FI FR
+  GB GD GE GN GQ GR GT GW GY
+  HK HN HR HU IE IL IT JM JO JP
+  KE KG KN KR KW KY KZ
+  LC LI LT LU LV
+  MA MD ME MG MK ML MO MT MU MX MY MZ
+  NE NG NI NL NO NZ
+  OM PA PE PL PT PY QA RO RU
+  SA SE SG SI SK SN SR SV
+  TC TJ TM TN TR TT TW
+  UA UG US UY UZ
+  VC VE VG VN ZA
+].freeze
+
 # To pull current App Store metadata into ios/fastlane/metadata/:
 #   cd ios && fastlane deliver download_metadata --force
 # (no lane wrapper — `deliver` defaults to upload, the CLI subcommand is the
 # only clean way to download.)
 
 platform :ios do
-  desc "Upload metadata + screenshots to App Store Connect (no binary)"
+  desc "Upload metadata + screenshots + availability to App Store Connect (no binary)"
   lane :push_metadata do
     deliver(
+      available_territories: OKX_AVAILABILITY,
       skip_binary_upload: true,
       skip_screenshots: false,
       skip_metadata: false,
