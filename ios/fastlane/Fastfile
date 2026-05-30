@@ -4,22 +4,24 @@ default_platform(:ios)
 # (https://www.okx.com/en-gb/app-availability/ios). The in-app OKX DEX
 # is the licensed-availability surface of the app, so we ship in the
 # same set of storefronts OKX themselves expose iOS in. Refresh this
-# list when OKX revises their page.
-OKX_AVAILABILITY = %w[
-  AE AG AI AM AR AT AU AZ BB BE BG BH BM BO BR BS BW BY BZ
-  CA CF CH CI CL CM CO CR CZ
-  DE DK DM DO EC EE ES FI FR
-  GB GD GE GN GQ GR GT GW GY
-  HK HN HR HU IE IL IT JM JO JP
-  KE KG KN KR KW KY KZ
-  LC LI LT LU LV
-  MA MD ME MG MK ML MO MT MU MX MY MZ
-  NE NG NI NL NO NZ
-  OM PA PE PL PT PY QA RO RU
-  SA SE SG SI SK SN SR SV
-  TC TJ TM TN TR TT TW
-  UA UG US UY UZ
-  VC VE VG VN ZA
+# list when OKX revises their page. App Store Connect's modern API
+# takes ISO 3166-1 alpha-3 codes (USA, GBR, …) — not the alpha-2 that
+# the legacy `deliver` action used.
+OKX_AVAILABILITY_ISO3 = %w[
+  ARE ATG AIA ARM ARG AUT AUS AZE BRB BEL BGR BHR BMU BOL BRA BHS BWA BLR BLZ
+  CAN CAF CHE CIV CHL CMR COL CRI CZE
+  DEU DNK DMA DOM ECU EST ESP FIN FRA
+  GBR GRD GEO GIN GNQ GRC GTM GNB GUY
+  HKG HND HRV HUN IRL ISR ITA JAM JOR JPN
+  KEN KGZ KNA KOR KWT CYM KAZ
+  LCA LIE LTU LUX LVA
+  MAR MDA MNE MDG MKD MLI MAC MLT MUS MEX MYS MOZ
+  NER NGA NIC NLD NOR NZL
+  OMN PAN PER POL PRT PRY QAT ROU RUS
+  SAU SWE SGP SVN SVK SEN SUR SLV
+  TCA TJK TKM TUN TUR TTO TWN
+  UKR UGA USA URY UZB
+  VCT VEN VGB VNM ZAF
 ].freeze
 
 # To pull current App Store metadata into ios/fastlane/metadata/:
@@ -28,10 +30,9 @@ OKX_AVAILABILITY = %w[
 # only clean way to download.)
 
 platform :ios do
-  desc "Upload metadata + screenshots + availability to App Store Connect (no binary)"
+  desc "Upload metadata + screenshots to App Store Connect (no binary)"
   lane :push_metadata do
     deliver(
-      available_territories: OKX_AVAILABILITY,
       skip_binary_upload: true,
       skip_screenshots: false,
       skip_metadata: false,
@@ -40,5 +41,17 @@ platform :ios do
       overwrite_screenshots: true,
       screenshots_path: "../fastlane/screenshots"
     )
+  end
+
+  desc "Sync App Store availability territories to OKX_AVAILABILITY_ISO3"
+  lane :set_territories do
+    require 'spaceship'
+    Spaceship::ConnectAPI.login
+    bundle_id = CredentialsManager::AppfileConfig.try_fetch_value(:app_identifier)
+    app = Spaceship::ConnectAPI::App.find(bundle_id)
+    UI.user_error!("Couldn't find app with bundle id #{bundle_id}") if app.nil?
+    UI.message("Setting #{OKX_AVAILABILITY_ISO3.length} territories on app #{app.id} (#{bundle_id})")
+    app.update(territory_ids: OKX_AVAILABILITY_ISO3)
+    UI.success("Updated App Store availability.")
   end
 end
