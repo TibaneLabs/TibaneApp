@@ -520,11 +520,15 @@ without its migration is not "done."
    **Tests:** decision helper — non-active target → switch-first; active
    target → export directly.
 8. **`removeWallet`** (replace `disconnect` for per-wallet removal) + active-
-   wallet-removal handling.
-   **Tests:** removing a non-active wallet leaves `_walletId` + the active
-   wallet's share intact and deletes only the removed wallet's per-wallet
-   keystore entry; removing the active wallet selects a next-active (or
-   empty) per a pure `pickNextActive(list, removedId)` helper.
+   wallet-removal handling. ✅ **DONE.** `removeWallet(walletId)` deletes the
+   wallet + only its per-wallet device share; removing the active wallet
+   promotes the next via pure `pickNextActive` (active-but-locked) or clears
+   to empty, and drops the stale single-slot biometric cache.
+   `WalletDetailsScreen._remove` uses it; the list reloads on return.
+   `test/remove_wallet_test.dart` covers `pickNextActive` + per-wallet delete
+   isolation. (`disconnect` stays for the logout flow.)
+   _Original notes:_ non-active removal leaves active intact; active removal
+   picks next via `pickNextActive`.
 9. **WalletService session reset on switch** (balances/auth/WC/network).
    **Tests:** a pure `resetSessionState()` zeroes balances/fiat and flags a
    refresh; switching account updates the address the tx cache is keyed by.
