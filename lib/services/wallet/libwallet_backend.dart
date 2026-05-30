@@ -114,8 +114,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// cross-device backup import, or any time the device share has
   /// gone missing — used by the unlock screen to route between the
   /// normal password prompt and the 2FA recovery flow.
-  Future<bool> hasLocalDeviceShare() async {
-    final id = _walletId;
+  Future<bool> hasLocalDeviceShare([String? walletId]) async {
+    final id = walletId ?? _walletId;
     if (id == null) return false;
     return _keystore.hasDeviceShare(id);
   }
@@ -1082,6 +1082,35 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       type: 'solana',
       index: 0,
     );
+  }
+
+  /// Load [walletId]'s metadata into the active slot WITHOUT a device share
+  /// (active-but-locked), so the 2FA recovery flow can mint a fresh device
+  /// share for it. Used when switching to a wallet that has no local share.
+  /// Overwriting the active fields locks the previously-active wallet.
+  Future<bool> loadWalletForRecovery(String walletId) async {
+    try {
+      final client = await _getClient();
+      final w = await client.wallets.get(walletId);
+      final keyIds = _extractKeyIdsByType(w);
+      final account = await _resolveAccount(client, walletId);
+      _walletId = walletId;
+      _accountId = account.id;
+      _publicKey = account.address;
+      _walletName = w.name.isNotEmpty ? w.name : 'In-app wallet';
+      _storeKeyId = keyIds['StoreKey'];
+      _remoteKeyId = keyIds['RemoteKey'];
+      _passwordKeyId = keyIds['Password'];
+      _storeKeyPriv = null; // missing share is why we're recovering
+      _password = null;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Could not load wallet for recovery: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return false;
+    }
   }
 
   /// Forget session secrets. Wallet metadata persists; user must unlock again
