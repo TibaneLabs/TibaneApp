@@ -1019,12 +1019,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
     try {
       final client = await _getClient();
-      debugPrint('[switch] get wallet $walletId');
       final w = await client.wallets.get(walletId);
       final keyIds = _extractKeyIdsByType(w);
       final passwordKeyId = keyIds['Password'];
       final storeKeyId = keyIds['StoreKey'];
-      debugPrint('[switch] curve=${w.curve} keys=${keyIds.keys.join(",")}');
       if (passwordKeyId == null || storeKeyId == null) {
         _error = 'Wallet is missing required key shares';
         notifyListeners();
@@ -1051,18 +1049,14 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         return SwitchResult.error;
       }
 
-      // Make this wallet's account current BEFORE deriving against it, so
-      // libwallet's session points at the right wallet/curve. The account
-      // type must match the wallet's curve, or the TSS layer derives the
-      // wrong pubkey type and crashes (ToEd25519PubKey on a non-ed25519
-      // point).
-      debugPrint('[switch] resolve account');
+      // Make this wallet's account current before deriving against it (so
+      // libwallet's session points at the right wallet), and resolve a
+      // curve-correct account — a mismatched account type would make the TSS
+      // layer derive the wrong key type.
       final account = await _resolveAccount(client, w);
-      debugPrint('[switch] setCurrent ${account.id} type=${account.type}');
       await client.accounts.setCurrent(account.id);
 
       // Validate the password against the Password share without signing.
-      debugPrint('[switch] derivePassword keyId=$passwordKeyId');
       try {
         await client.storeKeys.derivePassword(
           password: password!,
@@ -1073,7 +1067,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         notifyListeners();
         return SwitchResult.wrongPassword;
       }
-      debugPrint('[switch] derived OK — committing active state');
 
       // Swap the active in-memory set. Overwriting these fields locks the
       // previously-active wallet (its password + device share leave memory).
@@ -1093,11 +1086,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // Only normalize to Solana for ed25519 wallets — forcing it for a
       // secp256k1 wallet mismatches the account's curve.
       if (w.curve == 'ed25519') unawaited(ensureSolanaDefault());
-      debugPrint('[switch] complete');
       return SwitchResult.ok;
     } catch (e) {
       _error = 'Could not switch wallet: $e';
-      debugPrint('[switch] FAILED: $e');
+      debugPrint(_error);
       notifyListeners();
       return SwitchResult.error;
     }
