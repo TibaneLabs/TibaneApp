@@ -42,6 +42,11 @@ enum SwitchResult { ok, needsPassword, wrongPassword, needsRecovery, error }
 /// [LibwalletBackend.planWalletSwitch].
 enum SwitchPlan { alreadyActive, needsRecovery, needsPassword, proceed }
 
+/// Routing for tapping an account: it may already be current, live on the
+/// active wallet (just `setCurrent`), or belong to a different wallet (switch
+/// that wallet first). See [LibwalletBackend.accountSwitchRoute].
+enum AccountSwitchRoute { alreadyCurrent, sameWallet, crossWallet }
+
 /// In-app MPC wallet backend. 2-of-3 TSS: device share + remote email share + password.
 ///
 /// Signing uses libwallet 0.3.5's direct `Account:sign*` endpoints with the
@@ -931,8 +936,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       final client = await _getClient();
       final acct = await client.accounts.get(accountId);
       if (acct.wallet != _walletId) {
-        _error =
-            'Switching to an account on a different wallet is not yet supported';
+        // Cross-wallet switches must switch the active wallet first (which
+        // needs that wallet's password) — the UI drives that via
+        // ensureUnlocked(walletId:) before calling switchAccount again.
+        _error = 'Switch to that wallet first to use its accounts';
         notifyListeners();
         return false;
       }
@@ -949,6 +956,22 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       notifyListeners();
       return false;
     }
+  }
+
+  /// Pure routing decision for tapping an account. Used by the accounts UI
+  /// and unit-tested directly. Picks: no-op, same-wallet `setCurrent`, or
+  /// switch-the-parent-wallet-first then `setCurrent`.
+  static AccountSwitchRoute accountSwitchRoute({
+    required String targetAccountId,
+    required String? currentAccountId,
+    required String targetWalletId,
+    required String? activeWalletId,
+  }) {
+    if (targetAccountId == currentAccountId) {
+      return AccountSwitchRoute.alreadyCurrent;
+    }
+    if (targetWalletId == activeWalletId) return AccountSwitchRoute.sameWallet;
+    return AccountSwitchRoute.crossWallet;
   }
 
   /// Pure routing decision for [switchWallet]. Extracted so it can be
