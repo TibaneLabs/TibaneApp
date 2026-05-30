@@ -8,28 +8,46 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// At-rest storage for wallet secrets with two backends:
+/// At-rest storage for wallet secrets. The **device share** is keyed PER
+/// WALLET (schema v2) so the app can hold several wallets at once without
+/// one wallet's share clobbering another's. Two backends per entry:
 ///
 /// 1. **OS keystore** — iOS Keychain / Android EncryptedSharedPreferences via
-///    `flutter_secure_storage`. Preferred. The device-share path uses this
-///    when [isSecureStorageUsable] returns true.
+///    `flutter_secure_storage`. Preferred read path when usable.
+/// 2. **Password-derived fallback** — the device share encrypted with
+///    AES-GCM under a key derived from the wallet password (PBKDF2-HMAC-
+///    SHA256, 100k iterations), stored as a base64 blob in SharedPreferences.
+///    This is the only copy that survives an iOS restore-from-iCloud-Backup
+///    on a new device (Keychain `unlocked_this_device` items are excluded
+///    from iCloud Backup; the app sandbox / SharedPreferences is included).
 ///
-/// 2. **Password-derived fallback** — when the OS keystore probe fails (rare
-///    on modern devices; legacy Android without Keystore, restricted
-///    enterprise profiles, etc.). The device share is encrypted with
-///    AES-GCM under a key derived from the user's wallet password via
-///    PBKDF2-HMAC-SHA256 (100k iterations) and stored as a base64 blob in
-///    `SharedPreferences`. Decryption fails if the password is wrong, so
-///    the auth tag doubles as a password check.
+/// Schema v2 key layout (per wallet id):
+///   OS keystore : `libw_device_share_<walletId>`
+///   fallback    : `libw_device_share_blob_v1_<walletId>`
+/// The legacy single-slot keys (`libw_device_share`,
+/// `libw_device_share_blob_v1`) are migrated once by [migrateToPerWalletV2]
+/// to the active wallet's id (verify-before-delete, idempotent).
 ///
-/// The optional biometric password cache always uses the OS keystore path —
-/// if biometric storage isn't available, the toggle simply can't be enabled
-/// and the user types the password as before.
+/// The biometric password cache stays single-slot for now (one active
+/// wallet at a time); it becomes per-wallet when wallet-switching lands.
 class SecureKeystore {
-  static const _ksDeviceShare = 'libw_device_share';
+  // --- legacy schema-v1 single-slot keys (migration source only) ---
+  static const _legacyDeviceShare = 'libw_device_share';
+  static const _legacyFallbackBlob = 'libw_device_share_blob_v1';
+
+  // --- biometric (unchanged, still single-slot) ---
   static const _ksBiometricPw = 'libw_biometric_pw';
-  static const _spFallbackBlob = 'libw_device_share_blob_v1';
+
   static const _spProbeKey = 'libw_keystore_probe';
+
+  /// Set once [migrateToPerWalletV2] has completed. Gates the migration and
+  /// the legacy-fallback read path.
+  static const _spSchemaV2 = 'libw_schema_v2';
+
+  // --- per-wallet key builders (schema v2) ---
+  static String _dsKey(String walletId) => 'libw_device_share_$walletId';
+  static String _blobKey(String walletId) =>
+      'libw_device_share_blob_v1_$walletId';
 
   /// iOS: biometric-or-passcode gate, this-device-only (no iCloud).
   /// Android: enforces biometric on read/write via Keystore.
@@ -82,31 +100,21 @@ class SecureKeystore {
   }
 
   // ---------------------------------------------------------------------
-  // Device share — always encrypted at rest, OS keystore preferred.
+  // Device share — per wallet, always encrypted at rest, OS keystore preferred.
   // ---------------------------------------------------------------------
 
-  /// Persist the device-share private key in every available location.
-  ///
-  /// - When the OS keystore is usable, the plaintext value is written
-  ///   there (preferred read path).
-  /// - The password-encrypted AES-GCM blob is **always** written to
-  ///   SharedPreferences as a backup. This is the only copy that
-  ///   survives an iOS restore-from-iCloud-Backup on a new device
-  ///   (Keychain items with `unlocked_this_device` accessibility are
-  ///   excluded from iCloud Backup, but the app sandbox — including
-  ///   SharedPreferences — is included). The blob is unreadable
-  ///   without the wallet password, so storing both copies doesn't
-  ///   lower the security floor.
-  ///
-  /// Throws on hard failures of the OS keystore path when keystore is
-  /// supposed to be usable.
+  /// Persist [walletId]'s device-share private key. Writes the OS-keystore
+  /// copy (when usable) and ALWAYS the password-encrypted fallback blob.
+  /// Both copies are keyed by [walletId], so writing one wallet's share
+  /// never disturbs another's.
   Future<void> writeDeviceShare({
+    required String walletId,
     required String value,
     required String password,
   }) async {
     if (await isSecureStorageUsable()) {
       await _storage.write(
-        key: _ksDeviceShare,
+        key: _dsKey(walletId),
         value: value,
         iOptions: _iosPlain,
         aOptions: _androidPlain,
@@ -114,26 +122,32 @@ class SecureKeystore {
     }
     final blob = await _encryptWithPassword(value, password);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_spFallbackBlob, blob);
+    await prefs.setString(_blobKey(walletId), blob);
   }
 
-  /// Read the device-share private key. [password] is consulted only if
-  /// the on-disk record is the fallback (AES-GCM) blob. Returns `null`
-  /// when no record exists. Throws [WrongPasswordException] if the
-  /// fallback decryption fails (auth tag mismatch).
-  Future<String?> readDeviceShare({String? password}) async {
+  /// Read [walletId]'s device-share private key. [password] is consulted
+  /// only if the record is the fallback (AES-GCM) blob. Returns `null` when
+  /// no record exists. Throws [WrongPasswordException] if fallback
+  /// decryption fails (auth-tag mismatch).
+  Future<String?> readDeviceShare({
+    required String walletId,
+    String? password,
+  }) async {
     if (await isSecureStorageUsable()) {
       final v = await _storage.read(
-        key: _ksDeviceShare,
+        key: _dsKey(walletId),
         iOptions: _iosPlain,
         aOptions: _androidPlain,
       );
       if (v != null) return v;
-      // Fall through — the OS keystore might be working now even though
-      // a previous launch wrote a fallback blob. Try that too.
     }
     final prefs = await SharedPreferences.getInstance();
-    final blob = prefs.getString(_spFallbackBlob);
+    var blob = prefs.getString(_blobKey(walletId));
+    // Pre-migration safety: until v2 lands, fall back to the legacy
+    // single-slot blob (it belongs to the active wallet).
+    if (blob == null && prefs.getBool(_spSchemaV2) != true) {
+      blob = prefs.getString(_legacyFallbackBlob);
+    }
     if (blob == null) return null;
     if (password == null) {
       // Fallback requires a password to decrypt — caller must collect one.
@@ -142,16 +156,13 @@ class SecureKeystore {
     return _decryptWithPassword(blob, password);
   }
 
-  /// True when a device-share entry exists in either the OS keystore
-  /// or the password-encrypted fallback blob. Cheap probe — does not
-  /// decrypt, does not require the password. Hosts use this to decide
-  /// whether to render the normal password unlock UI or route into the
-  /// 2FA recovery flow first.
-  Future<bool> hasDeviceShare() async {
+  /// True when a device-share entry exists for [walletId] in either backend.
+  /// Cheap probe — does not decrypt, does not require the password.
+  Future<bool> hasDeviceShare(String walletId) async {
     if (await isSecureStorageUsable()) {
       try {
         final v = await _storage.read(
-          key: _ksDeviceShare,
+          key: _dsKey(walletId),
           iOptions: _iosPlain,
           aOptions: _androidPlain,
         );
@@ -161,13 +172,18 @@ class SecureKeystore {
       }
     }
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_spFallbackBlob) != null;
+    if (prefs.getString(_blobKey(walletId)) != null) return true;
+    if (prefs.getBool(_spSchemaV2) != true &&
+        prefs.getString(_legacyFallbackBlob) != null) {
+      return true;
+    }
+    return false;
   }
 
-  Future<void> deleteDeviceShare() async {
+  Future<void> deleteDeviceShare(String walletId) async {
     try {
       await _storage.delete(
-        key: _ksDeviceShare,
+        key: _dsKey(walletId),
         iOptions: _iosPlain,
         aOptions: _androidPlain,
       );
@@ -175,11 +191,98 @@ class SecureKeystore {
       /* best-effort */
     }
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_spFallbackBlob);
+    await prefs.remove(_blobKey(walletId));
   }
 
   // ---------------------------------------------------------------------
-  // Biometric password cache — opt-in.
+  // Migration: single-slot (v1) → per-wallet (v2). Idempotent, verify-
+  // before-delete. Runs once from tryRestore, before any unlock.
+  // ---------------------------------------------------------------------
+
+  /// Move the legacy single-slot device share (OS keystore + fallback blob)
+  /// to [activeWalletId]'s per-wallet keys. Safe to call on every launch:
+  /// it no-ops once `libw_schema_v2` is set. If a copy can't be verified the
+  /// flag is NOT set and the legacy entries are NOT deleted, so the next
+  /// launch retries cleanly — no data loss on a crashed/partial run.
+  ///
+  /// Only the device share is migrated here. The legacy plaintext
+  /// (`libw_store_priv`) is handled by the unlock path; the biometric cache
+  /// stays single-slot for now.
+  Future<void> migrateToPerWalletV2(String? activeWalletId) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_spSchemaV2) == true) return; // idempotent gate
+    if (activeWalletId == null) {
+      // Fresh install / no wallet — nothing to migrate.
+      await prefs.setBool(_spSchemaV2, true);
+      return;
+    }
+
+    var verified = true;
+    final usable = await isSecureStorageUsable();
+
+    // 1. OS-keystore device share.
+    if (usable) {
+      try {
+        final legacy = await _storage.read(
+          key: _legacyDeviceShare,
+          iOptions: _iosPlain,
+          aOptions: _androidPlain,
+        );
+        if (legacy != null) {
+          await _storage.write(
+            key: _dsKey(activeWalletId),
+            value: legacy,
+            iOptions: _iosPlain,
+            aOptions: _androidPlain,
+          );
+          final back = await _storage.read(
+            key: _dsKey(activeWalletId),
+            iOptions: _iosPlain,
+            aOptions: _androidPlain,
+          );
+          if (back != legacy) verified = false;
+        }
+      } catch (e) {
+        debugPrint('[migration] OS device-share copy failed: $e');
+        verified = false;
+      }
+    }
+
+    // 2. Password-encrypted fallback blob (the iCloud-surviving copy).
+    final legacyBlob = prefs.getString(_legacyFallbackBlob);
+    if (legacyBlob != null) {
+      await prefs.setString(_blobKey(activeWalletId), legacyBlob);
+      if (prefs.getString(_blobKey(activeWalletId)) != legacyBlob) {
+        verified = false;
+      }
+    }
+
+    if (!verified) {
+      debugPrint(
+        '[migration] v2 incomplete — legacy entries kept, retry next launch',
+      );
+      return; // flag NOT set, nothing deleted
+    }
+
+    // All copies verified → delete the legacy device-share entries.
+    if (usable) {
+      try {
+        await _storage.delete(
+          key: _legacyDeviceShare,
+          iOptions: _iosPlain,
+          aOptions: _androidPlain,
+        );
+      } catch (_) {
+        /* best-effort */
+      }
+    }
+    await prefs.remove(_legacyFallbackBlob);
+    await prefs.setBool(_spSchemaV2, true);
+    debugPrint('[migration] v2 per-wallet device share complete');
+  }
+
+  // ---------------------------------------------------------------------
+  // Biometric password cache — opt-in, single-slot (per-wallet in Phase 2).
   // ---------------------------------------------------------------------
 
   /// Save the wallet password into the biometric-gated keystore.

@@ -105,7 +105,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// cross-device backup import, or any time the device share has
   /// gone missing — used by the unlock screen to route between the
   /// normal password prompt and the 2FA recovery flow.
-  Future<bool> hasLocalDeviceShare() => _keystore.hasDeviceShare();
+  Future<bool> hasLocalDeviceShare() async {
+    final id = _walletId;
+    if (id == null) return false;
+    return _keystore.hasDeviceShare(id);
+  }
 
   /// Wallet handle on the libwallet backend; null until a wallet exists.
   String? get walletId => _walletId;
@@ -372,6 +376,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     _storeKeyId = prefs.getString(_prefsStoreKeyId);
     _remoteKeyId = prefs.getString(_prefsRemoteKeyId);
     _passwordKeyId = prefs.getString(_prefsPasswordKeyId);
+    // One-shot, idempotent: move any legacy single-slot device share to the
+    // active wallet's per-wallet keys before anything reads it.
+    await _keystore.migrateToPerWalletV2(_walletId);
     if (hasWallet) notifyListeners();
   }
 
@@ -557,7 +564,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // by builds before secure storage landed and migrate it on the spot.
       String? priv;
       try {
-        priv = await _keystore.readDeviceShare(password: password);
+        priv = await _keystore.readDeviceShare(
+          walletId: _walletId!,
+          password: password,
+        );
       } on WrongPasswordException {
         _error = 'Unlock failed: wrong password';
         notifyListeners();
@@ -570,7 +580,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
           priv = legacy;
           _storeKeyPriv = legacy;
           _password = password;
-          await _keystore.writeDeviceShare(value: legacy, password: password);
+          await _keystore.writeDeviceShare(
+            walletId: _walletId!,
+            value: legacy,
+            password: password,
+          );
           await prefs.remove(_prefsStorePriv);
           debugPrint('Migrated device share to SecureKeystore');
         }
@@ -593,7 +607,13 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // this, a future restore-from-iCloud-Backup on a new device
       // would leave them with no recoverable device share. Safe to
       // re-run — writeDeviceShare is idempotent.
-      unawaited(_keystore.writeDeviceShare(value: priv, password: password));
+      unawaited(
+        _keystore.writeDeviceShare(
+          walletId: _walletId!,
+          value: priv,
+          password: password,
+        ),
+      );
       notifyListeners();
       // Best-effort: refresh the cached current network so the chip and
       // any swap-availability checks reflect what libwallet thinks is
@@ -676,6 +696,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _password = newPassword;
       if (_storeKeyPriv != null) {
         await _keystore.writeDeviceShare(
+          walletId: _walletId!,
           value: _storeKeyPriv!,
           password: newPassword,
         );
@@ -876,6 +897,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         await prefs.setString(_prefsStoreKeyId, _storeKeyId!);
       }
       await _keystore.writeDeviceShare(
+        walletId: _walletId!,
         value: storePair.privateKey,
         password: _password!,
       );
@@ -980,10 +1002,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
   @override
   Future<void> disconnect() async {
+    final id = _walletId;
     try {
-      if (_walletId != null) {
+      if (id != null) {
         final client = await _getClient();
-        await client.wallets.delete(_walletId!);
+        await client.wallets.delete(id);
       }
     } catch (e) {
       debugPrint('Delete libwallet wallet failed: $e');
@@ -1015,7 +1038,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     ]) {
       await prefs.remove(key);
     }
-    await _keystore.deleteDeviceShare();
+    if (id != null) await _keystore.deleteDeviceShare(id);
     await _keystore.deleteBiometricPassword();
     notifyListeners();
   }
@@ -1715,6 +1738,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     await prefs.setString(_prefsStorePub, newStorePair.publicKey);
     await prefs.setString(_prefsStoreKeyId, freshStoreKeyId);
     await _keystore.writeDeviceShare(
+      walletId: _walletId!,
       value: newStorePair.privateKey,
       password: password,
     );
@@ -1738,6 +1762,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     // The device-share private key — the only true secret on this side —
     // goes through SecureKeystore, never plaintext SharedPreferences.
     await _keystore.writeDeviceShare(
+      walletId: _walletId!,
       value: _storeKeyPriv!,
       password: _password!,
     );
