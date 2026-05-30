@@ -23,6 +23,7 @@ class WalletsManagementScreen extends StatefulWidget {
 
 class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
   List<lw.Wallet>? _wallets;
+  Set<String> _withShare = {};
   bool _loading = true;
   String? _error;
   WalletService? _wallet;
@@ -62,9 +63,17 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
     try {
       final client = await wallet.libwallet.ensureClient();
       final list = await client.wallets.list();
+      // Which of these wallets have a usable device share on THIS device.
+      final withShare = <String>{};
+      for (final w in list) {
+        if (await wallet.libwallet.hasLocalDeviceShare(w.id)) {
+          withShare.add(w.id);
+        }
+      }
       if (!mounted) return;
       setState(() {
         _wallets = list;
+        _withShare = withShare;
         _loading = false;
       });
     } catch (e) {
@@ -165,8 +174,11 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
               itemCount: list.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (_, i) =>
-                  _WalletRow(wallet: list[i], active: list[i].id == activeId),
+              itemBuilder: (_, i) => _WalletRow(
+                wallet: list[i],
+                active: list[i].id == activeId,
+                usableHere: _withShare.contains(list[i].id),
+              ),
             );
           },
         ),
@@ -178,8 +190,13 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
 class _WalletRow extends StatelessWidget {
   final lw.Wallet wallet;
   final bool active;
+  final bool usableHere;
 
-  const _WalletRow({required this.wallet, required this.active});
+  const _WalletRow({
+    required this.wallet,
+    required this.active,
+    required this.usableHere,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -248,6 +265,14 @@ class _WalletRow extends StatelessWidget {
                   'Shares: $subkeys',
                   style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
+                if (!usableHere)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Text(
+                      'Needs 2FA to use on this device',
+                      style: TextStyle(fontSize: 11, color: TibaneColors.orange),
+                    ),
+                  ),
               ],
             ),
           ),

@@ -7,6 +7,7 @@ import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import 'inapp_export_screen.dart';
+import 'inapp_unlock_screen.dart';
 import 'share_labels.dart';
 
 /// Wallet detail view. When [walletId] is null, falls back to the
@@ -19,6 +20,18 @@ class WalletDetailsScreen extends StatefulWidget {
 
   @override
   State<WalletDetailsScreen> createState() => _WalletDetailsScreenState();
+
+  /// Pure decision for the detail screen's action area, extracted for tests.
+  /// `showUse` — render "Use this wallet" (only for a non-active wallet).
+  /// `showNeeds2fa` — render the "needs 2FA on this device" hint (a non-active
+  /// wallet that has no local device share).
+  @visibleForTesting
+  static ({bool showUse, bool showNeeds2fa}) walletDetailActions({
+    required bool isActive,
+    required bool hasShareHere,
+  }) {
+    return (showUse: !isActive, showNeeds2fa: !isActive && !hasShareHere);
+  }
 }
 
 class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
@@ -26,6 +39,8 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
   List<lw.Account> _accounts = const [];
   bool _loading = true;
   String? _loadError;
+  bool _isActive = false;
+  bool _hasShareHere = true;
 
   @override
   void initState() {
@@ -49,10 +64,14 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
         client.wallets.get(id),
         client.accounts.list(wallet: id),
       ]);
+      final isActive = id == ws.libwallet.walletId;
+      final hasShareHere = await ws.libwallet.hasLocalDeviceShare(id);
       if (!mounted) return;
       setState(() {
         _wallet = results[0] as lw.Wallet;
         _accounts = results[1] as List<lw.Account>;
+        _isActive = isActive;
+        _hasShareHere = hasShareHere;
         _loading = false;
       });
     } catch (e) {
@@ -68,6 +87,61 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const InAppExportScreen()));
+  }
+
+  /// Make this (non-active) wallet the in-use one. Routes through the unlock
+  /// screen targeting this wallet, which switches to it (or runs 2FA recovery
+  /// when it has no local device share).
+  Future<void> _use() async {
+    final wallet = _wallet;
+    if (wallet == null) return;
+    final name = wallet.name.isEmpty ? 'wallet' : wallet.name;
+    final ok = await InAppUnlockScreen.ensureUnlocked(
+      context,
+      walletId: wallet.id,
+    );
+    if (!mounted) return;
+    if (ok) {
+      setState(() {
+        _isActive = true;
+        _hasShareHere = true;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('"$name" is now in use')));
+    }
+  }
+
+  List<Widget> _buildUseSection() {
+    final actions = WalletDetailsScreen.walletDetailActions(
+      isActive: _isActive,
+      hasShareHere: _hasShareHere,
+    );
+    if (!actions.showUse) return const [];
+    return [
+      SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          onPressed: _use,
+          icon: const Icon(Icons.check_circle_outline, size: 18),
+          label: const Text('Use this wallet'),
+          style: FilledButton.styleFrom(
+            backgroundColor: TibaneColors.orange,
+            foregroundColor: TibaneColors.black,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        ),
+      ),
+      if (actions.showNeeds2fa) ...[
+        const SizedBox(height: 8),
+        const Text(
+          'This wallet has no device key on this phone — using it will ask '
+          'for 2FA to set one up.',
+          style: TextStyle(color: TibaneColors.textMuted, fontSize: 12),
+        ),
+      ],
+      const SizedBox(height: 20),
+    ];
   }
 
   Future<void> _remove() async {
@@ -153,6 +227,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                   const SizedBox(height: 20),
                   _AccountsCard(accounts: _accounts),
                   const SizedBox(height: 20),
+                  ..._buildUseSection(),
                   _ActionsRow(onBackup: _backup, onRemove: _remove),
                 ],
               ),
