@@ -434,9 +434,14 @@ Per the migration policy at the top: **any phase that changes persisted data
 ships its migration + an upgrade-path test in the same PR.** A schema change
 without its migration is not "done."
 
-1. **Keystore: per-wallet device share + migration.** Change `SecureKeystore`
-   signatures, add `migrateToPerWallet(activeWalletId)`, wire migration in
-   `tryRestore`/`_getClient`. Unit-test round-trip + migration.
+1. **Keystore: per-wallet device share + migration. ✅ DONE.**
+   `SecureKeystore` device-share methods take `walletId` (OS keystore +
+   fallback blob keyed per wallet); `migrateToPerWalletV2(activeWalletId)`
+   runs once from `tryRestore` — verify-before-delete, idempotent, gated by
+   `libw_schema_v2`, abort-safe. Backend call sites pass `_walletId`.
+   `test/secure_keystore_test.dart` covers isolation, the migration move,
+   idempotency, fresh-install, and the pre-migration legacy fallback.
+   Biometric cache intentionally left single-slot until Phase 2.
 2. **Backend: `switchWallet` + walletId-scoped `unlock`/`hasLocalDeviceShare`.**
    Update `create`/`_persist` to write per-wallet shares. Keep active
    wallet behaviour identical for the single-wallet case (regression-safe).
