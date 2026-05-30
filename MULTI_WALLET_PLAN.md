@@ -481,11 +481,17 @@ without its migration is not "done."
    clears the previous wallet's in-memory secrets (lock-on-switch);
    `unlock` reads the active wallet's per-wallet share.
 3. **`InAppUnlockScreen(walletId:)`** + `ensureUnlocked({walletId})`, recovery
-   targeting that wallet.
-   **Tests:** `hasLocalDeviceShare(walletId)` per-wallet truth table; a pure
-   unlock-route helper (biometric→password→recovery) given (hasShare,
-   biometricEnabled); widget test that the screen targets the passed
-   `walletId`.
+   targeting that wallet. ✅ **DONE.** Optional `walletId`; non-active target
+   unlocks via `switchWallet`; biometric offered only for the active wallet
+   (single-slot cache). `hasLocalDeviceShare([walletId])` parameterized;
+   `loadWalletForRecovery(walletId)` lets 2FA recovery target a non-active
+   wallet. Pure `InAppUnlockScreen.unlockRoute` decides biometric/password/
+   recovery. Backward compatible. `test/unlock_route_test.dart` covers the
+   route truth table. (Widget render needs real theme/WalletService/client →
+   verified on-device; google_fonts network fetch makes it infeasible as a
+   unit test.)
+   _Original notes:_ `hasLocalDeviceShare(walletId)` truth table; pure
+   unlock-route helper; widget test that the screen targets `walletId`.
 4. **UI: "Use this wallet"** on `WalletDetailsScreen`; per-wallet "usable
    here" hints in the list.
    **Tests:** widget test — "Use this wallet" hidden/disabled for the active
