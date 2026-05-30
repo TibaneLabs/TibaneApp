@@ -530,8 +530,15 @@ without its migration is not "done."
    _Original notes:_ non-active removal leaves active intact; active removal
    picks next via `pickNextActive`.
 9. **WalletService session reset on switch** (balances/auth/WC/network).
-   **Tests:** a pure `resetSessionState()` zeroes balances/fiat and flags a
-   refresh; switching account updates the address the tx cache is keyed by.
+   ✅ **DONE.** `_onBackendChanged` detects active-address changes and calls
+   `resetSessionState()` (zeros balances/fiat); auth is now address-aware
+   (`_authedAddress`) so switches re-mint the server session for the new
+   address; the per-address tx cache isolates automatically; `disconnect`
+   reuses the reset. WC: the bridge has no accounts-changed emit yet — dApps
+   need reconnecting after a switch (noted in code, tracked for the WC work).
+   `test/session_reset_test.dart` covers `resetSessionState` + tx-cache keying.
+   _Original notes:_ `resetSessionState` zeros balances/fiat; account switch
+   updates the tx-cache address key.
 
 Each phase is shippable; 1–2 are the foundation and must land first. Every
 phase lands with its tests green (see the Testing policy callout).
