@@ -530,15 +530,21 @@ without its migration is not "done."
    _Original notes:_ non-active removal leaves active intact; active removal
    picks next via `pickNextActive`.
 9. **WalletService session reset on switch** (balances/auth/WC/network).
-   ✅ **DONE.** `_onBackendChanged` detects active-address changes and calls
-   `resetSessionState()` (zeros balances/fiat); auth is now address-aware
-   (`_authedAddress`) so switches re-mint the server session for the new
-   address; the per-address tx cache isolates automatically; `disconnect`
-   reuses the reset. WC: the bridge has no accounts-changed emit yet — dApps
-   need reconnecting after a switch (noted in code, tracked for the WC work).
+   ✅ **DONE (balances).** `_onBackendChanged` detects active-address changes
+   and calls `resetSessionState()` (zeros balances/fiat); the per-address tx
+   cache isolates automatically; `disconnect` reuses the reset.
    `test/session_reset_test.dart` covers `resetSessionState` + tx-cache keying.
-   _Original notes:_ `resetSessionState` zeros balances/fiat; account switch
-   updates the tx-cache address key.
+
+   > ⚠ **Auth-on-switch deliberately NOT done.** An initial attempt
+   > re-authenticated (signed) the server session for the new address on every
+   > switch — but signing immediately after a switch races other in-flight
+   > libwallet work (dashboard backfill, `accounts.setCurrent`, balance
+   > fetches) and **crashes the TSS layer** (`ToEd25519PubKey`, nil deref). So
+   > switch no longer re-auths; the server session stays on the previous
+   > wallet until the next auth-requiring call re-mints it lazily (the
+   > pre-multi-wallet behaviour). A proper fix needs **serialized libwallet
+   > signing** so no two TSS ops / `setCurrent` overlap. Same caveat for WC
+   > (no accounts-changed emit). Tracked as follow-up.
 
 Each phase is shippable; 1–2 are the foundation and must land first. Every
 phase lands with its tests green (see the Testing policy callout).

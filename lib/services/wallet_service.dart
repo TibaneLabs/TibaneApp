@@ -142,7 +142,6 @@ class WalletService extends ChangeNotifier {
   Future<void> disconnect() async {
     await active.disconnect();
     resetSessionState();
-    _authedAddress = null;
     await _auth.logout();
     notifyListeners();
   }
@@ -411,18 +410,20 @@ class WalletService extends ChangeNotifier {
     final addr = active.publicKey;
     if (addr != _lastAddress) {
       _lastAddress = addr;
-      // The active wallet/account changed: drop stale balances so they don't
-      // linger, and re-authenticate for the new address (auth below is
-      // address-aware + coalesced, so this is safe even if a connect path
-      // also triggers it). The per-address tx cache isolates on its own.
+      // The active wallet/account changed: drop stale balances so the
+      // previous wallet's figures don't linger before the fresh fetch. The
+      // per-address tx cache isolates on its own.
       //
-      // NOTE: a live WalletConnect bridge still exposes the previous account;
-      // the bridge has no accounts-changed emit yet, so dApps should be
-      // reconnected after a switch (tracked for the WC integration).
+      // We deliberately do NOT re-authenticate (sign) here: signing right
+      // after a switch races other in-flight libwallet work (dashboard
+      // backfill / setCurrent / balance fetches) and crashes the TSS layer.
+      // The server session is refreshed lazily by the next auth-requiring
+      // call, by which point the switch has settled.
+      //
+      // NOTE: a live WalletConnect bridge still exposes the previous account
+      // and the server session may be stale for the new wallet until then —
+      // both tracked for the WC / auth-on-switch follow-up.
       resetSessionState();
-      if (addr != null && isConnected) {
-        _authenticateWithServer();
-      }
     }
     notifyListeners();
   }
@@ -439,14 +440,8 @@ class WalletService extends ChangeNotifier {
   // both did a full getTicket → sign → solLogin. Coalesce onto one future.
   Future<void>? _authFuture;
 
-  // Address the current server session was authenticated for. Switching
-  // wallets/accounts changes the address, so the session must be re-minted.
-  String? _authedAddress;
-
   Future<void> _authenticateWithServer() {
-    if (_auth.isAuthenticated && _authedAddress == publicKey) {
-      return Future.value();
-    }
+    if (_auth.isAuthenticated) return Future.value();
     return _authFuture ??= _runAuthenticate();
   }
 
@@ -454,18 +449,12 @@ class WalletService extends ChangeNotifier {
     try {
       final addr = publicKey;
       if (addr == null) return;
-      // A session for a different address no longer applies — drop it first.
-      if (_auth.isAuthenticated && _authedAddress != addr) {
-        await _auth.logout();
-      }
       final (:message, :ticket) = await _auth.getTicket(addr);
-      debugPrint('[auth] signMessage for $addr');
       final signature = await signMessage(
         Uint8List.fromList(utf8.encode(message)),
       );
       if (signature == null) return;
       await _auth.login(ticket, signature);
-      _authedAddress = addr;
       notifyListeners();
     } catch (e) {
       debugPrint('authenticateWithServer failed: $e');
