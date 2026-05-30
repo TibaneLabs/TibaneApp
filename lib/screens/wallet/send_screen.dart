@@ -9,6 +9,7 @@ import '../../constants/solana_constants.dart';
 import '../../services/jupiter_service.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../widgets/keyboard_safe_form.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import 'inapp_unlock_screen.dart';
@@ -361,8 +362,7 @@ class _SendScreenState extends State<SendScreen> {
           // Tap outside any input to dismiss the iOS numeric keyboard.
           onTap: () => FocusScope.of(context).unfocus(),
           behavior: HitTestBehavior.translucent,
-          child: Padding(
-            padding: const EdgeInsets.all(24),
+          child: KeyboardSafeForm(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [

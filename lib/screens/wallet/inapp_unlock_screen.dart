@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../services/wallet/libwallet_backend.dart' show SwitchResult;
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../widgets/keyboard_safe_form.dart';
 
 /// Preferred initial route for the unlock screen. Pure decision, extracted
 /// so it can be unit-tested without a platform.
@@ -238,16 +239,13 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: const Text('Unlock wallet')),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: switch (_mode) {
-            _Mode.probing => const Center(
-              child: CircularProgressIndicator(color: TibaneColors.orange),
-            ),
-            _Mode.password => _buildPasswordBody(),
-            _Mode.recovery => _buildRecoveryBody(),
-          },
-        ),
+        child: switch (_mode) {
+          _Mode.probing => const Center(
+            child: CircularProgressIndicator(color: TibaneColors.orange),
+          ),
+          _Mode.password => KeyboardSafeForm(child: _buildPasswordBody()),
+          _Mode.recovery => KeyboardSafeForm(child: _buildRecoveryBody()),
+        },
       ),
     );
   }

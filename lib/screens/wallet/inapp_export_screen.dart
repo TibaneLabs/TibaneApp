@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../widgets/keyboard_safe_form.dart';
 
 /// Two-step export flow: confirm password, then offer a native share sheet
 /// (primary) plus a clipboard fallback for the encrypted backup JSON.
@@ -181,10 +182,12 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: const Text('Export wallet')),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: _json == null ? _buildPassword() : _buildJson(),
-        ),
+        child: _json == null
+            ? KeyboardSafeForm(child: _buildPassword())
+            : Padding(
+                padding: const EdgeInsets.all(24),
+                child: _buildJson(),
+              ),
       ),
     );
   }
