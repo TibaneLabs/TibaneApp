@@ -1107,11 +1107,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     );
   }
 
-  /// Load [walletId]'s metadata into the active slot WITHOUT a device share
-  /// (active-but-locked), so the 2FA recovery flow can mint a fresh device
-  /// share for it. Used when switching to a wallet that has no local share.
-  /// Overwriting the active fields locks the previously-active wallet.
-  Future<bool> loadWalletForRecovery(String walletId) async {
+  /// Load [walletId]'s metadata into the active slot as active-but-LOCKED
+  /// (no device share / password). Overwriting the active fields locks the
+  /// previously-active wallet. Used by the 2FA recovery entry and after
+  /// removing the active wallet.
+  Future<bool> _loadWalletLocked(String walletId) async {
     try {
       final client = await _getClient();
       final w = await client.wallets.get(walletId);
@@ -1124,15 +1124,112 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _storeKeyId = keyIds['StoreKey'];
       _remoteKeyId = keyIds['RemoteKey'];
       _passwordKeyId = keyIds['Password'];
-      _storeKeyPriv = null; // missing share is why we're recovering
+      _storeKeyPriv = null;
       _password = null;
       notifyListeners();
       return true;
     } catch (e) {
-      _error = 'Could not load wallet for recovery: $e';
+      _error = 'Could not load wallet: $e';
       debugPrint(_error);
       notifyListeners();
       return false;
+    }
+  }
+
+  /// Load a wallet (active-but-locked) so the 2FA recovery flow can mint a
+  /// fresh device share for it. See [_loadWalletLocked].
+  Future<bool> loadWalletForRecovery(String walletId) =>
+      _loadWalletLocked(walletId);
+
+  /// Pick the wallet to make active after [removedId] is removed: the first
+  /// id in [walletIds] that isn't the removed one, or null if none remain.
+  @visibleForTesting
+  static String? pickNextActive(List<String> walletIds, String removedId) {
+    for (final id in walletIds) {
+      if (id != removedId) return id;
+    }
+    return null;
+  }
+
+  /// Remove [walletId] from this device: delete it from libwallet's local
+  /// store and delete ITS per-wallet device share (other wallets are
+  /// untouched). If it was the active wallet, the next remaining wallet
+  /// becomes active-but-locked (the user unlocks it when needed), or the
+  /// state clears to "no wallet" if none remain. Returns true on success.
+  Future<bool> removeWallet(String walletId) async {
+    try {
+      final client = await _getClient();
+      final wasActive = walletId == _walletId;
+      await client.wallets.delete(walletId);
+      await _keystore.deleteDeviceShare(walletId);
+      if (wasActive) {
+        // The single-slot biometric cache held the removed wallet's password.
+        await _keystore.deleteBiometricPassword();
+        final remaining = (await client.wallets.list())
+            .map((w) => w.id)
+            .toList();
+        final nextId = pickNextActive(remaining, walletId);
+        if (nextId != null) {
+          await _loadWalletLocked(nextId);
+          await _persistActivePointer();
+        } else {
+          _clearActiveFields();
+          await _clearActivePrefs();
+        }
+      }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Could not remove wallet: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  void _clearActiveFields() {
+    _publicKey = null;
+    _walletId = null;
+    _accountId = null;
+    _walletName = null;
+    _storeKeyPriv = null;
+    _storeKeyId = null;
+    _remoteKeyId = null;
+    _passwordKeyId = null;
+    _password = null;
+  }
+
+  Future<void> _clearActivePrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in const [
+      _prefsWalletId,
+      _prefsAccountId,
+      _prefsAddress,
+      _prefsStorePub,
+      _prefsStorePriv,
+      _prefsStoreKeyId,
+      _prefsRemoteKeyId,
+      _prefsPasswordKeyId,
+      _prefsName,
+    ]) {
+      await prefs.remove(key);
+    }
+  }
+
+  Future<void> _persistActivePointer() async {
+    final prefs = await SharedPreferences.getInstance();
+    final entries = <String, String?>{
+      _prefsWalletId: _walletId,
+      _prefsAccountId: _accountId,
+      _prefsAddress: _publicKey,
+      _prefsName: _walletName,
+      _prefsStoreKeyId: _storeKeyId,
+      _prefsRemoteKeyId: _remoteKeyId,
+      _prefsPasswordKeyId: _passwordKeyId,
+    };
+    for (final e in entries.entries) {
+      final v = e.value;
+      if (v != null) await prefs.setString(e.key, v);
     }
   }
 

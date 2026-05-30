@@ -175,19 +175,15 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     if (confirmed != true) return;
     if (!mounted) return;
     final ws = context.read<WalletService>();
-    final client = await ws.libwallet.ensureClient();
-    try {
-      await client.wallets.delete(wallet.id);
-      if (wallet.id == ws.libwallet.walletId) {
-        await ws.disconnect();
-      }
-      if (!mounted) return;
-      Navigator.of(context).pop();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Remove failed: $e')));
+    final ok = await ws.libwallet.removeWallet(wallet.id);
+    if (!mounted) return;
+    if (ok) {
+      ws.refreshBalances();
+      Navigator.of(context).pop(true);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ws.libwallet.error ?? 'Remove failed')),
+      );
     }
   }
 

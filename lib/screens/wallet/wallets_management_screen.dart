@@ -178,6 +178,17 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
                 wallet: list[i],
                 active: list[i].id == activeId,
                 usableHere: _withShare.contains(list[i].id),
+                onTap: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          WalletDetailsScreen(walletId: list[i].id),
+                    ),
+                  );
+                  // Reload on return — a removal or "Use this wallet" may
+                  // have changed the list / active wallet.
+                  if (mounted) _load();
+                },
               ),
             );
           },
@@ -191,22 +202,20 @@ class _WalletRow extends StatelessWidget {
   final lw.Wallet wallet;
   final bool active;
   final bool usableHere;
+  final VoidCallback onTap;
 
   const _WalletRow({
     required this.wallet,
     required this.active,
     required this.usableHere,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final subkeys = wallet.keys.map((k) => shareTypeLabel(k.type)).join(' · ');
     return TibaneCard(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => WalletDetailsScreen(walletId: wallet.id),
-        ),
-      ),
+      onTap: onTap,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
