@@ -535,16 +535,47 @@ without its migration is not "done."
    cache isolates automatically; `disconnect` reuses the reset.
    `test/session_reset_test.dart` covers `resetSessionState` + tx-cache keying.
 
-   > ⚠ **Auth-on-switch deliberately NOT done.** An initial attempt
-   > re-authenticated (signed) the server session for the new address on every
-   > switch — but signing immediately after a switch races other in-flight
-   > libwallet work (dashboard backfill, `accounts.setCurrent`, balance
-   > fetches) and **crashes the TSS layer** (`ToEd25519PubKey`, nil deref). So
-   > switch no longer re-auths; the server session stays on the previous
-   > wallet until the next auth-requiring call re-mints it lazily (the
-   > pre-multi-wallet behaviour). A proper fix needs **serialized libwallet
-   > signing** so no two TSS ops / `setCurrent` overlap. Same caveat for WC
-   > (no accounts-changed emit). Tracked as follow-up.
+   > ⚠ **Auth-on-switch deliberately NOT done** (see the switch-crash blocker
+   > below). Switch only resets balances; it does NOT re-authenticate, because
+   > signing right after a switch trips the crash. The server session stays on
+   > the previous wallet until the next auth-requiring call re-mints it lazily.
+
+---
+
+## ⛔ KNOWN BLOCKER — switching the active wallet crashes (libwallet TSS bug)
+
+**Symptom:** switching to another wallet segfaults in
+`libwallet … tss-lib/v2/crypto.(*ECPoint).ToEd25519PubKey` (`EXC_BAD_ACCESS`,
+nil deref at `ecpoint.go:53`), on a background thread.
+
+**Root cause (confirmed via `[switch]`/`[auth]`/`[txhist]` breadcrumbs):** the
+switch itself succeeds (`[switch] complete` prints). The crash is a **sign
+running concurrently with `accounts.setCurrent`** — libwallet's TSS signing
+isn't safe while another flow changes the current account. The racing pairs we
+saw: the dashboard's tx-history backfill `setCurrent` + an in-flight server
+`signMessage` (auth), overlapping a wallet switch. It is **not** an app logic
+bug in `switchWallet` (that path was hardened: set-current-before-derive,
+curve-correct account, etc.).
+
+**Decision: WAIT for the upcoming libwallet release** (ships with code guards +
+more error logs). It fixes the root cause and its logs will pinpoint anything
+left. An app-side workaround (serialize every sign + `setCurrent` through one
+mutex) was prototyped and **reverted** to avoid masking the real bug.
+
+**When the new libwallet lands:**
+1. Bump `libwallet` in `pubspec.yaml`; `flutter pub get`.
+2. Retest the wallet switch (the `[switch]` breadcrumbs are intentionally left
+   in `switchWallet` for this).
+3. If it still races, add the serialization mutex (`_serialized` chain around
+   all `accounts.signMessage/signTransaction/signAndSendTransaction`,
+   `transactions.signAndSendSimple`, and every `accounts.setCurrent` incl.
+   `kickHistoryBackfill`) — and revisit auth-on-switch + WC accounts-changed.
+4. Remove the `[switch]` debug breadcrumbs once verified.
+
+Everything else (create, per-wallet storage/migration, "Use this wallet" UI,
+remove, account UI, send, balances) is unaffected and testable.
+
+---
 
 Each phase is shippable; 1–2 are the foundation and must land first. Every
 phase lands with its tests green (see the Testing policy callout).
