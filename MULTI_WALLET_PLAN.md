@@ -464,8 +464,16 @@ without its migration is not "done."
    `test/secure_keystore_test.dart` covers isolation, the migration move,
    idempotency, fresh-install, and the pre-migration legacy fallback.
    Biometric cache intentionally left single-slot until Phase 2.
-2. **Backend: `switchWallet` + walletId-scoped `unlock`/`hasLocalDeviceShare`.**
-   Update `create`/`_persist` to write per-wallet shares. Keep active
+2. **Backend: `switchWallet` + walletId-scoped `unlock`/`hasLocalDeviceShare`. ✅ DONE.**
+   `switchWallet(walletId, {password})` reloads a target wallet's TSS shares
+   + its per-wallet device share, validates the password, and swaps the
+   active state (locking the previous wallet); returns a typed `SwitchResult`.
+   Pure `planWalletSwitch` routing helper + `_resolveAccount`. `create`/
+   `_persist`/`unlock`/`hasLocalDeviceShare` are walletId-scoped (Phase 1).
+   `test/wallet_switch_test.dart` covers the `planWalletSwitch` truth table +
+   per-wallet create no-clobber. (Full switchWallet integration needs the
+   live client → on-device.)
+   _Original notes:_ Update `create`/`_persist` to write per-wallet shares. Keep active
    wallet behaviour identical for the single-wallet case (regression-safe).
    **Tests:** creating wallet B does NOT clobber A's per-wallet share (read
    both back via the keystore); a pure `switchDecision(active, target,
