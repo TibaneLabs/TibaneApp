@@ -493,10 +493,15 @@ without its migration is not "done."
    _Original notes:_ `hasLocalDeviceShare(walletId)` truth table; pure
    unlock-route helper; widget test that the screen targets `walletId`.
 4. **UI: "Use this wallet"** on `WalletDetailsScreen`; per-wallet "usable
-   here" hints in the list.
-   **Tests:** widget test — "Use this wallet" hidden/disabled for the active
-   wallet, shown for others; "needs 2FA here" hint appears when
-   `hasLocalDeviceShare` is false.
+   here" hints in the list. ✅ **DONE.** "Use this wallet" button on the
+   detail screen for any non-active wallet (hidden for the in-use one) →
+   `ensureUnlocked(walletId:)` → switchWallet/recovery. "Needs 2FA on this
+   device" hint on the detail screen and per-row in
+   `WalletsManagementScreen` when `hasLocalDeviceShare(id)` is false. Pure
+   `WalletDetailsScreen.walletDetailActions` decides show/hint;
+   `test/wallet_detail_actions_test.dart` covers the truth table. (Full
+   render on-device — google_fonts/client constraint.)
+   _Original notes:_ widget test for hidden/shown + 2FA hint.
 5. **`switchAccount` cross-wallet** + `AccountsManagementScreen` cross-wallet
    selection.
    **Tests:** pure routing helper — same-wallet account → fast path (no
