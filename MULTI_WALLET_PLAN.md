@@ -548,29 +548,25 @@ without its migration is not "done."
 `libwallet … tss-lib/v2/crypto.(*ECPoint).ToEd25519PubKey` (`EXC_BAD_ACCESS`,
 nil deref at `ecpoint.go:53`), on a background thread.
 
-**Root cause (confirmed via `[switch]`/`[auth]`/`[txhist]` breadcrumbs):** the
-switch itself succeeds (`[switch] complete` prints). The crash is a **sign
-running concurrently with `accounts.setCurrent`** — libwallet's TSS signing
-isn't safe while another flow changes the current account. The racing pairs we
-saw: the dashboard's tx-history backfill `setCurrent` + an in-flight server
-`signMessage` (auth), overlapping a wallet switch. It is **not** an app logic
-bug in `switchWallet` (that path was hardened: set-current-before-derive,
-curve-correct account, etc.).
+**✅ FIXED in libwallet 0.4.47** (bumped — was `^0.4.46`, now `^0.4.47`).
+*Pending on-device confirmation.* It was NOT a concurrency race (my earlier
+guess was wrong). Per the 0.4.47 changelog it's a **FROST-vs-legacy-EdDSA
+protocol bug** in libwallet's ed25519 sign-path self-heal: it gated on
+`Curve == "ed25519"` only, not `Protocol`. FROST wallets also have
+`Curve == "ed25519"`, so the self-heal ran `decryptEdDSA` against a FROST
+share → cbor zero-filled → nil `EDDSAPub` → `.ToEd25519PubKey()` dereferenced a
+nil `*ECPoint` → segfault at offset 0x10. 0.4.47 gates on
+`resolveProtocol() == ProtocolLegacyEdDSA` and fails loudly instead of
+crashing. The `switchWallet` path itself was always fine.
 
-**Decision: WAIT for the upcoming libwallet release** (ships with code guards +
-more error logs). It fixes the root cause and its logs will pinpoint anything
-left. An app-side workaround (serialize every sign + `setCurrent` through one
-mutex) was prototyped and **reverted** to avoid masking the real bug.
-
-**When the new libwallet lands:**
-1. Bump `libwallet` in `pubspec.yaml`; `flutter pub get`.
-2. Retest the wallet switch (the `[switch]` breadcrumbs are intentionally left
-   in `switchWallet` for this).
-3. If it still races, add the serialization mutex (`_serialized` chain around
-   all `accounts.signMessage/signTransaction/signAndSendTransaction`,
-   `transactions.signAndSendSimple`, and every `accounts.setCurrent` incl.
-   `kickHistoryBackfill`) — and revisit auth-on-switch + WC accounts-changed.
-4. Remove the `[switch]` debug breadcrumbs once verified.
+**Remaining follow-up (after confirming the switch works on 0.4.47):**
+1. Confirm switching works on a device (the `[switch]` breadcrumbs in
+   `switchWallet` are there to help; **remove them once verified**).
+2. **Restore auth-on-switch** (Phase 9) — it was reverted only because signing
+   after a switch tripped this crash; with 0.4.47 it's safe to re-mint the
+   server session on switch again. Revisit WC accounts-changed too.
+3. The serialization-mutex idea is **not needed** (the crash wasn't a race);
+   only revisit if a genuine concurrency issue ever appears.
 
 Everything else (create, per-wallet storage/migration, "Use this wallet" UI,
 remove, account UI, send, balances) is unaffected and testable.
