@@ -36,6 +36,28 @@ follow them exactly. Read `DEVICE_TRANSFER_PLAN.md` /
 > stored key's name, shape, or location, it is incomplete without its
 > migration and a test that exercises the upgrade path.
 
+> ## ⚠ Testing policy (MANDATORY)
+>
+> **Every phase ships unit tests in the same PR.** A phase is not "done"
+> without them. Concretely:
+>
+> - **Extract pure logic so it's testable without a platform.** Decisions
+>   like "same-wallet vs cross-wallet switch", account resolution, the
+>   active-state assembly, and migration steps should be plain functions /
+>   `@visibleForTesting` helpers, not buried in `await`-heavy methods or UI.
+> - **Keystore / prefs logic** → `flutter test` with
+>   `SharedPreferences.setMockInitialValues` (the fallback-blob path runs
+>   without a platform; see `test/secure_keystore_test.dart`).
+> - **Backend flows that need libwallet** → either inject a fake/minimal
+>   client at the seam, or extract the pure decision out of the I/O and test
+>   that. Don't let "it needs the client" be an excuse to skip the test.
+> - **UI phases** → a `flutter_test` widget test for the key states (e.g.
+>   "Use this wallet" shown only for the non-active wallet; unlock-prompt
+>   routing).
+> - Run `flutter analyze` + `flutter test` green before committing each phase.
+>
+> Each phase below lists its required **Tests:**.
+
 ---
 
 ## 1. Why it's blocked today (exact symbols)
@@ -445,21 +467,47 @@ without its migration is not "done."
 2. **Backend: `switchWallet` + walletId-scoped `unlock`/`hasLocalDeviceShare`.**
    Update `create`/`_persist` to write per-wallet shares. Keep active
    wallet behaviour identical for the single-wallet case (regression-safe).
+   **Tests:** creating wallet B does NOT clobber A's per-wallet share (read
+   both back via the keystore); a pure `switchDecision(active, target,
+   hasShare)` helper returns ok / needsRecovery / wrongPassword; switching
+   clears the previous wallet's in-memory secrets (lock-on-switch);
+   `unlock` reads the active wallet's per-wallet share.
 3. **`InAppUnlockScreen(walletId:)`** + `ensureUnlocked({walletId})`, recovery
    targeting that wallet.
+   **Tests:** `hasLocalDeviceShare(walletId)` per-wallet truth table; a pure
+   unlock-route helper (biometric→password→recovery) given (hasShare,
+   biometricEnabled); widget test that the screen targets the passed
+   `walletId`.
 4. **UI: "Use this wallet"** on `WalletDetailsScreen`; per-wallet "usable
    here" hints in the list.
+   **Tests:** widget test — "Use this wallet" hidden/disabled for the active
+   wallet, shown for others; "needs 2FA here" hint appears when
+   `hasLocalDeviceShare` is false.
 5. **`switchAccount` cross-wallet** + `AccountsManagementScreen` cross-wallet
    selection.
+   **Tests:** pure routing helper — same-wallet account → fast path (no
+   switch); different-wallet account → switch-first then `setCurrent`.
 6. **Receive flow:** drop disconnect; add-to-list without activating; offer
    "Use it now".
+   **Tests:** `importViaDeviceTransfer` leaves the active wallet/`_walletId`
+   unchanged and writes the received share under the new wallet's id (no
+   clobber); no disconnect occurs when a wallet already exists.
 7. **Send/transfer:** allow transferring a non-active wallet by switching
    first.
+   **Tests:** decision helper — non-active target → switch-first; active
+   target → export directly.
 8. **`removeWallet`** (replace `disconnect` for per-wallet removal) + active-
    wallet-removal handling.
+   **Tests:** removing a non-active wallet leaves `_walletId` + the active
+   wallet's share intact and deletes only the removed wallet's per-wallet
+   keystore entry; removing the active wallet selects a next-active (or
+   empty) per a pure `pickNextActive(list, removedId)` helper.
 9. **WalletService session reset on switch** (balances/auth/WC/network).
+   **Tests:** a pure `resetSessionState()` zeroes balances/fiat and flags a
+   refresh; switching account updates the address the tx cache is keyed by.
 
-Each phase is shippable; 1–2 are the foundation and must land first.
+Each phase is shippable; 1–2 are the foundation and must land first. Every
+phase lands with its tests green (see the Testing policy callout).
 
 ---
 
@@ -476,7 +524,7 @@ Each phase is shippable; 1–2 are the foundation and must land first.
 | `lib/screens/wallet/accounts_management_screen.dart` | cross-wallet account selection |
 | `lib/screens/wallet/device_transfer_receive_screen.dart` | remove disconnect dialog/guard; add-to-list UX |
 | `lib/screens/wallet/device_transfer_send_screen.dart` | allow non-active via switch-first |
-| `test/` | keystore per-wallet round-trip + migration; `switchWallet` logic |
+| `test/` | per-phase unit tests (Testing policy): keystore round-trip + migration ✅; `switchWallet`/switch-decision; unlock-route + `hasLocalDeviceShare`; cross-wallet `switchAccount`; receive-no-clobber; `removeWallet`/`pickNextActive`; `resetSessionState`; plus widget tests for the "Use this wallet" UI |
 
 ---
 
