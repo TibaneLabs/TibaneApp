@@ -33,6 +33,15 @@ class TokenSearchResult {
   });
 }
 
+/// Outcome of [LibwalletBackend.switchWallet]. The UI branches on this to
+/// prompt for a password, route into 2FA recovery, or surface an error.
+enum SwitchResult { ok, needsPassword, wrongPassword, needsRecovery, error }
+
+/// Pure routing decision for a wallet switch — extracted so it can be
+/// unit-tested without a libwallet client. See
+/// [LibwalletBackend.planWalletSwitch].
+enum SwitchPlan { alreadyActive, needsRecovery, needsPassword, proceed }
+
 /// In-app MPC wallet backend. 2-of-3 TSS: device share + remote email share + password.
 ///
 /// Signing uses libwallet 0.3.5's direct `Account:sign*` endpoints with the
@@ -940,6 +949,139 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       notifyListeners();
       return false;
     }
+  }
+
+  /// Pure routing decision for [switchWallet]. Extracted so it can be
+  /// unit-tested without a libwallet client.
+  @visibleForTesting
+  static SwitchPlan planWalletSwitch({
+    required bool targetIsActiveAndUnlocked,
+    required bool hasLocalDeviceShare,
+    required bool passwordProvided,
+  }) {
+    if (targetIsActiveAndUnlocked) return SwitchPlan.alreadyActive;
+    if (!hasLocalDeviceShare) return SwitchPlan.needsRecovery;
+    if (!passwordProvided) return SwitchPlan.needsPassword;
+    return SwitchPlan.proceed;
+  }
+
+  /// Make [walletId] the active, unlocked wallet by reloading its TSS shares
+  /// from libwallet + this device's per-wallet keystore entry. Validates
+  /// [password] against the wallet's Password share and swaps the in-memory
+  /// active state — which LOCKS the previously-active wallet (its
+  /// `_password`/`_storeKeyPriv` are overwritten). Day-to-day signing is
+  /// unchanged (StoreKey + Password). Returns a typed [SwitchResult] so the
+  /// UI can prompt for a password or route to 2FA recovery.
+  Future<SwitchResult> switchWallet(String walletId, {String? password}) async {
+    final hasShare = await _keystore.hasDeviceShare(walletId);
+    final plan = planWalletSwitch(
+      targetIsActiveAndUnlocked: _walletId == walletId && isUnlocked,
+      hasLocalDeviceShare: hasShare,
+      passwordProvided: password != null && password.isNotEmpty,
+    );
+    switch (plan) {
+      case SwitchPlan.alreadyActive:
+        return SwitchResult.ok;
+      case SwitchPlan.needsRecovery:
+        _error =
+            'This wallet has no device share on this device. '
+            'Recover it via 2FA, then try again.';
+        notifyListeners();
+        return SwitchResult.needsRecovery;
+      case SwitchPlan.needsPassword:
+        return SwitchResult.needsPassword;
+      case SwitchPlan.proceed:
+        break;
+    }
+
+    try {
+      final client = await _getClient();
+      final w = await client.wallets.get(walletId);
+      final keyIds = _extractKeyIdsByType(w);
+      final passwordKeyId = keyIds['Password'];
+      final storeKeyId = keyIds['StoreKey'];
+      if (passwordKeyId == null || storeKeyId == null) {
+        _error = 'Wallet is missing required key shares';
+        notifyListeners();
+        return SwitchResult.error;
+      }
+
+      // Read THIS wallet's device share. OS keystore needs no password; the
+      // fallback blob throws WrongPasswordException on a bad password.
+      String? priv;
+      try {
+        priv = await _keystore.readDeviceShare(
+          walletId: walletId,
+          password: password,
+        );
+      } on WrongPasswordException {
+        _error = 'Wrong password for this wallet';
+        notifyListeners();
+        return SwitchResult.wrongPassword;
+      }
+      if (priv == null) {
+        _error = "Could not read this wallet's device share";
+        notifyListeners();
+        return SwitchResult.error;
+      }
+
+      // Validate the password against the Password share without signing.
+      try {
+        await client.storeKeys.derivePassword(
+          password: password!,
+          walletKeyId: passwordKeyId,
+        );
+      } on LibwalletException {
+        _error = 'Wrong password for this wallet';
+        notifyListeners();
+        return SwitchResult.wrongPassword;
+      }
+
+      final account = await _resolveAccount(client, walletId);
+      await client.accounts.setCurrent(account.id);
+
+      // Swap the active in-memory set. Overwriting these fields locks the
+      // previously-active wallet (its password + device share leave memory).
+      _walletId = walletId;
+      _accountId = account.id;
+      _publicKey = account.address;
+      _walletName = w.name.isNotEmpty ? w.name : 'In-app wallet';
+      _storeKeyId = storeKeyId;
+      _remoteKeyId = keyIds['RemoteKey'];
+      _passwordKeyId = passwordKeyId;
+      _storeKeyPriv = priv;
+      _password = password;
+
+      final storeKeyPub = w.keys.firstWhere((k) => k.type == 'StoreKey').key;
+      await _persist(storeKeyPublic: storeKeyPub);
+      notifyListeners();
+      unawaited(ensureSolanaDefault());
+      return SwitchResult.ok;
+    } catch (e) {
+      _error = 'Could not switch wallet: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return SwitchResult.error;
+    }
+  }
+
+  /// Pick the account to activate for [walletId]: an existing Solana account
+  /// if any, else the first account, else a freshly-derived Solana account.
+  Future<Account> _resolveAccount(
+    LibwalletClient client,
+    String walletId,
+  ) async {
+    final accounts = await client.accounts.list(wallet: walletId);
+    for (final a in accounts) {
+      if (a.type == 'solana') return a;
+    }
+    if (accounts.isNotEmpty) return accounts.first;
+    return client.accounts.create(
+      name: 'Solana',
+      wallet: walletId,
+      type: 'solana',
+      index: 0,
+    );
   }
 
   /// Forget session secrets. Wallet metadata persists; user must unlock again
