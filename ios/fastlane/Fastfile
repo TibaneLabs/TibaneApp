@@ -43,15 +43,95 @@ platform :ios do
     )
   end
 
+  desc "Show OKX territories Apple doesn't expose as a storefront"
+  lane :diff_target do
+    require 'spaceship'
+    Spaceship::ConnectAPI.login
+    bundle_id = CredentialsManager::AppfileConfig.try_fetch_value(:app_identifier)
+    app = Spaceship::ConnectAPI::App.find(bundle_id)
+    client = Spaceship::ConnectAPI.client.tunes_request_client
+    params = client.build_params(filter: nil, includes: "territory", limit: 200, sort: nil)
+    rows = client.get("v2/appAvailabilities/#{app.id}/territoryAvailabilities", params).body["data"]
+    apple_iso3 = rows.map { |r| r["relationships"]["territory"]["data"]["id"] }.to_set
+    missing = OKX_AVAILABILITY_ISO3 - apple_iso3.to_a
+    UI.message("Apple storefronts: #{apple_iso3.size}; OKX target: #{OKX_AVAILABILITY_ISO3.size}")
+    UI.message("OKX codes missing from Apple: #{missing.inspect}")
+  end
+
+  desc "Print current App Store availability territories"
+  lane :dump_territories do
+    require 'spaceship'
+    Spaceship::ConnectAPI.login
+    bundle_id = CredentialsManager::AppfileConfig.try_fetch_value(:app_identifier)
+    app = Spaceship::ConnectAPI::App.find(bundle_id)
+    UI.user_error!("Couldn't find app with bundle id #{bundle_id}") if app.nil?
+    client = Spaceship::ConnectAPI.client.tunes_request_client
+    resp = client.get("v2/appAvailabilities/#{app.id}/territoryAvailabilities", { 'limit' => '200' })
+    UI.message("Got #{resp.to_models.length} rows")
+    resp.to_models.each { |t| UI.message("  #{t.inspect}") }
+  end
+
   desc "Sync App Store availability territories to OKX_AVAILABILITY_ISO3"
+  # ASC's modern flow for territory changes on an existing app:
+  #   POST /v1/bulkUpdateAppAvailabilities, type=bulkUpdateAppAvailabilities.
+  # The parent `appAvailabilities` resource is CREATE-only — no PATCH,
+  # no DELETE — so the bulk endpoint is the only writable path once
+  # the app has any availability set. The body must enumerate every
+  # existing territoryAvailability row, with `available` flipped to
+  # match the target list. Rows are referenced via JSON:API local ids
+  # (${name}); Apple resolves them against the live composite-id rows
+  # via the included `territory` relationship.
   lane :set_territories do
     require 'spaceship'
     Spaceship::ConnectAPI.login
     bundle_id = CredentialsManager::AppfileConfig.try_fetch_value(:app_identifier)
     app = Spaceship::ConnectAPI::App.find(bundle_id)
     UI.user_error!("Couldn't find app with bundle id #{bundle_id}") if app.nil?
-    UI.message("Setting #{OKX_AVAILABILITY_ISO3.length} territories on app #{app.id} (#{bundle_id})")
-    app.update(territory_ids: OKX_AVAILABILITY_ISO3)
-    UI.success("Updated App Store availability.")
+    target = OKX_AVAILABILITY_ISO3.to_set
+
+    # The parent `appAvailabilities` resource is CREATE-only; once an
+    # app has one (always, on existing apps), the only writable path
+    # is `POST /v1/bulkUpdateAppAvailabilities`. It overwrites the
+    # full set in a single submission, so we have to enumerate every
+    # existing territoryAvailability row, flip `available` based on
+    # the target list, and pass them all in `included`.
+    client = Spaceship::ConnectAPI.client.tunes_request_client
+    params = client.build_params(filter: nil, includes: "territory", limit: 200, sort: nil)
+    existing = client.get("v2/appAvailabilities/#{app.id}/territoryAvailabilities", params).body["data"]
+    UI.message("Bulk-updating #{existing.length} territories: #{target.size} on, #{existing.length - target.size} off")
+
+    rows = existing.map do |row|
+      iso3 = row["relationships"]["territory"]["data"]["id"]
+      {
+        local_id: "${ta_#{iso3}}",
+        iso3: iso3,
+        available: target.include?(iso3)
+      }
+    end
+
+    body = {
+      data: {
+        type: "bulkUpdateAppAvailabilities",
+        attributes: { availableInNewTerritories: false },
+        relationships: {
+          app: { data: { type: "apps", id: app.id } },
+          territoryAvailabilities: {
+            data: rows.map { |r| { type: "territoryAvailabilities", id: r[:local_id] } }
+          }
+        }
+      },
+      included: rows.map do |r|
+        {
+          type: "territoryAvailabilities",
+          id: r[:local_id],
+          attributes: { available: r[:available] },
+          relationships: {
+            territory: { data: { type: "territories", id: r[:iso3] } }
+          }
+        }
+      end
+    }
+    client.post("v1/bulkUpdateAppAvailabilities", body)
+    UI.success("Updated App Store availability — #{target.size} territories enabled.")
   end
 end
