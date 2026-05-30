@@ -503,9 +503,13 @@ without its migration is not "done."
    render on-device — google_fonts/client constraint.)
    _Original notes:_ widget test for hidden/shown + 2FA hint.
 5. **`switchAccount` cross-wallet** + `AccountsManagementScreen` cross-wallet
-   selection.
-   **Tests:** pure routing helper — same-wallet account → fast path (no
-   switch); different-wallet account → switch-first then `setCurrent`.
+   selection. ✅ **DONE.** The accounts screen already lists accounts across
+   all wallets; tapping one on a non-active wallet now switches that wallet
+   first via `ensureUnlocked(walletId:)` (password prompt), then `setCurrent`.
+   Same-wallet / already-current keep the fast path. Pure
+   `LibwalletBackend.accountSwitchRoute` drives it;
+   `test/account_switch_route_test.dart` covers the truth table.
+   _Original notes:_ same-wallet → fast path; cross-wallet → switch-first.
 6. **Receive flow:** drop disconnect; add-to-list without activating; offer
    "Use it now".
    **Tests:** `importViaDeviceTransfer` leaves the active wallet/`_walletId`
