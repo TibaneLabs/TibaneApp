@@ -1019,18 +1019,21 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
     try {
       final client = await _getClient();
+      debugPrint('[switch] get wallet $walletId');
       final w = await client.wallets.get(walletId);
       final keyIds = _extractKeyIdsByType(w);
       final passwordKeyId = keyIds['Password'];
       final storeKeyId = keyIds['StoreKey'];
+      debugPrint('[switch] curve=${w.curve} keys=${keyIds.keys.join(",")}');
       if (passwordKeyId == null || storeKeyId == null) {
         _error = 'Wallet is missing required key shares';
         notifyListeners();
         return SwitchResult.error;
       }
 
-      // Read THIS wallet's device share. OS keystore needs no password; the
-      // fallback blob throws WrongPasswordException on a bad password.
+      // Read THIS wallet's device share (keystore only — no libwallet FFI).
+      // OS keystore needs no password; the fallback blob throws
+      // WrongPasswordException on a bad password.
       String? priv;
       try {
         priv = await _keystore.readDeviceShare(
@@ -1048,7 +1051,18 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         return SwitchResult.error;
       }
 
+      // Make this wallet's account current BEFORE deriving against it, so
+      // libwallet's session points at the right wallet/curve. The account
+      // type must match the wallet's curve, or the TSS layer derives the
+      // wrong pubkey type and crashes (ToEd25519PubKey on a non-ed25519
+      // point).
+      debugPrint('[switch] resolve account');
+      final account = await _resolveAccount(client, w);
+      debugPrint('[switch] setCurrent ${account.id} type=${account.type}');
+      await client.accounts.setCurrent(account.id);
+
       // Validate the password against the Password share without signing.
+      debugPrint('[switch] derivePassword keyId=$passwordKeyId');
       try {
         await client.storeKeys.derivePassword(
           password: password!,
@@ -1059,9 +1073,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         notifyListeners();
         return SwitchResult.wrongPassword;
       }
-
-      final account = await _resolveAccount(client, walletId);
-      await client.accounts.setCurrent(account.id);
+      debugPrint('[switch] derived OK — committing active state');
 
       // Swap the active in-memory set. Overwriting these fields locks the
       // previously-active wallet (its password + device share leave memory).
@@ -1078,31 +1090,37 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       final storeKeyPub = w.keys.firstWhere((k) => k.type == 'StoreKey').key;
       await _persist(storeKeyPublic: storeKeyPub);
       notifyListeners();
-      unawaited(ensureSolanaDefault());
+      // Only normalize to Solana for ed25519 wallets — forcing it for a
+      // secp256k1 wallet mismatches the account's curve.
+      if (w.curve == 'ed25519') unawaited(ensureSolanaDefault());
+      debugPrint('[switch] complete');
       return SwitchResult.ok;
     } catch (e) {
       _error = 'Could not switch wallet: $e';
-      debugPrint(_error);
+      debugPrint('[switch] FAILED: $e');
       notifyListeners();
       return SwitchResult.error;
     }
   }
 
-  /// Pick the account to activate for [walletId]: an existing Solana account
-  /// if any, else the first account, else a freshly-derived Solana account.
-  Future<Account> _resolveAccount(
-    LibwalletClient client,
-    String walletId,
-  ) async {
-    final accounts = await client.accounts.list(wallet: walletId);
-    for (final a in accounts) {
-      if (a.type == 'solana') return a;
+  /// Pick the account to activate for [wallet]: an existing Solana account if
+  /// any, else the first existing account, else a freshly-derived default
+  /// account whose type MATCHES the wallet's curve (ed25519 → solana,
+  /// otherwise → ethereum). Creating a mismatched account type makes
+  /// libwallet's TSS layer derive the wrong key type and crash.
+  Future<Account> _resolveAccount(LibwalletClient client, Wallet wallet) async {
+    final accounts = await client.accounts.list(wallet: wallet.id);
+    if (accounts.isNotEmpty) {
+      for (final a in accounts) {
+        if (a.type == 'solana') return a;
+      }
+      return accounts.first;
     }
-    if (accounts.isNotEmpty) return accounts.first;
+    final isEd = wallet.curve == 'ed25519';
     return client.accounts.create(
-      name: 'Solana',
-      wallet: walletId,
-      type: 'solana',
+      name: isEd ? 'Solana' : 'Ethereum',
+      wallet: wallet.id,
+      type: isEd ? 'solana' : 'ethereum',
       index: 0,
     );
   }
@@ -1116,7 +1134,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       final client = await _getClient();
       final w = await client.wallets.get(walletId);
       final keyIds = _extractKeyIdsByType(w);
-      final account = await _resolveAccount(client, walletId);
+      final account = await _resolveAccount(client, w);
       _walletId = walletId;
       _accountId = account.id;
       _publicKey = account.address;

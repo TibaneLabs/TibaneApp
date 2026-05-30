@@ -459,6 +459,7 @@ class WalletService extends ChangeNotifier {
         await _auth.logout();
       }
       final (:message, :ticket) = await _auth.getTicket(addr);
+      debugPrint('[auth] signMessage for $addr');
       final signature = await signMessage(
         Uint8List.fromList(utf8.encode(message)),
       );
