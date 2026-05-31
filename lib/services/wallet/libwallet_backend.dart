@@ -122,9 +122,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   Future<bool> hasLocalDeviceShare([String? walletId]) async {
     final id = walletId ?? _walletId;
     if (id == null) return false;
-    final has = await _keystore.hasDeviceShare(id);
-    debugPrint('[unlock] hasLocalDeviceShare($id) = $has');
-    return has;
+    return _keystore.hasDeviceShare(id);
   }
 
   /// Wallet handle on the libwallet backend; null until a wallet exists.
@@ -757,12 +755,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
           break;
         }
       }
-      final keyDesc = wallet.keys
-          .map((k) => '${k.type}(keyLen=${k.key.length})')
-          .join(',');
-      debugPrint(
-        '[recovery] wallet=$_walletId curve=${wallet.curve} keys=$keyDesc',
-      );
       if (remoteKey == null || remoteKey.key.isEmpty) {
         _error = 'No remote key configured on this wallet';
         notifyListeners();
