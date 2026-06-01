@@ -1839,15 +1839,31 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     String? asset,
   }) async {
     final client = await _getClient();
+    final resolvedAsset = await _resolveAssetKey(client, asset);
     final tx = UnsignedTransaction(
       type: 'transfer',
       to: to,
       from: _accountId,
       amount: amount,
-      asset: asset,
+      asset: resolvedAsset,
       priorityLevel: 'medium',
     );
-    return client.transactions.simulate(tx);
+    // `validate` is the authoritative pre-flight: it builds the tx and throws
+    // on real problems (insufficient funds, bad recipient, rent). It runs the
+    // same RPCs simulate would (balance, rent-exemption, account info, fees).
+    await client.transactions.validate(tx);
+    // `simulate` is best-effort enrichment (compute units, program-log
+    // warnings). On Solana it can't run from an UnsignedTransaction — the
+    // backend errors "solana tx has no raw bytes; call validate first"
+    // because validate's built raw tx isn't carried back into simulate (the
+    // UnsignedTransaction has no raw field). Since validate already vetted
+    // the tx, degrade gracefully to a benign preview instead of failing.
+    try {
+      return await client.transactions.simulate(tx);
+    } catch (e) {
+      debugPrint('simulate unavailable (validate already vetted tx): $e');
+      return const TransactionSimulation(chain: 'solana', willRevert: false);
+    }
   }
 
   /// Send SOL or an SPL token. Returns the broadcast transaction.
@@ -1866,15 +1882,31 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
           ),
         )
         .toList();
+    final resolvedAsset = await _resolveAssetKey(client, asset);
     final tx = UnsignedTransaction(
       type: 'transfer',
       to: to,
       from: _accountId,
       amount: amount,
-      asset: asset,
+      asset: resolvedAsset,
       priorityLevel: 'medium',
     );
+    // `validate` requires an explicit asset and surfaces any build/funding
+    // problem before we pull signing keys; signAndSend then builds, signs,
+    // and broadcasts.
+    await client.transactions.validate(tx);
     return client.transactions.signAndSendSimple(tx, keys: keys);
+  }
+
+  /// Resolve the canonical asset key for a transfer. SPL transfers pass an
+  /// explicit `solana.mainnet.<mint>` key; native SOL passes null, which
+  /// libwallet's `validate` rejects ("asset is required"), so fill in the
+  /// network's native key `<type>.<chainId>.NATIVE` (e.g. solana.mainnet.NATIVE).
+  Future<String> _resolveAssetKey(LibwalletClient client, String? asset) async {
+    if (asset != null && asset.isNotEmpty) return asset;
+    final net = _currentNetwork ?? await client.networks.getCurrent();
+    _currentNetwork = net;
+    return '${net.type.name}.${net.chainId}.NATIVE';
   }
 
   @override
