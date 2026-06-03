@@ -28,6 +28,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Tibane needs camera access only when you choose to scan a device-transfer QR code to move a wallet from another device. The camera is not used otherwise.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Tibane needs access to your photo library only when you choose to import a wallet backup that was saved there. The app does not read photos otherwise.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

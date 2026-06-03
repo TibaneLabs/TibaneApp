@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import 'device_transfer_send_screen.dart';
 import 'inapp_export_screen.dart';
 import 'inapp_unlock_screen.dart';
 import 'share_labels.dart';
@@ -87,6 +88,24 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const InAppExportScreen()));
+  }
+
+  /// Move this wallet to another device via QR device transfer. The send
+  /// screen switches to / unlocks this wallet first if it isn't the active
+  /// unlocked one (only the active wallet's StoreKey share can be released).
+  Future<void> _transfer() async {
+    final wallet = _wallet;
+    if (wallet == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DeviceTransferSendScreen(
+          walletId: wallet.id,
+          walletName: wallet.name,
+        ),
+      ),
+    );
+    // Switching to this wallet to transfer it may have changed active state.
+    if (mounted) _load();
   }
 
   /// Make this (non-active) wallet the in-use one. Routes through the unlock
@@ -224,6 +243,20 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                   _AccountsCard(accounts: _accounts),
                   const SizedBox(height: 20),
                   ..._buildUseSection(),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _transfer,
+                      icon: const Icon(Icons.send_to_mobile, size: 16),
+                      label: const Text('Transfer to new device'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: TibaneColors.text,
+                        side: const BorderSide(color: TibaneColors.border),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   _ActionsRow(onBackup: _backup, onRemove: _remove),
                 ],
               ),

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import 'device_transfer_receive_screen.dart';
 import 'inapp_create_screen.dart';
 import 'inapp_import_mnemonic_screen.dart';
 import 'share_labels.dart';
@@ -101,6 +102,19 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
       appBar: AppBar(
         title: const Text('Wallets'),
         actions: [
+          IconButton(
+            tooltip: 'Receive from another device',
+            icon: const Icon(Icons.qr_code_scanner),
+            onPressed: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const DeviceTransferReceiveScreen(),
+                ),
+              );
+              // A received wallet is added to the list — reload on return.
+              if (mounted) _load();
+            },
+          ),
           IconButton(
             tooltip: 'Import mnemonic',
             icon: const Icon(Icons.download_outlined),
