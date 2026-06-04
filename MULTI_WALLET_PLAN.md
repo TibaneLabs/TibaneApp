@@ -510,15 +510,33 @@ without its migration is not "done."
    `LibwalletBackend.accountSwitchRoute` drives it;
    `test/account_switch_route_test.dart` covers the truth table.
    _Original notes:_ same-wallet → fast path; cross-wallet → switch-first.
-6. **Receive flow:** drop disconnect; add-to-list without activating; offer
-   "Use it now".
-   **Tests:** `importViaDeviceTransfer` leaves the active wallet/`_walletId`
-   unchanged and writes the received share under the new wallet's id (no
-   clobber); no disconnect occurs when a wallet already exists.
+6. **Receive flow (QR device transfer):** drop disconnect; add-to-list
+   without activating; offer "Use it now". ✅ **DONE.**
+   `importViaDeviceTransfer` no longer disconnects — a received wallet is
+   ADDED to `client.wallets.list()`. Its share is held in a SEPARATE pending
+   slot (`_pendingWalletId/_pendingName/_pendingPasswordKeyId/`
+   `_pendingStoreKeyPriv`) so the active wallet is never clobbered.
+   `activateAfterTransfer(password, {makeActive})` validates the password,
+   writes the share under the NEW wallet's id (per-wallet keystore), then
+   either switches to it ("Add & switch to it") or leaves the active wallet
+   in place ("Add to my wallets, keep current"); a first/only wallet becomes
+   active automatically. `abandonPendingTransfer` rolls back an un-activated
+   transfer. `DeviceTransferReceiveScreen` + "Receive from another device" in
+   the Wallets app bar. Pure `validateTransferAcceptance` (curve/share gate)
+   and `friendlyTransferError` extracted for tests.
+   `test/device_transfer_test.dart` covers the acceptance-gate rejection
+   paths, the error-code mapping, and the per-wallet keystore
+   no-clobber/abandon invariants. (Full import round-trip needs two devices +
+   the broker → on-device.)
 7. **Send/transfer:** allow transferring a non-active wallet by switching
-   first.
-   **Tests:** decision helper — non-active target → switch-first; active
-   target → export directly.
+   first. ✅ **DONE.** `DeviceTransferSendScreen` (launched from each wallet's
+   detail screen via "Transfer to new device") switches to / unlocks the
+   target wallet first — only the active wallet's StoreKey share is in memory
+   to release — driven by the pure `deviceTransferSendRoute(active, target,
+   unlocked)` → `switchFirst | unlockFirst | exportDirectly`. Backend:
+   `startDeviceTransferExport` / `confirmDeviceTransferExport` /
+   `cancelDeviceTransferExport`. `test/device_transfer_test.dart` covers the
+   send-route truth table. (Full export round-trip → on-device.)
 8. **`removeWallet`** (replace `disconnect` for per-wallet removal) + active-
    wallet-removal handling. ✅ **DONE.** `removeWallet(walletId)` deletes the
    wallet + only its per-wallet device share; removing the active wallet
