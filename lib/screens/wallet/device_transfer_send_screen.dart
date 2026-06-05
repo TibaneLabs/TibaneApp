@@ -105,6 +105,12 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
     try {
       final client = await backend.ensureClient();
       if (!mounted) return;
+      // Report foreground so libwallet keeps its background Spot client active
+      // during the time-sensitive pairing handshake (the new device's pair
+      // request arrives over Spot).
+      try {
+        await client.lifecycle.update('foreground');
+      } catch (_) {/* best-effort */}
       // Subscribe BEFORE opening the session so we can't miss pair_received.
       _eventSub = client.events.listen(_onEvent);
       final session = await backend.startDeviceTransferExport(widget.walletId);
@@ -116,10 +122,12 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
       });
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     } catch (e) {
+      debugPrint('[device-transfer] source start/export failed: $e');
       if (!mounted) return;
       setState(() {
         _phase = _Phase.error;
-        _message = 'Could not start the transfer: $e';
+        // Map known codes (e.g. local_offline) to friendly copy.
+        _message = LibwalletBackend.friendlyTransferError(e);
       });
     }
   }
@@ -142,9 +150,6 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
   }
 
   void _onEvent(LibwalletEvent e) {
-    if (e.event == 'online_status' || e.event.startsWith('wallet:transfer:')) {
-      debugPrint('[device-transfer] export event: ${e.event} ${e.data}');
-    }
     final s = _session;
     if (s == null || _pairHandled) return;
     if (e.event == 'wallet:transfer:pair_received' && e.data['sid'] == s.sid) {
@@ -171,6 +176,7 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
       _ticker?.cancel();
       setState(() => _phase = _Phase.done);
     } catch (e) {
+      debugPrint('[device-transfer] source confirmDeviceTransferExport failed: $e');
       if (!mounted) return;
       setState(() {
         _phase = _Phase.error;

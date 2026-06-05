@@ -1970,24 +1970,15 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     notifyListeners();
     DeviceTransferImportResult? result;
     LibwalletClient? client;
-    StreamSubscription<LibwalletEvent>? diagSub;
     try {
       client = await _getClient();
-      // Surface transfer/online events while the request is in flight — these
-      // tell us whether the broker pushed anything back during pairing.
-      diagSub = client.events
-          .where((e) =>
-              e.event == 'online_status' ||
-              e.event.startsWith('wallet:transfer:'))
-          .listen((e) => debugPrint(
-              '[device-transfer] event during import: ${e.event} ${e.data}'));
-      debugPrint('[device-transfer] importFromDevice…');
+      // Report foreground so libwallet's background Spot client is active for
+      // the pairing handshake (the request routes over Spot).
+      try {
+        await client.lifecycle.update('foreground');
+      } catch (_) {/* best-effort */}
       // Blocks until the old device confirms (or a coded error fires).
       result = await client.wallets.importFromDevice(pairingCode);
-      debugPrint(
-        '[device-transfer] received walletId=${result.walletId} '
-        'shares=${result.deviceShares.length}',
-      );
 
       final wallet = await client.wallets.get(result.walletId);
       final keyIds = _extractKeyIdsByType(wallet);
@@ -2027,7 +2018,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _pendingName = wallet.name.isNotEmpty ? wallet.name : 'In-app wallet';
       _pendingPasswordKeyId = passwordKeyId;
       _pendingStoreKeyPriv = share.privateKey;
-      debugPrint('[device-transfer] pending wallet ${wallet.id} awaits password');
       notifyListeners();
       return true;
     } catch (e) {
@@ -2046,7 +2036,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       notifyListeners();
       return false;
     } finally {
-      unawaited(diagSub?.cancel());
       _connecting = false;
       notifyListeners();
     }
@@ -2067,6 +2056,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     final storeKeyPriv = _pendingStoreKeyPriv;
     if (walletId == null || passwordKeyId == null || storeKeyPriv == null) {
       _error = 'No transferred wallet to activate';
+      debugPrint('[device-transfer] activate: $_error');
       notifyListeners();
       return false;
     }
@@ -2078,8 +2068,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
           password: password,
           walletKeyId: passwordKeyId,
         );
-      } on LibwalletException {
+      } on LibwalletException catch (e) {
         _error = 'Wrong password for this wallet';
+        debugPrint('[device-transfer] activate: password validation failed: $e');
         notifyListeners();
         return false;
       }
@@ -2101,6 +2092,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         if (res != SwitchResult.ok) {
           _error = 'Wallet added, but activating it failed — '
               'open it from the wallet list.';
+          debugPrint(
+            '[device-transfer] activate: switchWallet returned $res '
+            '(wallet $walletId added but not made active)',
+          );
           notifyListeners();
           return true; // the wallet IS added; activation is best-effort
         }
@@ -2167,13 +2162,16 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
   /// Map a device-transfer failure to a user-facing message. The libwallet
   /// FFI surfaces the wire code inside [LibwalletException.message]. Static +
-  /// pure so it's unit-testable without a client.
-  @visibleForTesting
+  /// pure so the UI can reuse it and it's unit-testable without a client.
   static String friendlyTransferError(Object e) {
     if (e is StateError) return e.message;
     if (e is LibwalletException) {
       final m = e.message;
       bool has(String c) => m == c || m.contains(c);
+      if (has('local_offline')) {
+        return "This device isn't connected to the transfer network yet. "
+            'Check your internet connection and try again in a moment.';
+      }
       if (has('url_malformed') || has('token_invalid')) {
         return 'That QR code is not a valid device-transfer code.';
       }
@@ -2235,12 +2233,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       throw StateError('Unlock the wallet before transferring it');
     }
     final client = await _getClient();
-    final session = await client.wallets.exportToDevice(walletId);
-    debugPrint(
-      '[device-transfer] exportToDevice → sid=${session.sid} '
-      'expiresAt=${session.expiresAt.toIso8601String()}',
-    );
-    return session;
+    return client.wallets.exportToDevice(walletId);
   }
 
   /// Approve a pending transfer after the new device connected
@@ -2259,7 +2252,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       privateKey: storeKeyPriv,
     );
     await client.wallets.exportToDeviceConfirm(sid: sid, deviceShares: [entry]);
-    debugPrint('[device-transfer] exportToDeviceConfirm sent for sid=$sid');
   }
 
   /// Cancel / decline a pending transfer session. Best-effort and idempotent —
@@ -2268,7 +2260,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     try {
       final client = await _getClient();
       await client.wallets.exportToDeviceCancel(sid);
-      debugPrint('[device-transfer] exportToDeviceCancel sent for sid=$sid');
     } catch (e) {
       debugPrint('[device-transfer] cancel failed for sid=$sid: $e');
     }

@@ -191,6 +191,13 @@ void main() {
       expect(map('session_not_found'), contains('no longer active'));
     });
 
+    test('maps local_offline (0.4.48) to an offline-device message', () {
+      expect(
+        LibwalletBackend.friendlyTransferError(exc('local_offline')),
+        contains("isn't connected to the transfer network"),
+      );
+    });
+
     test('falls back to "Transfer failed: <message>" for unknown codes', () {
       expect(
         LibwalletBackend.friendlyTransferError(exc('some_unmapped_code')),
