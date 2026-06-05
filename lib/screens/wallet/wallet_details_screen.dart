@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
 
@@ -289,35 +288,6 @@ class _HeaderCard extends StatelessWidget {
             'In-app MPC wallet · $threshold-of-${wallet.keys.length} '
             '${wallet.curve == "ed25519" ? "EdDSA (Solana)" : "ECDSA (EVM/Bitcoin)"}',
             style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            'MASTER PUBLIC KEY',
-            style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: SelectableText(
-                  wallet.pubkey,
-                  style: monoStyle(fontSize: 11),
-                ),
-              ),
-              IconButton(
-                tooltip: 'Copy',
-                icon: const Icon(Icons.copy, size: 16),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: wallet.pubkey));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Public key copied'),
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
-                },
-              ),
-            ],
           ),
         ],
       ),
