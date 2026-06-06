@@ -141,10 +141,8 @@ class WalletService extends ChangeNotifier {
 
   Future<void> disconnect() async {
     await active.disconnect();
-    _solBalance = BigInt.zero;
-    _chiefPussyBalance = BigInt.zero;
-    _solFiatUsd = 0;
-    _chiefPussyFiatUsd = 0;
+    resetSessionState();
+    _authedAddress = null;
     await _auth.logout();
     notifyListeners();
   }
@@ -153,6 +151,18 @@ class WalletService extends ChangeNotifier {
     if (sol != null) _solBalance = sol;
     if (chiefPussy != null) _chiefPussyBalance = chiefPussy;
     notifyListeners();
+  }
+
+  /// Zero the session-scoped balance/fiat snapshot. Called when the active
+  /// wallet or account changes so stale figures don't linger before the
+  /// fresh fetch lands. The per-address tx cache isolates automatically
+  /// (it's keyed by address), so it's left intact.
+  @visibleForTesting
+  void resetSessionState() {
+    _solBalance = BigInt.zero;
+    _chiefPussyBalance = BigInt.zero;
+    _solFiatUsd = 0;
+    _chiefPussyFiatUsd = 0;
   }
 
   /// Convenience for code that wants per-asset fiat values without
@@ -394,7 +404,23 @@ class WalletService extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Last active address we reacted to — drives reset + re-auth on change.
+  String? _lastAddress;
+
   void _onBackendChanged() {
+    final addr = active.publicKey;
+    if (addr != _lastAddress) {
+      _lastAddress = addr;
+      // The active wallet/account changed: drop stale balances so the
+      // previous wallet's figures don't linger before the fresh fetch. The
+      // per-address tx cache isolates on its own. The server session is
+      // re-minted for the new address by the next _authenticateWithServer
+      // call (now address-aware) — e.g. useLibwallet right after a switch.
+      //
+      // NOTE: a live WalletConnect bridge still exposes the previous account;
+      // emitting accountsChanged to dApps on switch is tracked separately.
+      resetSessionState();
+    }
     notifyListeners();
   }
 
@@ -410,8 +436,15 @@ class WalletService extends ChangeNotifier {
   // both did a full getTicket → sign → solLogin. Coalesce onto one future.
   Future<void>? _authFuture;
 
+  // Address the current server session was authenticated for. Switching
+  // wallets/accounts changes the address, so the session must be re-minted
+  // for the new one (safe after the libwallet 0.4.47 FROST-sign fix).
+  String? _authedAddress;
+
   Future<void> _authenticateWithServer() {
-    if (_auth.isAuthenticated) return Future.value();
+    if (_auth.isAuthenticated && _authedAddress == publicKey) {
+      return Future.value();
+    }
     return _authFuture ??= _runAuthenticate();
   }
 
@@ -419,12 +452,17 @@ class WalletService extends ChangeNotifier {
     try {
       final addr = publicKey;
       if (addr == null) return;
+      // A session for a different address no longer applies — drop it first.
+      if (_auth.isAuthenticated && _authedAddress != addr) {
+        await _auth.logout();
+      }
       final (:message, :ticket) = await _auth.getTicket(addr);
       final signature = await signMessage(
         Uint8List.fromList(utf8.encode(message)),
       );
       if (signature == null) return;
       await _auth.login(ticket, signature);
+      _authedAddress = addr;
       notifyListeners();
     } catch (e) {
       debugPrint('authenticateWithServer failed: $e');

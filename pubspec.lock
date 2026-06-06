@@ -433,10 +433,10 @@ packages:
     dependency: "direct main"
     description:
       name: libwallet
-      sha256: "36025ef5bf1af6b6460dbb8e4360dfee5708bc37d68fe2a30ae57111ce729568"
+      sha256: "5b9350ced4fa585924627597e9a0632698cf7edc16f0143bfc03c6ab545c8773"
       url: "https://pub.dev"
     source: hosted
-    version: "0.4.46"
+    version: "0.4.55"
   lints:
     dependency: transitive
     description:
@@ -485,6 +485,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.0"
+  mobile_scanner:
+    dependency: "direct main"
+    description:
+      name: mobile_scanner
+      sha256: c92c26bf2231695b6d3477c8dcf435f51e28f87b1745966b1fe4c47a286171ce
+      url: "https://pub.dev"
+    source: hosted
+    version: "7.2.0"
   native_toolchain_c:
     dependency: transitive
     description:

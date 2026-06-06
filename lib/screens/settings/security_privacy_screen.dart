@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../services/wallet/libwallet_backend.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../widgets/keyboard_safe_form.dart';
 import '../../widgets/tibane_card.dart';
 import '../settings_screen.dart' show SettingsTile;
 import '../wallet/cloud_backup_screen.dart';
@@ -484,8 +485,7 @@ class _PasswordCachePromptState extends State<_PasswordCachePrompt> {
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: const Text("Confirm password")),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+        child: KeyboardSafeForm(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

@@ -4,6 +4,7 @@ import '../../theme/tibane_theme.dart';
 import '../contacts/contacts_screen.dart';
 import '../settings_screen.dart' show SettingsTile;
 import '../wallet/accounts_management_screen.dart';
+import '../wallet/device_transfer_receive_screen.dart';
 import '../wallet/inapp_export_screen.dart';
 import '../wallet/inapp_import_screen.dart';
 import '../wallet/networks_screen.dart';
@@ -45,6 +46,17 @@ class WalletsAccountsScreen extends StatelessWidget {
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const WalletsManagementScreen(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              SettingsTile(
+                icon: Icons.qr_code_scanner,
+                title: 'Receive wallet from another device',
+                subtitle: 'Scan a QR to move a wallet from your old phone',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const DeviceTransferReceiveScreen(),
                   ),
                 ),
               ),

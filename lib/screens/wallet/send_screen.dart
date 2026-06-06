@@ -9,6 +9,7 @@ import '../../constants/solana_constants.dart';
 import '../../services/jupiter_service.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../widgets/keyboard_safe_form.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import 'inapp_unlock_screen.dart';
@@ -36,7 +37,6 @@ class _SendScreenState extends State<SendScreen> {
   final _amountCtrl = TextEditingController();
   bool _sending = false;
   String? _error;
-  String? _successHash;
 
   // ENS / SNS resolution state for the recipient field.
   Timer? _resolveDebounce;
@@ -131,9 +131,7 @@ class _SendScreenState extends State<SendScreen> {
       _decimals = decimals;
       _imageUrl = imageUrl;
       _amountCtrl.clear();
-      _error = null;
-      _successHash = null;
-    });
+      _error = null;    });
   }
 
   Future<void> _openTokenPicker() async {
@@ -274,9 +272,7 @@ class _SendScreenState extends State<SendScreen> {
     // keys come out.
     setState(() {
       _sending = true;
-      _error = null;
-      _successHash = null;
-    });
+      _error = null;    });
     TransactionSimulation? sim;
     try {
       final wallet = context.read<WalletService>();
@@ -304,9 +300,7 @@ class _SendScreenState extends State<SendScreen> {
 
     setState(() {
       _sending = true;
-      _error = null;
-      _successHash = null;
-    });
+      _error = null;    });
 
     final wallet = context.read<WalletService>();
     try {
@@ -316,17 +310,89 @@ class _SendScreenState extends State<SendScreen> {
         asset: _assetKey,
       );
       if (!mounted) return;
-      setState(() {
-        _successHash = tx.hash;
-        _amountCtrl.clear();
-      });
+      _amountCtrl.clear();
       wallet.refreshBalances();
+      // Show a success modal with the tx id; OK returns to the previous screen.
+      await _showSuccessDialog(tx.hash);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  /// Success modal shown after a broadcast: confirmation + the transaction id
+  /// with a copy button. Pressing OK closes the modal and returns to the
+  /// previous screen.
+  Future<void> _showSuccessDialog(String? hash) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: TibaneColors.card,
+        title: Row(
+          children: const [
+            Icon(Icons.check_circle, color: TibaneColors.cyan, size: 22),
+            SizedBox(width: 8),
+            Text('Sent'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Your $_symbol transfer was sent successfully.',
+              style: const TextStyle(color: TibaneColors.textMuted),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'TRANSACTION ID',
+              style: TextStyle(color: TibaneColors.textDim, fontSize: 10),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(
+                  child: SelectableText(
+                    hash ?? '(unavailable)',
+                    style: monoStyle(fontSize: 12),
+                  ),
+                ),
+                if (hash != null)
+                  IconButton(
+                    tooltip: 'Copy',
+                    icon: const Icon(Icons.copy, size: 18),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: hash));
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(
+                          content: Text('Transaction ID copied'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            style: FilledButton.styleFrom(
+              backgroundColor: TibaneColors.orange,
+              foregroundColor: TibaneColors.black,
+            ),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    // Return to the previous screen after the user acknowledges.
+    if (mounted) Navigator.of(context).pop();
   }
 
   Future<bool?> _showReviewSheet(
@@ -361,8 +427,7 @@ class _SendScreenState extends State<SendScreen> {
           // Tap outside any input to dismiss the iOS numeric keyboard.
           onTap: () => FocusScope.of(context).unfocus(),
           behavior: HitTestBehavior.translucent,
-          child: Padding(
-            padding: const EdgeInsets.all(24),
+          child: KeyboardSafeForm(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -472,40 +537,6 @@ class _SendScreenState extends State<SendScreen> {
                       color: TibaneColors.error,
                       fontSize: 13,
                     ),
-                  ),
-                ],
-                if (_successHash != null) ...[
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.check_circle,
-                        color: TibaneColors.cyan,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Sent!',
-                              style: TextStyle(
-                                color: TibaneColors.cyan,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              shortenAddress(_successHash!, chars: 12),
-                              style: monoStyle(
-                                fontSize: 11,
-                                color: TibaneColors.textMuted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
                   ),
                 ],
                 const Spacer(),

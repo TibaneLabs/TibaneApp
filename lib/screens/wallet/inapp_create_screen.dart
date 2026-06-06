@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../widgets/keyboard_safe_form.dart';
 import 'inapp_import_screen.dart';
 
 /// Three-step creation flow for the in-app MPC wallet:
@@ -199,14 +200,13 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: const Text('Create in-app wallet')),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: switch (_step) {
-            _Step.identifier => _buildIdentifier(),
-            _Step.code => _buildCode(),
-            _Step.password || _Step.creating => _buildPassword(),
-          },
-        ),
+        child: switch (_step) {
+          _Step.identifier => KeyboardSafeForm(child: _buildIdentifier()),
+          _Step.code => KeyboardSafeForm(child: _buildCode()),
+          _Step.password || _Step.creating => KeyboardSafeForm(
+            child: _buildPassword(),
+          ),
+        },
       ),
     );
   }

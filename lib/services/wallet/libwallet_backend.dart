@@ -33,6 +33,33 @@ class TokenSearchResult {
   });
 }
 
+/// Outcome of [LibwalletBackend.switchWallet]. The UI branches on this to
+/// prompt for a password, route into 2FA recovery, or surface an error.
+enum SwitchResult { ok, needsPassword, wrongPassword, needsRecovery, error }
+
+/// Pure routing decision for a wallet switch — extracted so it can be
+/// unit-tested without a libwallet client. See
+/// [LibwalletBackend.planWalletSwitch].
+enum SwitchPlan { alreadyActive, needsRecovery, needsPassword, proceed }
+
+/// What must happen before the device-transfer SEND side can release a
+/// wallet's StoreKey share. See [LibwalletBackend.deviceTransferSendRoute].
+enum DeviceTransferSendRoute {
+  /// Target isn't the active wallet — switch to it (which also unlocks) first.
+  switchFirst,
+
+  /// Target is active but locked — unlock it to load the StoreKey share.
+  unlockFirst,
+
+  /// Target is active and unlocked — open the export session now.
+  exportDirectly,
+}
+
+/// Routing for tapping an account: it may already be current, live on the
+/// active wallet (just `setCurrent`), or belong to a different wallet (switch
+/// that wallet first). See [LibwalletBackend.accountSwitchRoute].
+enum AccountSwitchRoute { alreadyCurrent, sameWallet, crossWallet }
+
 /// In-app MPC wallet backend. 2-of-3 TSS: device share + remote email share + password.
 ///
 /// Signing uses libwallet 0.3.5's direct `Account:sign*` endpoints with the
@@ -76,6 +103,18 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   String? _passwordKeyId;
   String? _password;
 
+  // Device-transfer receive scratch state. A wallet received from another
+  // device lands in libwallet's local store and its StoreKey share is held
+  // here until the user enters the wallet password (activateAfterTransfer).
+  // Kept SEPARATE from the active-wallet fields above so receiving never
+  // clobbers the currently-active wallet (multi-wallet: add, don't replace).
+  // Only the bits activate needs are stashed — switchWallet re-derives the
+  // rest from client.wallets.get() when the wallet is made active.
+  String? _pendingWalletId;
+  String? _pendingName;
+  String? _pendingPasswordKeyId;
+  String? _pendingStoreKeyPriv;
+
   bool _connecting = false;
   String? _error;
 
@@ -100,12 +139,24 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// True when a wallet exists on this device (but may be locked).
   bool get hasWallet => _walletId != null;
 
+  /// True while a device-transfer has been received but not yet activated
+  /// (awaiting the wallet password). Unique to the post-import/pre-activate
+  /// window — the active-wallet fields are untouched during this time.
+  bool get hasPendingTransfer => _pendingWalletId != null;
+
+  /// Display name of the wallet received via device transfer, if any.
+  String? get pendingTransferName => _pendingName;
+
   /// True when the local SecureKeystore (or its password-encrypted
   /// fallback blob) holds the device-share private. False after a
   /// cross-device backup import, or any time the device share has
   /// gone missing — used by the unlock screen to route between the
   /// normal password prompt and the 2FA recovery flow.
-  Future<bool> hasLocalDeviceShare() => _keystore.hasDeviceShare();
+  Future<bool> hasLocalDeviceShare([String? walletId]) async {
+    final id = walletId ?? _walletId;
+    if (id == null) return false;
+    return _keystore.hasDeviceShare(id);
+  }
 
   /// Wallet handle on the libwallet backend; null until a wallet exists.
   String? get walletId => _walletId;
@@ -372,6 +423,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     _storeKeyId = prefs.getString(_prefsStoreKeyId);
     _remoteKeyId = prefs.getString(_prefsRemoteKeyId);
     _passwordKeyId = prefs.getString(_prefsPasswordKeyId);
+    // One-shot, idempotent: move any legacy single-slot device share to the
+    // active wallet's per-wallet keys before anything reads it.
+    await _keystore.migrateToPerWalletV2(_walletId);
     if (hasWallet) notifyListeners();
   }
 
@@ -557,7 +611,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // by builds before secure storage landed and migrate it on the spot.
       String? priv;
       try {
-        priv = await _keystore.readDeviceShare(password: password);
+        priv = await _keystore.readDeviceShare(
+          walletId: _walletId!,
+          password: password,
+        );
       } on WrongPasswordException {
         _error = 'Unlock failed: wrong password';
         notifyListeners();
@@ -570,7 +627,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
           priv = legacy;
           _storeKeyPriv = legacy;
           _password = password;
-          await _keystore.writeDeviceShare(value: legacy, password: password);
+          await _keystore.writeDeviceShare(
+            walletId: _walletId!,
+            value: legacy,
+            password: password,
+          );
           await prefs.remove(_prefsStorePriv);
           debugPrint('Migrated device share to SecureKeystore');
         }
@@ -593,7 +654,13 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // this, a future restore-from-iCloud-Backup on a new device
       // would leave them with no recoverable device share. Safe to
       // re-run — writeDeviceShare is idempotent.
-      unawaited(_keystore.writeDeviceShare(value: priv, password: password));
+      unawaited(
+        _keystore.writeDeviceShare(
+          walletId: _walletId!,
+          value: priv,
+          password: password,
+        ),
+      );
       notifyListeners();
       // Best-effort: refresh the cached current network so the chip and
       // any swap-availability checks reflect what libwallet thinks is
@@ -676,6 +743,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _password = newPassword;
       if (_storeKeyPriv != null) {
         await _keystore.writeDeviceShare(
+          walletId: _walletId!,
           value: _storeKeyPriv!,
           password: newPassword,
         );
@@ -876,6 +944,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         await prefs.setString(_prefsStoreKeyId, _storeKeyId!);
       }
       await _keystore.writeDeviceShare(
+        walletId: _walletId!,
         value: storePair.privateKey,
         password: _password!,
       );
@@ -900,8 +969,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       final client = await _getClient();
       final acct = await client.accounts.get(accountId);
       if (acct.wallet != _walletId) {
-        _error =
-            'Switching to an account on a different wallet is not yet supported';
+        // Cross-wallet switches must switch the active wallet first (which
+        // needs that wallet's password) — the UI drives that via
+        // ensureUnlocked(walletId:) before calling switchAccount again.
+        _error = 'Switch to that wallet first to use its accounts';
         notifyListeners();
         return false;
       }
@@ -917,6 +988,291 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _error = 'Account switch failed: $e';
       notifyListeners();
       return false;
+    }
+  }
+
+  /// Pure routing decision for tapping an account. Used by the accounts UI
+  /// and unit-tested directly. Picks: no-op, same-wallet `setCurrent`, or
+  /// switch-the-parent-wallet-first then `setCurrent`.
+  static AccountSwitchRoute accountSwitchRoute({
+    required String targetAccountId,
+    required String? currentAccountId,
+    required String targetWalletId,
+    required String? activeWalletId,
+  }) {
+    if (targetAccountId == currentAccountId) {
+      return AccountSwitchRoute.alreadyCurrent;
+    }
+    if (targetWalletId == activeWalletId) return AccountSwitchRoute.sameWallet;
+    return AccountSwitchRoute.crossWallet;
+  }
+
+  /// Pure routing decision for [switchWallet]. Extracted so it can be
+  /// unit-tested without a libwallet client.
+  @visibleForTesting
+  static SwitchPlan planWalletSwitch({
+    required bool targetIsActiveAndUnlocked,
+    required bool hasLocalDeviceShare,
+    required bool passwordProvided,
+  }) {
+    if (targetIsActiveAndUnlocked) return SwitchPlan.alreadyActive;
+    if (!hasLocalDeviceShare) return SwitchPlan.needsRecovery;
+    if (!passwordProvided) return SwitchPlan.needsPassword;
+    return SwitchPlan.proceed;
+  }
+
+  /// Make [walletId] the active, unlocked wallet by reloading its TSS shares
+  /// from libwallet + this device's per-wallet keystore entry. Validates
+  /// [password] against the wallet's Password share and swaps the in-memory
+  /// active state — which LOCKS the previously-active wallet (its
+  /// `_password`/`_storeKeyPriv` are overwritten). Day-to-day signing is
+  /// unchanged (StoreKey + Password). Returns a typed [SwitchResult] so the
+  /// UI can prompt for a password or route to 2FA recovery.
+  Future<SwitchResult> switchWallet(String walletId, {String? password}) async {
+    final hasShare = await _keystore.hasDeviceShare(walletId);
+    final plan = planWalletSwitch(
+      targetIsActiveAndUnlocked: _walletId == walletId && isUnlocked,
+      hasLocalDeviceShare: hasShare,
+      passwordProvided: password != null && password.isNotEmpty,
+    );
+    switch (plan) {
+      case SwitchPlan.alreadyActive:
+        return SwitchResult.ok;
+      case SwitchPlan.needsRecovery:
+        _error =
+            'This wallet has no device share on this device. '
+            'Recover it via 2FA, then try again.';
+        notifyListeners();
+        return SwitchResult.needsRecovery;
+      case SwitchPlan.needsPassword:
+        return SwitchResult.needsPassword;
+      case SwitchPlan.proceed:
+        break;
+    }
+
+    try {
+      final client = await _getClient();
+      final w = await client.wallets.get(walletId);
+      final keyIds = _extractKeyIdsByType(w);
+      final passwordKeyId = keyIds['Password'];
+      final storeKeyId = keyIds['StoreKey'];
+      if (passwordKeyId == null || storeKeyId == null) {
+        _error = 'Wallet is missing required key shares';
+        notifyListeners();
+        return SwitchResult.error;
+      }
+
+      // Read THIS wallet's device share (keystore only — no libwallet FFI).
+      // OS keystore needs no password; the fallback blob throws
+      // WrongPasswordException on a bad password.
+      String? priv;
+      try {
+        priv = await _keystore.readDeviceShare(
+          walletId: walletId,
+          password: password,
+        );
+      } on WrongPasswordException {
+        _error = 'Wrong password for this wallet';
+        notifyListeners();
+        return SwitchResult.wrongPassword;
+      }
+      if (priv == null) {
+        _error = "Could not read this wallet's device share";
+        notifyListeners();
+        return SwitchResult.error;
+      }
+
+      // Make this wallet's account current before deriving against it (so
+      // libwallet's session points at the right wallet), and resolve a
+      // curve-correct account — a mismatched account type would make the TSS
+      // layer derive the wrong key type.
+      final account = await _resolveAccount(client, w);
+      await client.accounts.setCurrent(account.id);
+
+      // Validate the password against the Password share without signing.
+      try {
+        await client.storeKeys.derivePassword(
+          password: password!,
+          walletKeyId: passwordKeyId,
+        );
+      } on LibwalletException {
+        _error = 'Wrong password for this wallet';
+        notifyListeners();
+        return SwitchResult.wrongPassword;
+      }
+
+      // Swap the active in-memory set. Overwriting these fields locks the
+      // previously-active wallet (its password + device share leave memory).
+      _walletId = walletId;
+      _accountId = account.id;
+      _publicKey = account.address;
+      _walletName = w.name.isNotEmpty ? w.name : 'In-app wallet';
+      _storeKeyId = storeKeyId;
+      _remoteKeyId = keyIds['RemoteKey'];
+      _passwordKeyId = passwordKeyId;
+      _storeKeyPriv = priv;
+      _password = password;
+
+      final storeKeyPub = w.keys.firstWhere((k) => k.type == 'StoreKey').key;
+      await _persist(storeKeyPublic: storeKeyPub);
+      notifyListeners();
+      // Only normalize to Solana for ed25519 wallets — forcing it for a
+      // secp256k1 wallet mismatches the account's curve.
+      if (w.curve == 'ed25519') unawaited(ensureSolanaDefault());
+      return SwitchResult.ok;
+    } catch (e) {
+      _error = 'Could not switch wallet: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return SwitchResult.error;
+    }
+  }
+
+  /// Pick the account to activate for [wallet]: an existing Solana account if
+  /// any, else the first existing account, else a freshly-derived default
+  /// account whose type MATCHES the wallet's curve (ed25519 → solana,
+  /// otherwise → ethereum). Creating a mismatched account type makes
+  /// libwallet's TSS layer derive the wrong key type and crash.
+  Future<Account> _resolveAccount(LibwalletClient client, Wallet wallet) async {
+    final accounts = await client.accounts.list(wallet: wallet.id);
+    if (accounts.isNotEmpty) {
+      for (final a in accounts) {
+        if (a.type == 'solana') return a;
+      }
+      return accounts.first;
+    }
+    final isEd = wallet.curve == 'ed25519';
+    return client.accounts.create(
+      name: isEd ? 'Solana' : 'Ethereum',
+      wallet: wallet.id,
+      type: isEd ? 'solana' : 'ethereum',
+      index: 0,
+    );
+  }
+
+  /// Load [walletId]'s metadata into the active slot as active-but-LOCKED
+  /// (no device share / password). Overwriting the active fields locks the
+  /// previously-active wallet. Used by the 2FA recovery entry and after
+  /// removing the active wallet.
+  Future<bool> _loadWalletLocked(String walletId) async {
+    try {
+      final client = await _getClient();
+      final w = await client.wallets.get(walletId);
+      final keyIds = _extractKeyIdsByType(w);
+      final account = await _resolveAccount(client, w);
+      _walletId = walletId;
+      _accountId = account.id;
+      _publicKey = account.address;
+      _walletName = w.name.isNotEmpty ? w.name : 'In-app wallet';
+      _storeKeyId = keyIds['StoreKey'];
+      _remoteKeyId = keyIds['RemoteKey'];
+      _passwordKeyId = keyIds['Password'];
+      _storeKeyPriv = null;
+      _password = null;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Could not load wallet: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Load a wallet (active-but-locked) so the 2FA recovery flow can mint a
+  /// fresh device share for it. See [_loadWalletLocked].
+  Future<bool> loadWalletForRecovery(String walletId) =>
+      _loadWalletLocked(walletId);
+
+  /// Pick the wallet to make active after [removedId] is removed: the first
+  /// id in [walletIds] that isn't the removed one, or null if none remain.
+  @visibleForTesting
+  static String? pickNextActive(List<String> walletIds, String removedId) {
+    for (final id in walletIds) {
+      if (id != removedId) return id;
+    }
+    return null;
+  }
+
+  /// Remove [walletId] from this device: delete it from libwallet's local
+  /// store and delete ITS per-wallet device share (other wallets are
+  /// untouched). If it was the active wallet, the next remaining wallet
+  /// becomes active-but-locked (the user unlocks it when needed), or the
+  /// state clears to "no wallet" if none remain. Returns true on success.
+  Future<bool> removeWallet(String walletId) async {
+    try {
+      final client = await _getClient();
+      final wasActive = walletId == _walletId;
+      await client.wallets.delete(walletId);
+      await _keystore.deleteDeviceShare(walletId);
+      if (wasActive) {
+        // The single-slot biometric cache held the removed wallet's password.
+        await _keystore.deleteBiometricPassword();
+        final remaining = (await client.wallets.list())
+            .map((w) => w.id)
+            .toList();
+        final nextId = pickNextActive(remaining, walletId);
+        if (nextId != null) {
+          await _loadWalletLocked(nextId);
+          await _persistActivePointer();
+        } else {
+          _clearActiveFields();
+          await _clearActivePrefs();
+        }
+      }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Could not remove wallet: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  void _clearActiveFields() {
+    _publicKey = null;
+    _walletId = null;
+    _accountId = null;
+    _walletName = null;
+    _storeKeyPriv = null;
+    _storeKeyId = null;
+    _remoteKeyId = null;
+    _passwordKeyId = null;
+    _password = null;
+  }
+
+  Future<void> _clearActivePrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in const [
+      _prefsWalletId,
+      _prefsAccountId,
+      _prefsAddress,
+      _prefsStorePub,
+      _prefsStorePriv,
+      _prefsStoreKeyId,
+      _prefsRemoteKeyId,
+      _prefsPasswordKeyId,
+      _prefsName,
+    ]) {
+      await prefs.remove(key);
+    }
+  }
+
+  Future<void> _persistActivePointer() async {
+    final prefs = await SharedPreferences.getInstance();
+    final entries = <String, String?>{
+      _prefsWalletId: _walletId,
+      _prefsAccountId: _accountId,
+      _prefsAddress: _publicKey,
+      _prefsName: _walletName,
+      _prefsStoreKeyId: _storeKeyId,
+      _prefsRemoteKeyId: _remoteKeyId,
+      _prefsPasswordKeyId: _passwordKeyId,
+    };
+    for (final e in entries.entries) {
+      final v = e.value;
+      if (v != null) await prefs.setString(e.key, v);
     }
   }
 
@@ -980,10 +1336,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
   @override
   Future<void> disconnect() async {
+    final id = _walletId;
     try {
-      if (_walletId != null) {
+      if (id != null) {
         final client = await _getClient();
-        await client.wallets.delete(_walletId!);
+        await client.wallets.delete(id);
       }
     } catch (e) {
       debugPrint('Delete libwallet wallet failed: $e');
@@ -1015,7 +1372,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     ]) {
       await prefs.remove(key);
     }
-    await _keystore.deleteDeviceShare();
+    if (id != null) await _keystore.deleteDeviceShare(id);
     await _keystore.deleteBiometricPassword();
     notifyListeners();
   }
@@ -1515,15 +1872,31 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     String? asset,
   }) async {
     final client = await _getClient();
+    final resolvedAsset = await _resolveAssetKey(client, asset);
     final tx = UnsignedTransaction(
       type: 'transfer',
       to: to,
       from: _accountId,
       amount: amount,
-      asset: asset,
+      asset: resolvedAsset,
       priorityLevel: 'medium',
     );
-    return client.transactions.simulate(tx);
+    // `validate` is the authoritative pre-flight: it builds the tx and throws
+    // on real problems (insufficient funds, bad recipient, rent). It runs the
+    // same RPCs simulate would (balance, rent-exemption, account info, fees).
+    await client.transactions.validate(tx);
+    // `simulate` is best-effort enrichment (compute units, program-log
+    // warnings). On Solana it can't run from an UnsignedTransaction — the
+    // backend errors "solana tx has no raw bytes; call validate first"
+    // because validate's built raw tx isn't carried back into simulate (the
+    // UnsignedTransaction has no raw field). Since validate already vetted
+    // the tx, degrade gracefully to a benign preview instead of failing.
+    try {
+      return await client.transactions.simulate(tx);
+    } catch (e) {
+      debugPrint('simulate unavailable (validate already vetted tx): $e');
+      return const TransactionSimulation(chain: 'solana', willRevert: false);
+    }
   }
 
   /// Send SOL or an SPL token. Returns the broadcast transaction.
@@ -1542,15 +1915,354 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
           ),
         )
         .toList();
+    final resolvedAsset = await _resolveAssetKey(client, asset);
     final tx = UnsignedTransaction(
       type: 'transfer',
       to: to,
       from: _accountId,
       amount: amount,
-      asset: asset,
+      asset: resolvedAsset,
       priorityLevel: 'medium',
     );
+    // `validate` requires an explicit asset and surfaces any build/funding
+    // problem before we pull signing keys; signAndSend then builds, signs,
+    // and broadcasts.
+    await client.transactions.validate(tx);
     return client.transactions.signAndSendSimple(tx, keys: keys);
+  }
+
+  /// Resolve the canonical asset key for a transfer. SPL transfers pass an
+  /// explicit `solana.mainnet.<mint>` key; native SOL passes null, which
+  /// libwallet's `validate` rejects ("asset is required"), so fill in the
+  /// network's native key `<type>.<chainId>.NATIVE` (e.g. solana.mainnet.NATIVE).
+  Future<String> _resolveAssetKey(LibwalletClient client, String? asset) async {
+    if (asset != null && asset.isNotEmpty) return asset;
+    final net = _currentNetwork ?? await client.networks.getCurrent();
+    _currentNetwork = net;
+    return '${net.type.name}.${net.chainId}.NATIVE';
+  }
+
+  // ------------------------------------------------------------------
+  // Device transfer — RECEIVE side (this device = the new phone)
+  // ------------------------------------------------------------------
+
+  /// Receive a wallet pushed from another device over libwallet's
+  /// device-transfer channel. [pairingCode] is the raw
+  /// `tibane://device-transfer?…` string scanned from the OLD device's QR.
+  ///
+  /// Blocks (up to ~2 min) while the old device's user confirms; on success
+  /// the wallet — including its StoreKey device share — lands in libwallet's
+  /// local store (so it appears in `client.wallets.list()`) and the share is
+  /// held in the PENDING slot. The active wallet is untouched: a received
+  /// wallet is ADDED, never swapped in. Call [activateAfterTransfer] with the
+  /// wallet password to validate it, persist its per-wallet device share, and
+  /// (optionally) make it active.
+  ///
+  /// Returns true on success. On failure [error] carries a friendly message.
+  Future<bool> importViaDeviceTransfer(String pairingCode) async {
+    if (hasPendingTransfer) {
+      _error = 'A received wallet is already awaiting its password.';
+      notifyListeners();
+      return false;
+    }
+    _connecting = true;
+    _error = null;
+    notifyListeners();
+    DeviceTransferImportResult? result;
+    LibwalletClient? client;
+    try {
+      client = await _getClient();
+      // Report foreground so libwallet's background Spot client is active for
+      // the pairing handshake (the request routes over Spot).
+      try {
+        await client.lifecycle.update('foreground');
+      } catch (_) {/* best-effort */}
+      // Blocks until the old device confirms (or a coded error fires).
+      result = await client.wallets.importFromDevice(pairingCode);
+
+      final wallet = await client.wallets.get(result.walletId);
+      final keyIds = _extractKeyIdsByType(wallet);
+      // Acceptance gate (curve / required shares / device share present).
+      final storeKeyId = validateTransferAcceptance(
+        curve: wallet.curve,
+        keyIdsByType: keyIds,
+        deviceShareKeyIds:
+            result.deviceShares.map((d) => d.walletKeyId).toSet(),
+      );
+      final passwordKeyId = keyIds['Password']!; // validated non-null above
+      // The transferred device share must belong to this wallet's StoreKey
+      // (guaranteed present by validateTransferAcceptance above).
+      final share =
+          result.deviceShares.firstWhere((d) => d.walletKeyId == storeKeyId);
+
+      final accounts = await client.accounts.list(wallet: wallet.id);
+      Account? account;
+      for (final a in accounts) {
+        if (a.type == 'solana') {
+          account = a;
+          break;
+        }
+      }
+      // Accounts aren't part of the transfer — derive one at index 0 if the
+      // wallet arrived without a Solana account (mirrors create).
+      account ??= await client.accounts.create(
+        name: 'Solana',
+        wallet: wallet.id,
+        type: 'solana',
+        index: 0,
+      );
+
+      // Stash what activate needs in the PENDING slot — active wallet stays
+      // put. The account was derived above so switchWallet can resolve it.
+      _pendingWalletId = wallet.id;
+      _pendingName = wallet.name.isNotEmpty ? wallet.name : 'In-app wallet';
+      _pendingPasswordKeyId = passwordKeyId;
+      _pendingStoreKeyPriv = share.privateKey;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      // Roll back any wallet that landed locally before a downstream check
+      // failed, and clear partial pending state.
+      if (result != null && client != null) {
+        try {
+          await client.wallets.delete(result.walletId);
+        } catch (cleanupErr) {
+          debugPrint('Device-transfer cleanup failed: $cleanupErr');
+        }
+      }
+      _clearPendingTransfer();
+      _error = friendlyTransferError(e);
+      debugPrint('[device-transfer] failed: $e');
+      notifyListeners();
+      return false;
+    } finally {
+      _connecting = false;
+      notifyListeners();
+    }
+  }
+
+  /// Finish a device transfer started by [importViaDeviceTransfer]: validate
+  /// the wallet [password], persist the transferred device share under the
+  /// NEW wallet's id (per-wallet keystore), and — when [makeActive] is true
+  /// (or this is the only wallet) — switch to it. When [makeActive] is false
+  /// the wallet is left in the list, unlockable later, and the active wallet
+  /// is unchanged. Returns true once the wallet is added.
+  Future<bool> activateAfterTransfer(
+    String password, {
+    required bool makeActive,
+  }) async {
+    final walletId = _pendingWalletId;
+    final passwordKeyId = _pendingPasswordKeyId;
+    final storeKeyPriv = _pendingStoreKeyPriv;
+    if (walletId == null || passwordKeyId == null || storeKeyPriv == null) {
+      _error = 'No transferred wallet to activate';
+      debugPrint('[device-transfer] activate: $_error');
+      notifyListeners();
+      return false;
+    }
+    try {
+      final client = await _getClient();
+      try {
+        // Validate the password against the Password share without signing.
+        await client.storeKeys.derivePassword(
+          password: password,
+          walletKeyId: passwordKeyId,
+        );
+      } on LibwalletException catch (e) {
+        _error = 'Wrong password for this wallet';
+        debugPrint('[device-transfer] activate: password validation failed: $e');
+        notifyListeners();
+        return false;
+      }
+      // Persist the transferred device share under the NEW wallet's id, keyed
+      // per-wallet so it never touches the active wallet's share.
+      await _keystore.writeDeviceShare(
+        walletId: walletId,
+        value: storeKeyPriv,
+        password: password,
+      );
+      final hadActive = hasWallet;
+      _clearPendingTransfer();
+      // Promote to active when asked, or unconditionally when this is the
+      // first/only wallet (nothing else to keep active). Reuses the tested
+      // switchWallet path, which loads the just-written per-wallet share,
+      // re-validates the password, and persists the active pointer.
+      if (makeActive || !hadActive) {
+        final res = await switchWallet(walletId, password: password);
+        if (res != SwitchResult.ok) {
+          _error = 'Wallet added, but activating it failed — '
+              'open it from the wallet list.';
+          debugPrint(
+            '[device-transfer] activate: switchWallet returned $res '
+            '(wallet $walletId added but not made active)',
+          );
+          notifyListeners();
+          return true; // the wallet IS added; activation is best-effort
+        }
+      }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Could not activate wallet: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Discard a wallet received via [importViaDeviceTransfer] that was never
+  /// activated (no password entered). Deletes it from libwallet's local store
+  /// and clears the pending state, so a cancelled transfer leaves nothing
+  /// behind. No-op unless a pending un-activated transfer exists. The active
+  /// wallet is never touched.
+  Future<void> abandonPendingTransfer() async {
+    final id = _pendingWalletId;
+    if (id == null) return;
+    _clearPendingTransfer();
+    try {
+      final client = await _getClient();
+      await client.wallets.delete(id);
+    } catch (e) {
+      debugPrint('abandonPendingTransfer cleanup failed: $e');
+    }
+    notifyListeners();
+  }
+
+  void _clearPendingTransfer() {
+    _pendingWalletId = null;
+    _pendingName = null;
+    _pendingPasswordKeyId = null;
+    _pendingStoreKeyPriv = null;
+  }
+
+  /// Acceptance gate for a wallet arriving over device transfer, extracted so
+  /// the curve / required-share / device-share checks are unit-testable
+  /// without a live client. Returns the StoreKey share id (the share that must
+  /// travel) on success; throws [StateError] with a user-facing message —
+  /// which [friendlyTransferError] passes through verbatim — on rejection.
+  @visibleForTesting
+  static String validateTransferAcceptance({
+    required String curve,
+    required Map<String, String> keyIdsByType,
+    required Set<String> deviceShareKeyIds,
+  }) {
+    if (curve != 'ed25519') {
+      throw StateError('Transferred wallet is not a Solana (ed25519) wallet');
+    }
+    final passwordKeyId = keyIdsByType['Password'];
+    final storeKeyId = keyIdsByType['StoreKey'];
+    if (passwordKeyId == null || storeKeyId == null) {
+      throw StateError('Transferred wallet is missing required key shares');
+    }
+    if (!deviceShareKeyIds.contains(storeKeyId)) {
+      throw StateError("Transfer did not include this wallet's device share");
+    }
+    return storeKeyId;
+  }
+
+  /// Map a device-transfer failure to a user-facing message. The libwallet
+  /// FFI surfaces the wire code inside [LibwalletException.message]. Static +
+  /// pure so the UI can reuse it and it's unit-testable without a client.
+  static String friendlyTransferError(Object e) {
+    if (e is StateError) return e.message;
+    if (e is LibwalletException) {
+      final m = e.message;
+      bool has(String c) => m == c || m.contains(c);
+      if (has('local_offline')) {
+        return "This device isn't connected to the transfer network yet. "
+            'Check your internet connection and try again in a moment.';
+      }
+      if (has('url_malformed') || has('token_invalid')) {
+        return 'That QR code is not a valid device-transfer code.';
+      }
+      if (has('token_expired')) {
+        return 'The transfer code expired. Generate a new one on the '
+            'other device.';
+      }
+      if (has('declined')) {
+        return 'The transfer was declined on the other device.';
+      }
+      if (has('timeout')) {
+        return 'The other device did not confirm in time. Try again.';
+      }
+      if (has('peer_unreachable')) {
+        return "Couldn't reach the other device. Make sure both are online.";
+      }
+      if (has('session_not_found')) {
+        return 'That transfer session is no longer active. Start a new one.';
+      }
+      return 'Transfer failed: $m';
+    }
+    return 'Transfer failed: $e';
+  }
+
+  // ------------------------------------------------------------------
+  // Device transfer — SEND side (this device = the old/source phone)
+  // ------------------------------------------------------------------
+
+  /// Pure routing for the device-transfer SEND screen, extracted for tests.
+  /// Decides what must happen before [targetWalletId]'s StoreKey share can be
+  /// released: switch to it, unlock it, or export straight away.
+  static DeviceTransferSendRoute deviceTransferSendRoute({
+    required String? activeWalletId,
+    required String targetWalletId,
+    required bool isUnlocked,
+  }) {
+    if (activeWalletId != targetWalletId) {
+      return DeviceTransferSendRoute.switchFirst;
+    }
+    if (!isUnlocked) return DeviceTransferSendRoute.unlockFirst;
+    return DeviceTransferSendRoute.exportDirectly;
+  }
+
+  /// Open a device-to-device transfer session for [walletId]. The caller
+  /// paints [DeviceTransferSession.pairingCode] as a QR; the new device scans
+  /// it and calls importFromDevice. Requires [walletId] to be the active,
+  /// unlocked wallet — the StoreKey share must be in memory to release it at
+  /// confirm time (the send screen switches/unlocks first). 5-minute,
+  /// single-use session.
+  Future<DeviceTransferSession> startDeviceTransferExport(
+    String walletId,
+  ) async {
+    if (_walletId != walletId) {
+      throw StateError(
+        'This wallet is not the active one — open it first, then transfer',
+      );
+    }
+    if (_storeKeyId == null || _storeKeyPriv == null) {
+      throw StateError('Unlock the wallet before transferring it');
+    }
+    final client = await _getClient();
+    return client.wallets.exportToDevice(walletId);
+  }
+
+  /// Approve a pending transfer after the new device connected
+  /// (`wallet:transfer:pair_received`). Releases this device's StoreKey share
+  /// so the new device ends up with a full, signable wallet — no reshare.
+  /// Requires the wallet to still be unlocked.
+  Future<void> confirmDeviceTransferExport(String sid) async {
+    final storeKeyId = _storeKeyId;
+    final storeKeyPriv = _storeKeyPriv;
+    if (storeKeyId == null || storeKeyPriv == null) {
+      throw StateError('Wallet is locked; cannot release the device share');
+    }
+    final client = await _getClient();
+    final entry = DeviceShareEntry(
+      walletKeyId: storeKeyId,
+      privateKey: storeKeyPriv,
+    );
+    await client.wallets.exportToDeviceConfirm(sid: sid, deviceShares: [entry]);
+  }
+
+  /// Cancel / decline a pending transfer session. Best-effort and idempotent —
+  /// the waiting new device receives a `declined` error.
+  Future<void> cancelDeviceTransferExport(String sid) async {
+    try {
+      final client = await _getClient();
+      await client.wallets.exportToDeviceCancel(sid);
+    } catch (e) {
+      debugPrint('[device-transfer] cancel failed for sid=$sid: $e');
+    }
   }
 
   @override
@@ -1715,6 +2427,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     await prefs.setString(_prefsStorePub, newStorePair.publicKey);
     await prefs.setString(_prefsStoreKeyId, freshStoreKeyId);
     await _keystore.writeDeviceShare(
+      walletId: _walletId!,
       value: newStorePair.privateKey,
       password: password,
     );
@@ -1738,6 +2451,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     // The device-share private key — the only true secret on this side —
     // goes through SecureKeystore, never plaintext SharedPreferences.
     await _keystore.writeDeviceShare(
+      walletId: _walletId!,
       value: _storeKeyPriv!,
       password: _password!,
     );

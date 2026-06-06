@@ -3,10 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
 
+import '../../services/wallet/libwallet_backend.dart'
+    show AccountSwitchRoute, LibwalletBackend;
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import 'inapp_create_screen.dart';
+import 'inapp_unlock_screen.dart';
 
 /// Lists every chain account derived from libwallet wallets on this
 /// device. Shows the parent wallet, the chain type, the on-chain
@@ -67,14 +70,34 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
 
   Future<void> _setActive(lw.Account account) async {
     final ws = context.read<WalletService>();
-    if (ws.libwallet.accountId == account.id) return;
-    final ok = await ws.libwallet.switchAccount(account.id);
+    final backend = ws.libwallet;
+    final route = LibwalletBackend.accountSwitchRoute(
+      targetAccountId: account.id,
+      currentAccountId: backend.accountId,
+      targetWalletId: account.wallet,
+      activeWalletId: backend.walletId,
+    );
+    switch (route) {
+      case AccountSwitchRoute.alreadyCurrent:
+        return;
+      case AccountSwitchRoute.sameWallet:
+        break;
+      case AccountSwitchRoute.crossWallet:
+        // The account lives on a different wallet — switch (and unlock) that
+        // wallet first, then select the specific account below.
+        final switched = await InAppUnlockScreen.ensureUnlocked(
+          context,
+          walletId: account.wallet,
+        );
+        if (!mounted) return;
+        if (!switched) return; // user cancelled / failed
+        break;
+    }
+    final ok = await backend.switchAccount(account.id);
     if (!mounted) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(ws.libwallet.error ?? 'Could not switch account'),
-        ),
+        SnackBar(content: Text(backend.error ?? 'Could not switch account')),
       );
       return;
     }

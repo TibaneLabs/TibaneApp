@@ -3,8 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' show RemoteKeySession;
 import 'package:provider/provider.dart';
 
+import '../../services/wallet/libwallet_backend.dart' show SwitchResult;
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../widgets/keyboard_safe_form.dart';
+
+/// Preferred initial route for the unlock screen. Pure decision, extracted
+/// so it can be unit-tested without a platform.
+enum UnlockRoute { biometric, password, recovery }
 
 /// Prompt for the in-app wallet password so we can sign until the app is killed.
 ///
@@ -20,30 +26,52 @@ import '../../theme/tibane_theme.dart';
 ///   mint a fresh device share locally. Subsequent unlocks fall back
 ///   to password mode.
 class InAppUnlockScreen extends StatefulWidget {
-  const InAppUnlockScreen({super.key});
+  /// Wallet to unlock. Null = the active wallet (legacy callers). When set
+  /// and not the active wallet, unlocking SWITCHES to it via
+  /// `LibwalletBackend.switchWallet`.
+  final String? walletId;
+
+  const InAppUnlockScreen({super.key, this.walletId});
 
   @override
   State<InAppUnlockScreen> createState() => _InAppUnlockScreenState();
 
-  /// Make sure the in-app wallet is unlocked before a signing action.
-  /// For non-inapp backends (MWA, etc.) this is a no-op and returns true.
-  /// For an inapp wallet that's locked, this tries the biometric password
-  /// cache first; if that isn't enabled or the user cancels FaceID, the
-  /// password screen is pushed and the result is whatever the user does
-  /// from there.
-  static Future<bool> ensureUnlocked(BuildContext context) async {
+  /// Pure routing decision (biometric → password → recovery), extracted so it
+  /// can be unit-tested without a platform.
+  @visibleForTesting
+  static UnlockRoute unlockRoute({
+    required bool hasLocalShare,
+    required bool biometricEnabled,
+    required bool targetIsActive,
+  }) {
+    if (!hasLocalShare) return UnlockRoute.recovery;
+    if (biometricEnabled && targetIsActive) return UnlockRoute.biometric;
+    return UnlockRoute.password;
+  }
+
+  /// Make sure [walletId] (or the active wallet when null) is unlocked before
+  /// a signing action. Non-inapp backends are a no-op (returns true). Tries
+  /// the biometric password cache first — but only for the already-active
+  /// wallet, since that cache is single-slot — else pushes the unlock screen
+  /// targeting [walletId] and reports whether it ended up active + unlocked.
+  static Future<bool> ensureUnlocked(
+    BuildContext context, {
+    String? walletId,
+  }) async {
     final wallet = context.read<WalletService>();
-    if (wallet.kind != WalletKind.inapp) return true;
-    if (wallet.libwallet.isUnlocked) return true;
-    if (await wallet.libwallet.unlockWithBiometric()) {
+    final backend = wallet.libwallet;
+    if (walletId == null && wallet.kind != WalletKind.inapp) return true;
+    final target = walletId ?? backend.walletId;
+    if (backend.walletId == target && backend.isUnlocked) return true;
+    if (backend.walletId == target && await backend.unlockWithBiometric()) {
       return true;
     }
     if (!context.mounted) return false;
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const InAppUnlockScreen()));
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => InAppUnlockScreen(walletId: walletId)),
+    );
     if (!context.mounted) return false;
-    return wallet.libwallet.isUnlocked;
+    return backend.walletId == target && backend.isUnlocked;
   }
 }
 
@@ -65,18 +93,31 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
   }
 
   Future<void> _probe() async {
-    final wallet = context.read<WalletService>();
-    final hasShare = await wallet.libwallet.hasLocalDeviceShare();
+    final backend = context.read<WalletService>().libwallet;
+    final targetIsActive =
+        widget.walletId == null || widget.walletId == backend.walletId;
+    final hasShare = await backend.hasLocalDeviceShare(widget.walletId);
     if (!mounted) return;
     if (!hasShare) {
+      // Make the recovery flow target the requested (possibly non-active)
+      // wallet by loading its metadata into the active slot first.
+      if (widget.walletId != null && !targetIsActive) {
+        await backend.loadWalletForRecovery(widget.walletId!);
+        if (!mounted) return;
+      }
       setState(() => _mode = _Mode.recovery);
       return;
     }
-    final enabled = await wallet.libwallet.isBiometricEnabled();
+    final biometricEnabled = await backend.isBiometricEnabled();
     if (!mounted) return;
+    final route = InAppUnlockScreen.unlockRoute(
+      hasLocalShare: hasShare,
+      biometricEnabled: biometricEnabled,
+      targetIsActive: targetIsActive,
+    );
     setState(() {
       _mode = _Mode.password;
-      _biometricEnabled = enabled;
+      _biometricEnabled = route == UnlockRoute.biometric;
     });
   }
 
@@ -93,7 +134,17 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
       _error = null;
     });
     final wallet = context.read<WalletService>();
-    final ok = await wallet.libwallet.unlock(_pwCtrl.text);
+    final backend = wallet.libwallet;
+    final target = widget.walletId;
+    final bool ok;
+    if (target != null && target != backend.walletId) {
+      // Unlocking a different wallet means switching to it.
+      ok =
+          await backend.switchWallet(target, password: _pwCtrl.text) ==
+          SwitchResult.ok;
+    } else {
+      ok = await backend.unlock(_pwCtrl.text);
+    }
     if (!mounted) return;
     if (ok) {
       await wallet.useLibwallet();
@@ -102,7 +153,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
     } else {
       setState(() {
         _busy = false;
-        _error = wallet.libwallet.error ?? 'Unlock failed';
+        _error = backend.error ?? 'Unlock failed';
       });
     }
   }
@@ -188,16 +239,13 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: const Text('Unlock wallet')),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: switch (_mode) {
-            _Mode.probing => const Center(
-              child: CircularProgressIndicator(color: TibaneColors.orange),
-            ),
-            _Mode.password => _buildPasswordBody(),
-            _Mode.recovery => _buildRecoveryBody(),
-          },
-        ),
+        child: switch (_mode) {
+          _Mode.probing => const Center(
+            child: CircularProgressIndicator(color: TibaneColors.orange),
+          ),
+          _Mode.password => KeyboardSafeForm(child: _buildPasswordBody()),
+          _Mode.recovery => KeyboardSafeForm(child: _buildRecoveryBody()),
+        },
       ),
     );
   }

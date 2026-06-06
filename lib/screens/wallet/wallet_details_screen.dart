@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
 
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import 'device_transfer_send_screen.dart';
 import 'inapp_export_screen.dart';
+import 'inapp_unlock_screen.dart';
 import 'share_labels.dart';
 
 /// Wallet detail view. When [walletId] is null, falls back to the
@@ -19,6 +20,18 @@ class WalletDetailsScreen extends StatefulWidget {
 
   @override
   State<WalletDetailsScreen> createState() => _WalletDetailsScreenState();
+
+  /// Pure decision for the detail screen's action area, extracted for tests.
+  /// `showUse` — render "Use this wallet" (only for a non-active wallet).
+  /// `showNeeds2fa` — render the "needs 2FA on this device" hint (a non-active
+  /// wallet that has no local device share).
+  @visibleForTesting
+  static ({bool showUse, bool showNeeds2fa}) walletDetailActions({
+    required bool isActive,
+    required bool hasShareHere,
+  }) {
+    return (showUse: !isActive, showNeeds2fa: !isActive && !hasShareHere);
+  }
 }
 
 class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
@@ -26,6 +39,8 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
   List<lw.Account> _accounts = const [];
   bool _loading = true;
   String? _loadError;
+  bool _isActive = false;
+  bool _hasShareHere = true;
 
   @override
   void initState() {
@@ -49,10 +64,14 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
         client.wallets.get(id),
         client.accounts.list(wallet: id),
       ]);
+      final isActive = id == ws.libwallet.walletId;
+      final hasShareHere = await ws.libwallet.hasLocalDeviceShare(id);
       if (!mounted) return;
       setState(() {
         _wallet = results[0] as lw.Wallet;
         _accounts = results[1] as List<lw.Account>;
+        _isActive = isActive;
+        _hasShareHere = hasShareHere;
         _loading = false;
       });
     } catch (e) {
@@ -68,6 +87,79 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const InAppExportScreen()));
+  }
+
+  /// Move this wallet to another device via QR device transfer. The send
+  /// screen switches to / unlocks this wallet first if it isn't the active
+  /// unlocked one (only the active wallet's StoreKey share can be released).
+  Future<void> _transfer() async {
+    final wallet = _wallet;
+    if (wallet == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DeviceTransferSendScreen(
+          walletId: wallet.id,
+          walletName: wallet.name,
+        ),
+      ),
+    );
+    // Switching to this wallet to transfer it may have changed active state.
+    if (mounted) _load();
+  }
+
+  /// Make this (non-active) wallet the in-use one. Routes through the unlock
+  /// screen targeting this wallet, which switches to it (or runs 2FA recovery
+  /// when it has no local device share).
+  Future<void> _use() async {
+    final wallet = _wallet;
+    if (wallet == null) return;
+    final name = wallet.name.isEmpty ? 'wallet' : wallet.name;
+    final ok = await InAppUnlockScreen.ensureUnlocked(
+      context,
+      walletId: wallet.id,
+    );
+    if (!mounted) return;
+    if (ok) {
+      setState(() {
+        _isActive = true;
+        _hasShareHere = true;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('"$name" is now in use')));
+    }
+  }
+
+  List<Widget> _buildUseSection() {
+    final actions = WalletDetailsScreen.walletDetailActions(
+      isActive: _isActive,
+      hasShareHere: _hasShareHere,
+    );
+    if (!actions.showUse) return const [];
+    return [
+      SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          onPressed: _use,
+          icon: const Icon(Icons.check_circle_outline, size: 18),
+          label: const Text('Use this wallet'),
+          style: FilledButton.styleFrom(
+            backgroundColor: TibaneColors.orange,
+            foregroundColor: TibaneColors.black,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        ),
+      ),
+      if (actions.showNeeds2fa) ...[
+        const SizedBox(height: 8),
+        const Text(
+          'This wallet has no device key on this phone — using it will ask '
+          'for 2FA to set one up.',
+          style: TextStyle(color: TibaneColors.textMuted, fontSize: 12),
+        ),
+      ],
+      const SizedBox(height: 20),
+    ];
   }
 
   Future<void> _remove() async {
@@ -101,19 +193,15 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     if (confirmed != true) return;
     if (!mounted) return;
     final ws = context.read<WalletService>();
-    final client = await ws.libwallet.ensureClient();
-    try {
-      await client.wallets.delete(wallet.id);
-      if (wallet.id == ws.libwallet.walletId) {
-        await ws.disconnect();
-      }
-      if (!mounted) return;
-      Navigator.of(context).pop();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Remove failed: $e')));
+    final ok = await ws.libwallet.removeWallet(wallet.id);
+    if (!mounted) return;
+    if (ok) {
+      ws.refreshBalances();
+      Navigator.of(context).pop(true);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ws.libwallet.error ?? 'Remove failed')),
+      );
     }
   }
 
@@ -153,6 +241,21 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                   const SizedBox(height: 20),
                   _AccountsCard(accounts: _accounts),
                   const SizedBox(height: 20),
+                  ..._buildUseSection(),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _transfer,
+                      icon: const Icon(Icons.send_to_mobile, size: 16),
+                      label: const Text('Transfer to new device'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: TibaneColors.text,
+                        side: const BorderSide(color: TibaneColors.border),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   _ActionsRow(onBackup: _backup, onRemove: _remove),
                 ],
               ),
@@ -185,35 +288,6 @@ class _HeaderCard extends StatelessWidget {
             'In-app MPC wallet · $threshold-of-${wallet.keys.length} '
             '${wallet.curve == "ed25519" ? "EdDSA (Solana)" : "ECDSA (EVM/Bitcoin)"}',
             style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            'MASTER PUBLIC KEY',
-            style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: SelectableText(
-                  wallet.pubkey,
-                  style: monoStyle(fontSize: 11),
-                ),
-              ),
-              IconButton(
-                tooltip: 'Copy',
-                icon: const Icon(Icons.copy, size: 16),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: wallet.pubkey));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Public key copied'),
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
-                },
-              ),
-            ],
           ),
         ],
       ),
