@@ -69,7 +69,7 @@ immediate `refreshBalances()`:
 | Swap | ✅ | `notifyTxCommitted()` + own 4s/10s holdings re-polls — `swap_screen.dart` |
 | dApp / WC / browser tx | ✅ | `notifyTxCommitted()` via bridge `onTxCommitted` |
 | Burn (incinerator) | ✅ | `await _rpc.confirmTransaction(sig)` then refresh — `incinerator_screen.dart:407/575` |
-| **Staking (stake/unstake/claim)** | ❌ **not handled** | bare `refreshBalances()` immediately after broadcast — `staking_detail_screen.dart:417/465/608` |
+| Staking (stake/unstake/claim) | ✅ | `_refreshAfterStakeTx()`: `notifyTxCommitted()` + delayed `_loadUserStake()` (3s/9s) — `staking_detail_screen.dart:417/481/622` |
 | Token add/remove | N/A | local libwallet token-table op, no on-chain tx |
 | Switch wallet/account, create/import | N/A | no tx broadcast; reads the wallet's existing balance |
 
@@ -174,22 +174,20 @@ Legend: ✅ now = immediate · ⏳ = via libwallet poller / tx-history event
   **dashboard** token list isn't bumped, so on return it can be briefly stale.
 - **Severity:** low — the user is on the action screen during the action, and
   the dashboard self-heals via the poller / tx-history event.
-- **⚠️ Staking also has the confirmation-latency hole (Gap 1 class).** Unlike
-  the incinerator (which `await _rpc.confirmTransaction(sig)` before refreshing),
-  `staking_detail_screen.dart:417/465/608` calls `_loadUserStake()` +
-  `refreshBalances()` **immediately after broadcast** — no confirm, no delayed
-  re-poll — so the stake figures and balance can read **pre-confirmation
-  (stale)** and stay stale until the ~60s poller. **When fixing Gap 3, the
-  staking paths must switch to `notifyTxCommitted()`** (immediate + 3s/9s delayed
-  + dashboard bump), or keep `confirmTransaction` and then call
-  `notifyTxCommitted()`. `_loadUserStake()` (the pool-specific view) should also
-  be re-run on the same delayed schedule, since it reads the just-changed stake
-  account.
-- **Fix:** replace the bare `refreshBalances()` in burn/stake success paths with
-  `notifyTxCommitted()`; for staking this *also* closes the confirmation-latency
-  hole. Token-CRUD is a local libwallet table op (no on-chain tx) — `_load()` is
-  fine; only add a dashboard bump if a newly-tracked token should appear on the
-  dashboard immediately. See the "Confirmation latency" checklist above.
+- **✅ Staking fixed (was a Gap 1-class hole).** Previously
+  `staking_detail_screen.dart` called `_loadUserStake()` + `refreshBalances()`
+  **immediately after broadcast** — no confirm, no delayed re-poll — so stake
+  figures/balance could read pre-confirmation and stay stale until the ~60s
+  poller. Now all three handlers route through `_refreshAfterStakeTx()`, which
+  calls `notifyTxCommitted()` (balances + dashboard + 3s/9s delayed) **and**
+  re-runs `_loadUserStake()` on the same 3s/9s schedule (the staking screen
+  stays mounted, so it can).
+- **Remaining (low priority):** burn (incinerator) is timing-correct
+  (`confirmTransaction`-then-refresh) but still uses `refreshBalances()` (own
+  list refreshes; dashboard not bumped) — switch to `notifyTxCommitted()` if the
+  dashboard should be current on return. Token-CRUD is a local libwallet table
+  op (no on-chain tx) — `_load()` is fine; only add a dashboard bump if a
+  newly-tracked token should show on the dashboard immediately.
 
 ### Gap 4 — Lifecycle is not reported, so resume-from-background doesn't fast-refresh
 
