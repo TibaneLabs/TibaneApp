@@ -206,7 +206,25 @@ class WalletService extends ChangeNotifier {
 
   /// Call from any flow that knows a tx just committed (swap, send, …) to
   /// kick downstream views into a refresh.
+  ///
+  /// A send/swap returns at **broadcast** time — on Solana the balance/token
+  /// state doesn't reflect the tx for ~2-5s after that, so an immediate
+  /// refresh can read pre-confirmation (stale) data. We refresh now (cheap,
+  /// catches anything already settled) AND schedule a couple of delayed
+  /// refreshes so the confirmed state lands quickly without waiting on
+  /// libwallet's ~60s background poller. These are scheduled at the service
+  /// level so they survive the originating screen being popped (e.g. the send
+  /// screen closes on success). See BALANCE_REFRESH_SPEC.md (Gap 1).
   void notifyTxCommitted() {
+    _refreshAfterTx();
+    for (final d in const [Duration(seconds: 3), Duration(seconds: 9)]) {
+      Future.delayed(d, () {
+        if (isConnected) _refreshAfterTx();
+      });
+    }
+  }
+
+  void _refreshAfterTx() {
     swapCommittedTick.value++;
     refreshBalances();
   }
