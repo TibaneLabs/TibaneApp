@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/solana_constants.dart';
 import 'relay_service.dart';
 import 'rpc_service.dart';
+import 'tx_confirmation.dart';
 import 'wallet/libwallet_backend.dart';
 import 'wallet/mwa_wallet_backend.dart';
 import 'wallet/wallet_backend.dart';
@@ -217,7 +218,10 @@ class WalletService extends ChangeNotifier {
   /// screen closes on success). See BALANCE_REFRESH_SPEC.md (Gap 1).
   void notifyTxCommitted() {
     _refreshAfterTx();
-    for (final d in const [Duration(seconds: 3), Duration(seconds: 9)]) {
+    // Service-level (guarded by isConnected, not mounted) so the delayed
+    // re-polls survive the originating screen being popped. Screens with their
+    // own data use the TxConfirmationRefresh mixin with the same delays.
+    for (final d in kTxConfirmationDelays) {
       Future.delayed(d, () {
         if (isConnected) _refreshAfterTx();
       });

@@ -10,6 +10,7 @@ import '../../services/rpc_service.dart';
 import '../../services/solana_common.dart';
 import '../../services/staker_instructions.dart';
 import '../../services/uk_compliance_service.dart';
+import '../../services/tx_confirmation.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/gradient_button.dart';
@@ -27,7 +28,8 @@ class StakingDetailScreen extends StatefulWidget {
   State<StakingDetailScreen> createState() => _StakingDetailScreenState();
 }
 
-class _StakingDetailScreenState extends State<StakingDetailScreen> {
+class _StakingDetailScreenState extends State<StakingDetailScreen>
+    with TxConfirmationRefresh {
   final _rpc = RpcService();
   final _stakeController = TextEditingController();
   final _unstakeController = TextEditingController();
@@ -415,21 +417,14 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
     }
   }
 
-  /// Refresh after a staking tx. A stake/unstake/claim returns at **broadcast**
-  /// time; the stake account + balances only reflect it after on-chain
-  /// confirmation (~2-5s). So refresh now AND re-pull on a short delay.
-  /// `notifyTxCommitted()` covers balances + the dashboard token list (with its
-  /// own service-level delayed re-polls); we re-run the pool-specific
-  /// `_loadUserStake()` here too since the screen stays mounted. See
+  /// Refresh after a staking tx. `notifyTxCommitted()` covers balances + the
+  /// dashboard token list (with its own service-level delayed re-polls);
+  /// `refreshAfterTx` re-runs the pool-specific `_loadUserStake()` now + on the
+  /// confirmation-delay schedule (the screen stays mounted). See
   /// BALANCE_REFRESH_SPEC.md (Gap 1 / Gap 3).
   void _refreshAfterStakeTx(WalletService wallet) {
-    _loadUserStake();
+    refreshAfterTx(_loadUserStake);
     wallet.notifyTxCommitted();
-    for (final d in const [Duration(seconds: 3), Duration(seconds: 9)]) {
-      Future.delayed(d, () {
-        if (mounted) _loadUserStake();
-      });
-    }
   }
 
   Future<void> _handleUpdateSettings({

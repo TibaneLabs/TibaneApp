@@ -12,6 +12,7 @@ import '../constants/solana_constants.dart';
 import '../services/favorites_service.dart';
 import '../services/jupiter_service.dart';
 import '../services/rpc_service.dart';
+import '../services/tx_confirmation.dart';
 import '../services/uk_compliance_service.dart';
 import '../services/wallet/libwallet_backend.dart' show TokenSearchResult;
 import '../services/wallet_service.dart';
@@ -73,7 +74,7 @@ String _friendlyError(Object e) {
   return s.replaceFirst('Exception: ', '');
 }
 
-class _SwapScreenState extends State<SwapScreen> {
+class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   final _jupiter = JupiterService();
   final _amountController = TextEditingController();
   WalletService? _wallet;
@@ -647,7 +648,10 @@ class _SwapScreenState extends State<SwapScreen> {
       // mounted in another tab reloads now instead of waiting for the
       // txHistory stream to fire.
       wallet.notifyTxCommitted();
-      _loadHoldings();
+      // Re-pull our own holdings now + on the confirmation-delay schedule (the
+      // swap screen stays mounted). notifyTxCommitted covers balances + the
+      // dashboard with its own service-level delayed re-polls.
+      refreshAfterTx(_loadHoldings);
       // libwallet's auto-discovery doesn't always pick up a brand-new
       // mint before the next Asset:list call. Register the swap output
       // explicitly with the metadata we already have so the token row
@@ -680,15 +684,6 @@ class _SwapScreenState extends State<SwapScreen> {
           outputMint: outputMint,
         ),
       );
-      // Re-poll holdings a couple times so the new balances catch up
-      // once the swap confirms on-chain (Solana ~2-5s typically).
-      for (final delay in const [Duration(seconds: 4), Duration(seconds: 10)]) {
-        Future.delayed(delay, () {
-          if (!mounted) return;
-          wallet.notifyTxCommitted();
-          _loadHoldings();
-        });
-      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
