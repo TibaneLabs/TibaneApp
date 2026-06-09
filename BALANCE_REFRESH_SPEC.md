@@ -49,9 +49,18 @@ settled) **and** schedules delayed re-refreshes at ~3s and ~9s so the confirmed
 state lands quickly without waiting on the poller. These are scheduled at the
 **service** level so they survive the originating screen being popped (e.g. the
 send screen closes on success, so a `Future.delayed` on the send screen's State
-would never fire). The swap screen additionally re-polls its *own* holdings list
-at 4s/10s (screen-specific `_loadHoldings()`); the dashboard portion of those is
-now redundant with the centralized delayed refreshes but harmless.
+would never fire).
+
+The same delay schedule (`kTxConfirmationDelays`) and the re-poll loop are
+shared via `lib/services/tx_confirmation.dart`:
+- **Constant `kTxConfirmationDelays`** (`[3s, 9s]`) — used by both
+  `notifyTxCommitted` (service-level, guarded by `isConnected`) and the mixin.
+- **Mixin `TxConfirmationRefresh<T> on State<T>`** — `refreshAfterTx(reload)`
+  runs a screen-local reload now + at each delay, guarded by `mounted`. Used by
+  screens that stay mounted after the action and need to re-pull their *own*
+  data: the swap screen (`_loadHoldings`) and the staking screen
+  (`_loadUserStake`). Pairs with `notifyTxCommitted()` (which handles balances +
+  the dashboard token list).
 
 **Two correct patterns** for a post-tx refresh — use one, never a bare
 immediate `refreshBalances()`:
@@ -66,10 +75,10 @@ immediate `refreshBalances()`:
 | Action | Confirmation-aware? | Mechanism |
 |---|---|---|
 | Send | ✅ | `notifyTxCommitted()` (immediate + 3s/9s) — `send_screen.dart` |
-| Swap | ✅ | `notifyTxCommitted()` + own 4s/10s holdings re-polls — `swap_screen.dart` |
+| Swap | ✅ | `notifyTxCommitted()` + `refreshAfterTx(_loadHoldings)` (mixin) — `swap_screen.dart` |
 | dApp / WC / browser tx | ✅ | `notifyTxCommitted()` via bridge `onTxCommitted` |
 | Burn (incinerator) | ✅ | `await _rpc.confirmTransaction(sig)` then refresh — `incinerator_screen.dart:407/575` |
-| Staking (stake/unstake/claim) | ✅ | `_refreshAfterStakeTx()`: `notifyTxCommitted()` + delayed `_loadUserStake()` (3s/9s) — `staking_detail_screen.dart:417/481/622` |
+| Staking (stake/unstake/claim) | ✅ | `notifyTxCommitted()` + `refreshAfterTx(_loadUserStake)` (mixin) — `staking_detail_screen.dart` |
 | Token add/remove | N/A | local libwallet token-table op, no on-chain tx |
 | Switch wallet/account, create/import | N/A | no tx broadcast; reads the wallet's existing balance |
 
