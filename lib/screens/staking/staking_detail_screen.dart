@@ -410,9 +410,25 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
     } finally {
       if (mounted) {
         setState(() => _staking = false);
-        _loadUserStake();
-        wallet.refreshBalances();
+        _refreshAfterStakeTx(wallet);
       }
+    }
+  }
+
+  /// Refresh after a staking tx. A stake/unstake/claim returns at **broadcast**
+  /// time; the stake account + balances only reflect it after on-chain
+  /// confirmation (~2-5s). So refresh now AND re-pull on a short delay.
+  /// `notifyTxCommitted()` covers balances + the dashboard token list (with its
+  /// own service-level delayed re-polls); we re-run the pool-specific
+  /// `_loadUserStake()` here too since the screen stays mounted. See
+  /// BALANCE_REFRESH_SPEC.md (Gap 1 / Gap 3).
+  void _refreshAfterStakeTx(WalletService wallet) {
+    _loadUserStake();
+    wallet.notifyTxCommitted();
+    for (final d in const [Duration(seconds: 3), Duration(seconds: 9)]) {
+      Future.delayed(d, () {
+        if (mounted) _loadUserStake();
+      });
     }
   }
 
@@ -458,8 +474,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
     } finally {
       if (mounted) {
         setState(() => _staking = false);
-        _loadUserStake();
-        wallet.refreshBalances();
+        _refreshAfterStakeTx(wallet);
       }
     }
   }
@@ -600,8 +615,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
     } finally {
       if (mounted) {
         setState(() => _staking = false);
-        _loadUserStake();
-        wallet.refreshBalances();
+        _refreshAfterStakeTx(wallet);
       }
     }
   }
