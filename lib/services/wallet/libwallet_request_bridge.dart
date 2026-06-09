@@ -15,10 +15,17 @@ class LibwalletRequestBridge {
   final LibwalletBackend backend;
   final BuildContext Function() contextProvider;
 
+  /// Called after a dApp transaction is approved + submitted, so the host can
+  /// refresh balances + the dashboard token list immediately rather than
+  /// waiting on libwallet's background poller. See BALANCE_REFRESH_SPEC.md
+  /// (Gap 2). Wire to `WalletService.notifyTxCommitted`.
+  final void Function()? onTxCommitted;
+
   LibwalletRequestBridge({
     required this.client,
     required this.backend,
     required this.contextProvider,
+    this.onTxCommitted,
   });
 
   Future<void> handle(PendingRequest req) async {
@@ -109,6 +116,9 @@ class LibwalletRequestBridge {
     }
     try {
       await client.requests.approve(req.id, keys: keys);
+      // The dApp tx is signed + submitted — refresh balances/token list now
+      // instead of waiting on the ~60s poller (Gap 2).
+      onTxCommitted?.call();
     } catch (e) {
       debugPrint('approve transaction failed: $e');
       await _reject(req.id);
