@@ -311,7 +311,11 @@ class _SendScreenState extends State<SendScreen> {
       );
       if (!mounted) return;
       _amountCtrl.clear();
-      wallet.refreshBalances();
+      // notifyTxCommitted (not just refreshBalances) so the dashboard reloads
+      // its token list too — otherwise a sent SPL token's row balance lags
+      // until libwallet's tx-history/balance poller fires. See
+      // BALANCE_REFRESH_SPEC.md (Gap 1).
+      wallet.notifyTxCommitted();
       // Show a success modal with the tx id; OK returns to the previous screen.
       await _showSuccessDialog(tx.hash);
     } catch (e) {

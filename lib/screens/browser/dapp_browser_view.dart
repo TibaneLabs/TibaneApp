@@ -108,6 +108,7 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
       client: client,
       backend: wallet.libwallet,
       contextProvider: () => context,
+      onTxCommitted: wallet.notifyTxCommitted,
     );
     _jsEventsSub = client.jsEvents.listen(_onJsEvent);
     _pendingSub = client.pendingRequests.listen((req) => _bridge?.handle(req));
