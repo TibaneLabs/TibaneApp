@@ -34,7 +34,24 @@ event, or pull-to-refresh.
 - `notifyTxCommitted()` — `wallet_service.dart:209` → bumps `swapCommittedTick`
   **and** calls `refreshBalances()`. This is the only app call that refreshes
   **both** layers (the `swapCommittedTick` listener at `wallet_dashboard.dart:54`
-  → `_onTxCommitted` `:62` → `_loadData`).
+  → `_onTxCommitted` `:62` → `_loadData`). It also schedules **delayed**
+  refreshes (~3s, ~9s) — see "Confirmation latency" below.
+
+### Confirmation latency (important)
+
+A send/swap call returns at **broadcast** time, not confirmation. On Solana the
+balance/token state doesn't reflect the tx for **~2-5s** after broadcast, so an
+*immediate* refresh can read pre-confirmation (stale) data, and libwallet's own
+`balanceChanges`/`txHistoryUpdates` events are poller-driven (~60s).
+
+`notifyTxCommitted()` therefore refreshes **now** (catches anything already
+settled) **and** schedules delayed re-refreshes at ~3s and ~9s so the confirmed
+state lands quickly without waiting on the poller. These are scheduled at the
+**service** level so they survive the originating screen being popped (e.g. the
+send screen closes on success, so a `Future.delayed` on the send screen's State
+would never fire). The swap screen additionally re-polls its *own* holdings list
+at 4s/10s (screen-specific `_loadHoldings()`); the dashboard portion of those is
+now redundant with the centralized delayed refreshes but harmless.
 - a screen-local reload (`_loadTokens()`, `_loadAll()`, `_loadUserStake()`,
   `_load()`) that only refreshes that screen's own list.
 
@@ -102,7 +119,10 @@ Legend: ✅ now = immediate · ⏳ = via libwallet poller / tx-history event
   `notifyTxCommitted()`.
 - **Fix:** in `send_screen.dart`, replace `wallet.refreshBalances();` with
   `wallet.notifyTxCommitted();` (which refreshes the headline **and** bumps
-  `swapCommittedTick` so the dashboard reloads its token list).
+  `swapCommittedTick` so the dashboard reloads its token list). Because the send
+  returns at broadcast time, `notifyTxCommitted()` also schedules delayed
+  re-refreshes (~3s, ~9s) at the service level so the confirmed balance lands
+  even though the send screen has popped — see "Confirmation latency".
 
 ### Gap 2 — dApp / WalletConnect / browser transactions get no app-side refresh
 
