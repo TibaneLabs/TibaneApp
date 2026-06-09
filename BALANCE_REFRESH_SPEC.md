@@ -52,6 +52,31 @@ send screen closes on success, so a `Future.delayed` on the send screen's State
 would never fire). The swap screen additionally re-polls its *own* holdings list
 at 4s/10s (screen-specific `_loadHoldings()`); the dashboard portion of those is
 now redundant with the centralized delayed refreshes but harmless.
+
+**Two correct patterns** for a post-tx refresh — use one, never a bare
+immediate `refreshBalances()`:
+1. **`notifyTxCommitted()`** — refresh now + delayed re-polls (3s/9s) + dashboard
+   bump. Preferred; works even when the screen pops.
+2. **confirm-then-refresh** — `await rpc.confirmTransaction(sig)` then refresh.
+   Blocks the success UI a few seconds but is exact. Pair with `notifyTxCommitted()`
+   (not bare `refreshBalances()`) so the dashboard is bumped too.
+
+#### Per-path confirmation status
+
+| Action | Confirmation-aware? | Mechanism |
+|---|---|---|
+| Send | ✅ | `notifyTxCommitted()` (immediate + 3s/9s) — `send_screen.dart` |
+| Swap | ✅ | `notifyTxCommitted()` + own 4s/10s holdings re-polls — `swap_screen.dart` |
+| dApp / WC / browser tx | ✅ | `notifyTxCommitted()` via bridge `onTxCommitted` |
+| Burn (incinerator) | ✅ | `await _rpc.confirmTransaction(sig)` then refresh — `incinerator_screen.dart:407/575` |
+| **Staking (stake/unstake/claim)** | ❌ **not handled** | bare `refreshBalances()` immediately after broadcast — `staking_detail_screen.dart:417/465/608` |
+| Token add/remove | N/A | local libwallet token-table op, no on-chain tx |
+| Switch wallet/account, create/import | N/A | no tx broadcast; reads the wallet's existing balance |
+
+> **Checklist for any new tx-broadcasting action:** refresh via
+> `notifyTxCommitted()` (or confirm-then-`notifyTxCommitted`). Never a bare
+> immediate `refreshBalances()` — it reads pre-confirmation state and skips the
+> dashboard token list.
 - a screen-local reload (`_loadTokens()`, `_loadAll()`, `_loadUserStake()`,
   `_load()`) that only refreshes that screen's own list.
 
@@ -142,16 +167,29 @@ Legend: ✅ now = immediate · ⏳ = via libwallet poller / tx-history event
 ### Gap 3 — Burn / stake / token-CRUD refresh their own screen but not the dashboard
 
 - **Where:** `incinerator_screen.dart:409/578/783`,
-  `staking_detail_screen.dart:417/465/607`,
+  `staking_detail_screen.dart:417/465/608`,
   `tokens_screen.dart:118/146/190`.
-- **Symptom:** these correctly reload their own list (`_loadTokens`/`_loadAll` /
+- **Symptom:** these reload their own list (`_loadTokens`/`_loadAll` /
   `_loadUserStake` / `_load`) and call `refreshBalances()` (headline), but the
   **dashboard** token list isn't bumped, so on return it can be briefly stale.
-- **Severity:** low — the user is on the action screen (which *is* fresh) during
-  the action, and the dashboard self-heals via the poller / tx-history event.
-- **Fix (optional):** call `notifyTxCommitted()` instead of `refreshBalances()`
-  in these success paths so the dashboard is also current on return. Lower
-  priority than Gaps 1–2.
+- **Severity:** low — the user is on the action screen during the action, and
+  the dashboard self-heals via the poller / tx-history event.
+- **⚠️ Staking also has the confirmation-latency hole (Gap 1 class).** Unlike
+  the incinerator (which `await _rpc.confirmTransaction(sig)` before refreshing),
+  `staking_detail_screen.dart:417/465/608` calls `_loadUserStake()` +
+  `refreshBalances()` **immediately after broadcast** — no confirm, no delayed
+  re-poll — so the stake figures and balance can read **pre-confirmation
+  (stale)** and stay stale until the ~60s poller. **When fixing Gap 3, the
+  staking paths must switch to `notifyTxCommitted()`** (immediate + 3s/9s delayed
+  + dashboard bump), or keep `confirmTransaction` and then call
+  `notifyTxCommitted()`. `_loadUserStake()` (the pool-specific view) should also
+  be re-run on the same delayed schedule, since it reads the just-changed stake
+  account.
+- **Fix:** replace the bare `refreshBalances()` in burn/stake success paths with
+  `notifyTxCommitted()`; for staking this *also* closes the confirmation-latency
+  hole. Token-CRUD is a local libwallet table op (no on-chain tx) — `_load()` is
+  fine; only add a dashboard bump if a newly-tracked token should appear on the
+  dashboard immediately. See the "Confirmation latency" checklist above.
 
 ### Gap 4 — Lifecycle is not reported, so resume-from-background doesn't fast-refresh
 
