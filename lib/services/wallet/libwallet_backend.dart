@@ -1972,11 +1972,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     LibwalletClient? client;
     try {
       client = await _getClient();
-      // Report foreground so libwallet's background Spot client is active for
-      // the pairing handshake (the request routes over Spot).
-      try {
-        await client.lifecycle.update('foreground');
-      } catch (_) {/* best-effort */}
       // Blocks until the old device confirms (or a coded error fires).
       result = await client.wallets.importFromDevice(pairingCode);
 

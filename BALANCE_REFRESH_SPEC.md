@@ -77,7 +77,7 @@ immediate `refreshBalances()`:
 | Send | ✅ | `notifyTxCommitted()` (immediate + 3s/9s) — `send_screen.dart` |
 | Swap | ✅ | `notifyTxCommitted()` + `refreshAfterTx(_loadHoldings)` (mixin) — `swap_screen.dart` |
 | dApp / WC / browser tx | ✅ | `notifyTxCommitted()` via bridge `onTxCommitted` |
-| Burn (incinerator) | ✅ | `await _rpc.confirmTransaction(sig)` then refresh — `incinerator_screen.dart:407/575` |
+| Burn (incinerator) | ✅ | `await _rpc.confirmTransaction(sig)` then `notifyTxCommitted()` — `incinerator_screen.dart` |
 | Staking (stake/unstake/claim) | ✅ | `notifyTxCommitted()` + `refreshAfterTx(_loadUserStake)` (mixin) — `staking_detail_screen.dart` |
 | Token add/remove | N/A | local libwallet token-table op, no on-chain tx |
 | Switch wallet/account, create/import | N/A | no tx broadcast; reads the wallet's existing balance |
@@ -191,42 +191,42 @@ Legend: ✅ now = immediate · ⏳ = via libwallet poller / tx-history event
   calls `notifyTxCommitted()` (balances + dashboard + 3s/9s delayed) **and**
   re-runs `_loadUserStake()` on the same 3s/9s schedule (the staking screen
   stays mounted, so it can).
-- **Remaining (low priority):** burn (incinerator) is timing-correct
-  (`confirmTransaction`-then-refresh) but still uses `refreshBalances()` (own
-  list refreshes; dashboard not bumped) — switch to `notifyTxCommitted()` if the
-  dashboard should be current on return. Token-CRUD is a local libwallet table
-  op (no on-chain tx) — `_load()` is fine; only add a dashboard bump if a
-  newly-tracked token should show on the dashboard immediately.
+- **✅ Burn fixed:** the three incinerator burn paths now call
+  `notifyTxCommitted()` instead of `refreshBalances()` (they already
+  `confirmTransaction` first, so timing was correct — this adds the dashboard
+  bump). Own-list `_loadTokens()`/`_loadAll()` unchanged.
+- **✅ Token-CRUD fixed:** add/remove now call the new
+  `WalletService.notifyTokenListChanged()` after `_load()` — a one-shot
+  dashboard + headline refresh with **no** confirmation re-polls (it's a local
+  table op, nothing to wait for), so a newly-tracked token shows on the
+  dashboard immediately.
 
-### Gap 4 — Lifecycle is not reported, so resume-from-background doesn't fast-refresh
+### Gap 4 — Lifecycle is not reported, so resume-from-background doesn't fast-refresh — ✅ FIXED
 
-- **Where:** the app never calls `client.lifecycle.update(...)` except inside
-  the device-transfer screens.
-- **Symptom:** libwallet's poller has a "poll immediately on app resume from
-  background" optimization that's gated on the host reporting lifecycle state.
-  Because the app doesn't report `foreground`/`resumed`, after returning from
-  background the balances can stay stale for up to the full ~60 s poll interval.
-- **Severity:** low–medium — only affects the first up-to-60 s after a cold
-  resume; normal in-app actions are unaffected (the poller runs continuously
-  because the app also never reports `background`, so it's never paused).
-- **Fix (optional):** add an app-wide `WidgetsBindingObserver` that calls
-  `client.lifecycle.update('foreground')` / `'background'` on
-  `didChangeAppLifecycleState`. This also lets libwallet pause the poller while
-  backgrounded (battery) and resume-poll on foreground. Doing it app-wide would
-  also let us drop the one-off `lifecycle.update('foreground')` calls currently
-  inside the device-transfer screens.
+- **Was:** the app never called `client.lifecycle.update(...)` except inside the
+  device-transfer screens, so after returning from background the poller's
+  "poll immediately on resume" optimization never fired and balances could stay
+  stale for up to the full ~60 s poll interval.
+- **Fix:** `TibaneShellState` (`main.dart`) is now a `WidgetsBindingObserver`;
+  `didChangeAppLifecycleState` reports `foreground` (resumed) / `background`
+  (paused/detached/hidden) via the new `WalletService.reportLifecycle(status)`
+  (best-effort `client.lifecycle.update`). `inactive` is skipped (transient).
+  libwallet defaults to active, so only transitions are reported — no initial
+  report needed. The one-off `lifecycle.update('foreground')` calls in the
+  device-transfer send screen + `importViaDeviceTransfer` were removed (the
+  app-wide reporting + libwallet's default-active state cover the pairing).
 
 ---
 
-## 4. Recommended priority
+## 4. Recommended priority — all done ✅
 
-1. **Gap 1** (send → `notifyTxCommitted`) — small, safe, removes the most
-   user-visible inconsistency (sent SPL token balance not updating).
-2. **Gap 2** (dApp tx → `notifyTxCommitted`) — small, safe.
-3. **Gap 4** (app-wide lifecycle reporting) — modest, also improves battery and
-   lets the device-transfer screens stop reporting foreground themselves.
-4. **Gap 3** (burn/stake/token-CRUD → `notifyTxCommitted`) — lowest; cosmetic
-   dashboard freshness on return.
+1. **Gap 1** (send → `notifyTxCommitted`) — ✅ done.
+2. **Gap 2** (dApp tx → `notifyTxCommitted`) — ✅ done.
+3. **Gap 4** (app-wide lifecycle reporting) — ✅ done (`WidgetsBindingObserver`
+   in `TibaneShellState` → `WalletService.reportLifecycle`; device-transfer
+   foreground one-offs removed).
+4. **Gap 3** (burn/stake/token-CRUD) — ✅ done (staking + burn →
+   `notifyTxCommitted`; token-CRUD → `notifyTokenListChanged`).
 
 ---
 

@@ -105,12 +105,6 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
     try {
       final client = await backend.ensureClient();
       if (!mounted) return;
-      // Report foreground so libwallet keeps its background Spot client active
-      // during the time-sensitive pairing handshake (the new device's pair
-      // request arrives over Spot).
-      try {
-        await client.lifecycle.update('foreground');
-      } catch (_) {/* best-effort */}
       // Subscribe BEFORE opening the session so we can't miss pair_received.
       _eventSub = client.events.listen(_onEvent);
       final session = await backend.startDeviceTransferExport(widget.walletId);

@@ -407,7 +407,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         await _rpc.confirmTransaction(sig);
         if (!mounted) return;
         _loadTokens();
-        wallet.refreshBalances();
+        wallet.notifyTxCommitted();
       }
     } catch (e) {
       if (!mounted) return;
@@ -576,7 +576,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       }
       if (mounted) {
         _loadAll();
-        wallet.refreshBalances();
+        wallet.notifyTxCommitted();
       }
     }
   }
@@ -781,7 +781,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       }
       if (mounted) {
         _loadAll();
-        wallet.refreshBalances();
+        wallet.notifyTxCommitted();
       }
     }
   }
