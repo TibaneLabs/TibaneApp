@@ -91,10 +91,8 @@ class _TokensScreenState extends State<TokensScreen> {
       ),
     );
     try {
-      final client = await context
-          .read<WalletService>()
-          .libwallet
-          .ensureClient();
+      final wallet = context.read<WalletService>();
+      final client = await wallet.libwallet.ensureClient();
       final discovered = await client.tokens.discover(
         network: _chainKey,
         address: address,
@@ -116,6 +114,7 @@ class _TokensScreenState extends State<TokensScreen> {
         type: discovered.type,
       );
       _load();
+      wallet.notifyTokenListChanged();
       if (!mounted) return;
       messenger.showSnackBar(
         SnackBar(content: Text('Added ${discovered.symbol}')),
@@ -130,10 +129,8 @@ class _TokensScreenState extends State<TokensScreen> {
   Future<void> _addCurated(CuratedToken c) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final client = await context
-          .read<WalletService>()
-          .libwallet
-          .ensureClient();
+      final wallet = context.read<WalletService>();
+      final client = await wallet.libwallet.ensureClient();
       await client.tokens.create(
         name: c.name,
         symbol: c.symbol,
@@ -144,6 +141,7 @@ class _TokensScreenState extends State<TokensScreen> {
         logo: c.logoUri.isNotEmpty ? c.logoUri : null,
       );
       _load();
+      wallet.notifyTokenListChanged();
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(content: Text('Added ${c.symbol}')));
     } catch (e) {
@@ -182,12 +180,11 @@ class _TokensScreenState extends State<TokensScreen> {
     if (confirmed != true) return;
     if (!mounted) return;
     try {
-      final client = await context
-          .read<WalletService>()
-          .libwallet
-          .ensureClient();
+      final wallet = context.read<WalletService>();
+      final client = await wallet.libwallet.ensureClient();
       await client.tokens.delete(t.id);
       _load();
+      wallet.notifyTokenListChanged();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(

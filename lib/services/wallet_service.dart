@@ -148,6 +148,20 @@ class WalletService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Report the host app's foreground/background state to libwallet so its
+  /// background pollers (balances, tx-history) pause off-screen and
+  /// resume-poll immediately on foreground (fixing the up-to-60s stale window
+  /// after a cold resume). Best-effort — the libwallet client may not be ready.
+  /// See BALANCE_REFRESH_SPEC.md (Gap 4).
+  Future<void> reportLifecycle(String status) async {
+    try {
+      final client = await _libwallet.ensureClient();
+      await client.lifecycle.update(status);
+    } catch (_) {
+      // best-effort; client not initialized / no wallet
+    }
+  }
+
   void updateBalances({BigInt? sol, BigInt? chiefPussy}) {
     if (sol != null) _solBalance = sol;
     if (chiefPussy != null) _chiefPussyBalance = chiefPussy;
@@ -232,6 +246,13 @@ class WalletService extends ChangeNotifier {
     swapCommittedTick.value++;
     refreshBalances();
   }
+
+  /// A tracked token was added/removed (a local libwallet token-table change,
+  /// NOT an on-chain tx). Reload the balance-derived views once so a newly
+  /// added token appears on the dashboard immediately — no confirmation
+  /// re-polls, since there's nothing to wait for. See BALANCE_REFRESH_SPEC.md
+  /// (Gap 3).
+  void notifyTokenListChanged() => _refreshAfterTx();
 
   /// Scan the user's on-chain SPL token accounts (legacy + Token-2022) and
   /// register any mints that aren't yet in libwallet's Token table. Needed

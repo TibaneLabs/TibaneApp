@@ -95,7 +95,8 @@ class TibaneShell extends StatefulWidget {
   State<TibaneShell> createState() => TibaneShellState();
 }
 
-class TibaneShellState extends State<TibaneShell> {
+class TibaneShellState extends State<TibaneShell>
+    with WidgetsBindingObserver {
   late int _currentIndex = widget.initialIndex;
   late bool _isSeekerDevice = widget.forceSeeker ?? false;
 
@@ -105,12 +106,32 @@ class TibaneShellState extends State<TibaneShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (widget.forceSeeker == null) {
       hasMwaWallet().then((v) {
         if (mounted) setState(() => _isSeekerDevice = v);
       });
     }
     _initDeepLinks();
+  }
+
+  // Report foreground/background to libwallet so its pollers pause off-screen
+  // and resume-poll immediately on foreground (Gap 4). libwallet defaults to
+  // active, so we only need the transitions — no initial report. `inactive`
+  // is transient (iOS app-switcher / notification shade), so we skip it to
+  // avoid thrashing the poller.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final status = switch (state) {
+      AppLifecycleState.resumed => 'foreground',
+      AppLifecycleState.paused ||
+      AppLifecycleState.detached ||
+      AppLifecycleState.hidden => 'background',
+      AppLifecycleState.inactive => null,
+    };
+    if (status != null) {
+      unawaited(context.read<WalletService>().reportLifecycle(status));
+    }
   }
 
   Future<void> _initDeepLinks() async {
@@ -138,6 +159,7 @@ class TibaneShellState extends State<TibaneShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _linkSub?.cancel();
     super.dispose();
   }
