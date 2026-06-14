@@ -108,11 +108,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen> {
 
   double get _weightPercent {
     if (_userStake == null) return 0;
-    return calculateWeightPercent(
-      pool.tauSeconds,
-      pool.baseTime,
-      _userStake!.expStartFactor,
-    );
+    return calculateWeightPercent(pool, _userStake!);
   }
 
   @override

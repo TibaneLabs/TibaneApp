@@ -50,11 +50,7 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
       final stakes = await _rpc.getUserStakesForPool(pool.address);
 
       final members = stakes.map((s) {
-        final weight = calculateWeightPercent(
-          pool.tauSeconds,
-          pool.baseTime,
-          s.stake.expStartFactor,
-        );
+        final weight = calculateWeightPercent(pool, s.stake);
         final pending = estimatePendingRewards(pool, s.stake);
         final immature = estimateImmatureRewards(pool, s.stake);
         return _MemberRow(

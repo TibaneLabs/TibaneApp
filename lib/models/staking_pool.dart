@@ -275,15 +275,45 @@ class UserStake {
   }
 }
 
+/// Replicate `UserStake::sync_to_pool` from chiefstaker: when the pool
+/// rebases, `pool.base_time` jumps forward and the on-chain program
+/// rescales each user's `exp_start_factor` lazily — only on the user's
+/// next transaction. `stake.base_time_snapshot` records the base that
+/// the stored factor is calibrated to. Display math that consumes the
+/// raw factor against the pool's *current* base_time will see
+/// `decay > 1` for any user who hasn't transacted since the last
+/// rebase, clamping weight and pending rewards to 0.
+///
+/// Mirror of `syncExpStartFactor` in chiefstaker-sdk/src/math.ts. Must
+/// be applied everywhere `stake.expStartFactor` feeds weight, pending,
+/// or immature math.
+BigInt _syncedExpStartFactor(StakingPool pool, UserStake stake) {
+  if (stake.baseTimeSnapshot == pool.baseTime) return stake.expStartFactor;
+
+  final BigInt delta;
+  if (stake.baseTimeSnapshot == BigInt.zero) {
+    // Legacy account that pre-dates the snapshot field.
+    if (pool.initialBaseTime == BigInt.zero) return stake.expStartFactor;
+    delta = pool.baseTime - pool.initialBaseTime;
+  } else {
+    delta = pool.baseTime - stake.baseTimeSnapshot;
+  }
+  if (delta <= BigInt.zero) return stake.expStartFactor;
+
+  final tau = pool.tauSeconds.toInt();
+  return _wadMul(stake.expStartFactor, _expNegWad(delta.toInt(), tau));
+}
+
 /// Estimate pending rewards for a user stake (in lamports)
 BigInt estimatePendingRewards(StakingPool pool, UserStake stake) {
   if (stake.amount == BigInt.zero) return BigInt.zero;
 
+  final syncedFactor = _syncedExpStartFactor(pool, stake);
   final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
   final age = now - pool.baseTime.toInt();
   final tau = pool.tauSeconds.toInt();
   final expNegCurrent = _expNegWad(age, tau);
-  final decay = _wadMul(expNegCurrent, stake.expStartFactor);
+  final decay = _wadMul(expNegCurrent, syncedFactor);
   final weightFactor = wad - decay;
   final amountWad = stake.amount * wad;
   final userWeighted = _wadMul(amountWad, weightFactor);
@@ -305,11 +335,12 @@ BigInt estimatePendingRewards(StakingPool pool, UserStake stake) {
 /// Estimate SOL rewards a user can't claim yet due to immature weight
 BigInt estimateImmatureRewards(StakingPool pool, UserStake stake) {
   if (stake.amount == BigInt.zero) return BigInt.zero;
+  final syncedFactor = _syncedExpStartFactor(pool, stake);
   final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
   final age = now - pool.baseTime.toInt();
   final tau = pool.tauSeconds.toInt();
   final expNegCurrent = _expNegWad(age, tau);
-  final decay = _wadMul(expNegCurrent, stake.expStartFactor);
+  final decay = _wadMul(expNegCurrent, syncedFactor);
   if (decay == BigInt.zero) return BigInt.zero;
 
   final amountWad = stake.amount * wad;
@@ -328,19 +359,18 @@ BigInt estimateImmatureRewards(StakingPool pool, UserStake stake) {
   return immature > BigInt.zero ? immature : BigInt.zero;
 }
 
-/// Calculate current weight percentage (0-100)
-double calculateWeightPercent(
-  BigInt tauSeconds,
-  BigInt baseTime,
-  BigInt expStartFactor,
-) {
+/// Calculate current weight percentage (0-100). Takes the full pool +
+/// stake because the sync against `baseTimeSnapshot` /
+/// `initialBaseTime` is required for correct display after a rebase.
+double calculateWeightPercent(StakingPool pool, UserStake stake) {
   final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-  final age = now - baseTime.toInt();
+  final age = now - pool.baseTime.toInt();
   if (age <= 0) return 0;
-  final tau = tauSeconds.toInt();
+  final tau = pool.tauSeconds.toInt();
   if (tau <= 0) return 100;
+  final syncedFactor = _syncedExpStartFactor(pool, stake);
   final decay = exp(-age / tau);
-  final weight = 1 - decay * expStartFactor.toDouble() / 1e18;
+  final weight = 1 - decay * syncedFactor.toDouble() / 1e18;
   return (weight * 100).clamp(0, 100);
 }
 
