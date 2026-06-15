@@ -119,60 +119,6 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
     }
   }
 
-  /// Receive / Send / Swap as three AppBar icon buttons. Send disables
-  /// itself when the balance lookup returns zero; Swap is hidden in
-  /// UK mode for the same reason it's hidden on other screens.
-  List<Widget> _buildAppBarActions(BuildContext context) {
-    final token = _token!;
-    final isUk = context.watch<UkComplianceService>().isUk;
-    final canSend = _userBalance != null && _userBalance! > BigInt.zero;
-    return [
-      IconButton(
-        tooltip: 'Receive',
-        icon: const Icon(Icons.arrow_downward),
-        onPressed: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const ReceiveScreen())),
-      ),
-      IconButton(
-        tooltip: 'Send',
-        icon: const Icon(Icons.arrow_upward),
-        onPressed: canSend
-            ? () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => SendScreen(
-                    mint: token.mint,
-                    symbol: token.symbol,
-                    decimals: token.decimals,
-                  ),
-                ),
-              )
-            : null,
-      ),
-      if (!isUk)
-        IconButton(
-          tooltip: 'Swap',
-          icon: const Icon(Icons.swap_horiz),
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => Scaffold(
-                backgroundColor: TibaneColors.black,
-                appBar: AppBar(title: const Text('Swap')),
-                body: SwapScreen(
-                  initialInputMint: wsolMint,
-                  initialOutputMint: token.mint,
-                  initialOutputSymbol: token.symbol,
-                  initialOutputName: token.name,
-                  initialOutputImageUrl: token.imageUrl,
-                  initialOutputDecimals: token.decimals,
-                ),
-              ),
-            ),
-          ),
-        ),
-    ];
-  }
-
   /// Fetch the connected wallet's balance for this token so the Send
   /// button can disable itself when there's nothing to send. Native
   /// SOL is the WalletService balance; everything else sums the
@@ -246,10 +192,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(
-        title: const Text('Token info'),
-        actions: _token != null ? _buildAppBarActions(context) : null,
-      ),
+      appBar: AppBar(title: const Text('Token info')),
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: TibaneColors.orange),
@@ -279,6 +222,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
               holders: _holders,
               transactions: _transactions,
               stakingPool: _stakingPool,
+              userBalance: _userBalance,
               onRefresh: _loadToken,
             ),
     );
@@ -290,6 +234,7 @@ class _TokenDetails extends StatelessWidget {
   final List<TokenHolder> holders;
   final List<Map<String, dynamic>> transactions;
   final StakingPool? stakingPool;
+  final BigInt? userBalance;
   final Future<void> Function() onRefresh;
 
   const _TokenDetails({
@@ -298,6 +243,7 @@ class _TokenDetails extends StatelessWidget {
     required this.transactions,
     required this.onRefresh,
     this.stakingPool,
+    this.userBalance,
   });
 
   @override
@@ -312,6 +258,9 @@ class _TokenDetails extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _TokenHeader(token: token),
+            const SizedBox(height: 12),
+
+            _TokenActions(token: token, userBalance: userBalance),
             const SizedBox(height: 20),
 
             _SupplySection(token: token),
@@ -504,6 +453,110 @@ class _TokenHeader extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Receive / Send / Swap as an inline row of bordered icon+text buttons
+/// below the token header. Send disables itself when the balance lookup
+/// returns zero; Swap is hidden in UK mode, matching the rest of the app.
+class _TokenActions extends StatelessWidget {
+  final TokenMetadata token;
+  final BigInt? userBalance;
+
+  const _TokenActions({required this.token, this.userBalance});
+
+  @override
+  Widget build(BuildContext context) {
+    final isUk = context.watch<UkComplianceService>().isUk;
+    final canSend = userBalance != null && userBalance! > BigInt.zero;
+    return Row(
+      children: [
+        Expanded(
+          child: _ActionButton(
+            label: 'Receive',
+            icon: Icons.arrow_downward,
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const ReceiveScreen())),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _ActionButton(
+            label: 'Send',
+            icon: Icons.arrow_upward,
+            onPressed: canSend
+                ? () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => SendScreen(
+                        mint: token.mint,
+                        symbol: token.symbol,
+                        decimals: token.decimals,
+                      ),
+                    ),
+                  )
+                : null,
+          ),
+        ),
+        if (!isUk) ...[
+          const SizedBox(width: 10),
+          Expanded(
+            child: _ActionButton(
+              label: 'Swap',
+              icon: Icons.swap_horiz,
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => Scaffold(
+                    backgroundColor: TibaneColors.black,
+                    appBar: AppBar(title: const Text('Swap')),
+                    body: SwapScreen(
+                      initialInputMint: wsolMint,
+                      initialOutputMint: token.mint,
+                      initialOutputSymbol: token.symbol,
+                      initialOutputName: token.name,
+                      initialOutputImageUrl: token.imageUrl,
+                      initialOutputDecimals: token.decimals,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Bordered icon+text action button sized to share a row equally with
+/// its siblings. Disables (greys) automatically when [onPressed] is
+/// null. Compact padding so three fit across a phone width.
+class _ActionButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  const _ActionButton({
+    required this.label,
+    required this.icon,
+    this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 16),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: TibaneColors.orange,
+        backgroundColor: TibaneColors.card,
+        disabledForegroundColor: TibaneColors.textDim,
+        side: const BorderSide(color: TibaneColors.orange),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
