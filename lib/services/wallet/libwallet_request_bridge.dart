@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart';
 
 import '../../screens/browser/approval_sheets.dart';
+import '../../screens/wallet/inapp_unlock_screen.dart';
 import 'libwallet_backend.dart';
 
 /// Routes pending Web3 requests from the libwallet client to approval sheets,
@@ -79,6 +80,11 @@ class LibwalletRequestBridge {
     BuildContext ctx,
     TransactionSignRequest req,
   ) async {
+    if (!await _requireUnlocked(ctx, req.id)) return;
+    if (!ctx.mounted) {
+      await _reject(req.id);
+      return;
+    }
     final addr = backend.publicKey;
     final keys = _signingKeys();
     if (addr == null || keys.isEmpty) {
@@ -113,6 +119,11 @@ class LibwalletRequestBridge {
     BuildContext ctx,
     MessageSignRequest req,
   ) async {
+    if (!await _requireUnlocked(ctx, req.id)) return;
+    if (!ctx.mounted) {
+      await _reject(req.id);
+      return;
+    }
     final addr = backend.publicKey;
     final keys = _signingKeys();
     if (addr == null || keys.isEmpty) {
@@ -168,6 +179,32 @@ class LibwalletRequestBridge {
       debugPrint('approve chain switch failed: $e');
       await _reject(req.id);
     }
+  }
+
+  /// Just-in-time unlock for handlers that need signing material. The
+  /// browser tab itself is ungated — locking the wallet should not
+  /// prevent browsing — so the prompt only fires when a destination
+  /// actually requests a signature.
+  ///
+  /// Returns true when the wallet is unlocked and the caller can
+  /// proceed; returns false (and rejects the request) when there is
+  /// no wallet to sign with, or the user cancelled the unlock.
+  Future<bool> _requireUnlocked(BuildContext ctx, String reqId) async {
+    if (!backend.hasWallet) {
+      await _reject(reqId);
+      return false;
+    }
+    if (backend.isUnlocked) return true;
+    if (!ctx.mounted) {
+      await _reject(reqId);
+      return false;
+    }
+    final ok = await InAppUnlockScreen.ensureUnlocked(ctx);
+    if (!ok || !backend.isUnlocked) {
+      await _reject(reqId);
+      return false;
+    }
+    return true;
   }
 
   List<SigningKey> _signingKeys() {

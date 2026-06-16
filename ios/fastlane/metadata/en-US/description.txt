@@ -22,9 +22,10 @@ TOKEN INFO
 - Top holders with on-chain percentages.
 - Mint address with one-tap copy.
 
-DAPP BROWSER
-- Launch any Solana dApp from the in-app browser.
-- Sign with the wallet you already have set up.
+IN-APP BROWSER
+- A general-purpose web browser opening to tibane.net.
+- Type any URL, the same way you would in Safari.
+- When a website asks to connect or sign, the wallet prompts for explicit approval.
 
 Open source. Built by Tibane Labs — a Solana research team named after the cat that started it all.
 

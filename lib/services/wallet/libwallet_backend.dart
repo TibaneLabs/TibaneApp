@@ -401,7 +401,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   }
 
   /// Access the underlying libwallet client, initializing it on first use.
-  /// Exposed so components like the dApp browser can subscribe to
+  /// Exposed so components like the in-app browser can subscribe to
   /// `pendingRequests` / `jsEvents` and issue Web3 bridge calls.
   Future<LibwalletClient> ensureClient() => _getClient();
 
