@@ -14,6 +14,7 @@ import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/swap_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
+import 'services/browser_preferences.dart';
 import 'services/favorites_service.dart';
 import 'services/mwa_detector.dart';
 import 'services/uk_compliance_service.dart';
@@ -55,6 +56,7 @@ class TibaneApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => WalletService()..tryRestore()),
         ChangeNotifierProvider(create: (_) => FavoritesService()..load()),
+        ChangeNotifierProvider(create: (_) => BrowserPreferences()..load()),
         ChangeNotifierProvider(create: (_) => UkComplianceService()..init()),
       ],
       child: MaterialApp(

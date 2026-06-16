@@ -9,13 +9,15 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../services/browser_preferences.dart';
 import '../../services/uk_compliance_service.dart';
 import '../../services/wallet/libwallet_request_bridge.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 
 const _kBridge = 'libwalletBridge';
-const _kHomeDefault = 'https://www.tibane.net';
+// UK users get a neutral search engine regardless of the user's
+// configured start page — see UkComplianceService.
 const _kHomeUk = 'https://duckduckgo.com';
 
 class DAppBrowserView extends StatefulWidget {
@@ -35,10 +37,11 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
   StreamSubscription? _pendingSub;
 
   String? _iconDataUrl;
-  String _homeUrl = _kHomeDefault;
-  String _currentUrl = _kHomeDefault;
+  String _currentUrl = '';
+  String _pageTitle = '';
   bool _loading = true;
   bool _canGoBack = false;
+  bool _canGoForward = false;
   bool _ready = false;
 
   @override
@@ -68,10 +71,14 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
           onPageFinished: (url) async {
             if (!mounted) return;
             final canBack = await _webview.canGoBack();
+            final canFwd = await _webview.canGoForward();
+            final title = await _webview.getTitle();
             if (!mounted) return;
             setState(() {
               _loading = false;
               _canGoBack = canBack;
+              _canGoForward = canFwd;
+              _pageTitle = title ?? '';
             });
             await _injectProvider(url);
           },
@@ -82,21 +89,17 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
 
   Future<void> _bootstrap() async {
     final wallet = context.read<WalletService>();
-    final uk = context.read<UkComplianceService>();
     final client = await wallet.libwallet.ensureClient();
     final iconData = await rootBundle.load('assets/app_icon.png');
     final iconB64 = base64Encode(iconData.buffer.asUint8List());
 
-    // UK users land on a neutral search page; everyone else gets
-    // tibane.net as the in-app browser home.
-    final home = uk.isUk ? _kHomeUk : _kHomeDefault;
+    final home = _resolveStartPage();
 
     if (!mounted) return;
     setState(() {
       _client = client;
       _iconDataUrl = 'data:image/png;base64,$iconB64';
       _ready = true;
-      _homeUrl = home;
       _currentUrl = home;
       _urlCtrl.text = home;
     });
@@ -110,6 +113,17 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
     _pendingSub = client.pendingRequests.listen((req) => _bridge?.handle(req));
 
     await _webview.loadRequest(Uri.parse(home));
+  }
+
+  /// Resolved start page for the current session. UK users always go
+  /// to a neutral search engine for FCA compliance, regardless of
+  /// their configured preference.
+  String _resolveStartPage() {
+    final uk = context.read<UkComplianceService>();
+    if (uk.isUk) return _kHomeUk;
+    final prefs = context.read<BrowserPreferences>();
+    final s = prefs.startPage.trim();
+    return s.isEmpty ? kDefaultBrowserStartPage : s;
   }
 
   @override
@@ -250,16 +264,30 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
 
   @override
   Widget build(BuildContext context) {
+    // Watch BrowserPreferences so the star icon updates the moment a
+    // favorite is added or removed from the current page.
+    final prefs = context.watch<BrowserPreferences>();
+    final isFav = _currentUrl.isNotEmpty && prefs.isFavorite(_currentUrl);
+
     return Column(
       children: [
         Container(
           color: TibaneColors.dark,
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
           child: Row(
             children: [
               IconButton(
+                tooltip: 'Back',
                 icon: const Icon(Icons.arrow_back, size: 20),
                 onPressed: _canGoBack ? () => _webview.goBack() : null,
+                color: TibaneColors.textMuted,
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
+                tooltip: 'Forward',
+                icon: const Icon(Icons.arrow_forward, size: 20),
+                onPressed:
+                    _canGoForward ? () => _webview.goForward() : null,
                 color: TibaneColors.textMuted,
                 visualDensity: VisualDensity.compact,
               ),
@@ -293,17 +321,46 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
                       minWidth: 28,
                       minHeight: 14,
                     ),
+                    suffixIcon: IconButton(
+                      tooltip: isFav
+                          ? 'Remove from favorites'
+                          : 'Add to favorites',
+                      icon: Icon(
+                        isFav ? Icons.star : Icons.star_border,
+                        size: 18,
+                        color: isFav
+                            ? TibaneColors.orange
+                            : TibaneColors.textDim,
+                      ),
+                      onPressed: _currentUrl.isEmpty
+                          ? null
+                          : () => prefs.toggleFavorite(
+                                url: _currentUrl,
+                                title: _pageTitle,
+                              ),
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 28,
+                        minHeight: 28,
+                      ),
+                    ),
+                    suffixIconConstraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 28,
+                    ),
                   ),
                 ),
               ),
               IconButton(
-                tooltip: 'Home',
-                icon: const Icon(Icons.home_outlined, size: 20),
-                onPressed: () => _webview.loadRequest(Uri.parse(_homeUrl)),
+                tooltip: 'Favorites',
+                icon: const Icon(Icons.bookmarks_outlined, size: 20),
+                onPressed: _openFavorites,
                 color: TibaneColors.textMuted,
                 visualDensity: VisualDensity.compact,
               ),
               IconButton(
+                tooltip: _loading ? 'Cancel' : 'Reload',
                 icon: Icon(_loading ? Icons.close : Icons.refresh, size: 20),
                 onPressed: () => _loading ? null : _webview.reload(),
                 color: TibaneColors.textMuted,
@@ -319,6 +376,164 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
               : const Center(child: CircularProgressIndicator()),
         ),
       ],
+    );
+  }
+
+  Future<void> _openFavorites() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: TibaneColors.dark,
+      isScrollControlled: true,
+      builder: (ctx) => _FavoritesSheet(
+        startPage: _resolveStartPage(),
+      ),
+    );
+    if (picked == null) return;
+    final uri = Uri.tryParse(picked);
+    if (uri == null) return;
+    await _webview.loadRequest(uri);
+  }
+}
+
+/// Bottom-sheet list of favorites + a pinned "Start page" entry at the
+/// top so the user can always jump back to their configured home in
+/// one tap. Returns the URL the user picked (or null on dismiss).
+class _FavoritesSheet extends StatelessWidget {
+  final String startPage;
+
+  const _FavoritesSheet({required this.startPage});
+
+  @override
+  Widget build(BuildContext context) {
+    final prefs = context.watch<BrowserPreferences>();
+    final favs = prefs.favorites;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: TibaneColors.textDim,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              child: Text(
+                'Favorites',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            _FavoriteTile(
+              icon: Icons.home_outlined,
+              title: 'Start page',
+              subtitle: startPage,
+              onTap: () => Navigator.of(context).pop(startPage),
+            ),
+            if (favs.isNotEmpty) ...[
+              const Divider(color: TibaneColors.dark, height: 16),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: favs.length,
+                  itemBuilder: (_, i) {
+                    final f = favs[i];
+                    return _FavoriteTile(
+                      icon: Icons.star,
+                      iconColor: TibaneColors.orange,
+                      title: f.title.isEmpty ? f.url : f.title,
+                      subtitle: f.url,
+                      onTap: () => Navigator.of(context).pop(f.url),
+                      onDelete: () => prefs.removeFavoriteByUrl(f.url),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FavoriteTile extends StatelessWidget {
+  final IconData icon;
+  final Color? iconColor;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final VoidCallback? onDelete;
+
+  const _FavoriteTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.iconColor,
+    this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: iconColor ?? TibaneColors.textMuted),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: TibaneColors.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (onDelete != null)
+              IconButton(
+                tooltip: 'Remove',
+                icon: const Icon(Icons.close, size: 18),
+                onPressed: onDelete,
+                color: TibaneColors.textDim,
+                visualDensity: VisualDensity.compact,
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

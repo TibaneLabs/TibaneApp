@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/tibane_card.dart';
+import 'settings/browser_screen.dart';
 import 'settings/connections_screen.dart';
 import 'settings/general_screen.dart';
 import 'settings/security_privacy_screen.dart';
@@ -65,6 +66,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const ConnectionsScreen()),
             ),
+          ),
+          const SizedBox(height: 6),
+          SettingsTile(
+            icon: Icons.public,
+            title: 'Browser',
+            subtitle: 'Start page, favorites',
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const BrowserScreen())),
           ),
           const SizedBox(height: 6),
           SettingsTile(
