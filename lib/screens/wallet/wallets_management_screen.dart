@@ -126,7 +126,10 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
                   builder: (_) => const InAppImportMnemonicScreen(),
                 ),
               );
-              // List refreshes via the WalletService listener on success.
+              // The import promotes a wallet on the libwallet client without
+              // changing the active wallet, so the WalletService listener
+              // won't fire — reload the list explicitly on return.
+              if (mounted) _load();
             },
           ),
         ],
