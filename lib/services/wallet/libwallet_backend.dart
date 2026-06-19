@@ -586,6 +586,77 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
   }
 
+  /// Import a BIP-39 mnemonic and promote it IN PLACE to the canonical
+  /// `[StoreKey, RemoteKey, Password]` committee (threshold 1), the same shape
+  /// [create] uses. The wallet's master pubkey/address is preserved — only its
+  /// key storage changes from the 1-of-1 password share to the full TSS
+  /// committee — so the imported wallet itself becomes the 3-key MPC wallet
+  /// (no separate "migrated" wallet, no chain picker).
+  ///
+  /// The device StoreKey's private share is persisted under the wallet id so
+  /// [switchWallet] can unlock it later; without that it would read as
+  /// `needsRecovery`. If the promote fails, the just-imported 1-of-1 wallet is
+  /// deleted so no stray password-only wallet is left behind.
+  ///
+  /// Works for both ed25519 (Solana) and secp256k1 (EVM/BTC) seeds. (The
+  /// libwallet 0.4.65 godoc claims promote is secp256k1-only, but that is
+  /// stale — ed25519 promote is tested working against real infra.)
+  ///
+  /// - [mnemonic] / [passphrase] / [curve]: the seed to import.
+  /// - [name]: the new wallet's display name.
+  /// - [password]: encrypts the imported share AND becomes the committee's
+  ///   Password share.
+  /// - [remoteKey]: a verified 2FA remote-key identifier (see
+  ///   [startVerification] / [verifyEmailCode]).
+  Future<Wallet> importAndPromoteMnemonic({
+    required String mnemonic,
+    required String passphrase,
+    required String curve,
+    required String name,
+    required String password,
+    required String remoteKey,
+  }) async {
+    final client = await _getClient();
+    // 1-of-1 mnemonic-backed wallet, password-encrypted at rest.
+    final imported = await client.wallets.importMnemonic(
+      mnemonic: mnemonic,
+      passphrase: passphrase,
+      curve: curve,
+      name: name,
+      keys: [KeyDescription.password(password)],
+    );
+    final storePair = await client.storeKeys.create();
+    final Wallet promoted;
+    try {
+      // Reshare in place into the full committee (address preserved).
+      promoted = await client.wallets.promote(
+        imported.id,
+        oldKeys: [KeyDescription.password(password)],
+        newKeys: [
+          KeyDescription.storeKey(storePair.publicKey),
+          KeyDescription.remoteKey(remoteKey),
+          KeyDescription.password(password),
+        ],
+        threshold: 1,
+      );
+    } catch (_) {
+      // Don't leave a stray 1-of-1 password-only wallet behind.
+      try {
+        await client.wallets.delete(imported.id);
+      } catch (e) {
+        debugPrint('importAndPromoteMnemonic cleanup failed: $e');
+      }
+      rethrow;
+    }
+    // Persist the device share so switchWallet can read it back.
+    await _keystore.writeDeviceShare(
+      walletId: promoted.id,
+      value: storePair.privateKey,
+      password: password,
+    );
+    return promoted;
+  }
+
   /// Unlock an existing wallet by re-deriving the password share and comparing
   /// against the stored public key. Caches secrets in memory for this session.
   Future<bool> unlock(String password) async {
