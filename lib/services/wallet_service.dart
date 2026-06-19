@@ -347,7 +347,23 @@ class WalletService extends ChangeNotifier {
     }
   }
 
-  Future<void> refreshBalances() async {
+  /// Guards [refreshBalances] so overlapping/rapid calls share one in-flight
+  /// scan instead of each kicking a fresh on-chain fetch.
+  Future<void>? _refreshInFlight;
+
+  Future<void> refreshBalances() {
+    // libwallet's Asset:list (getAssets) makes libwallet snapshot balances and
+    // emit a balanceChanges event, which re-enters _onBalanceTick ->
+    // refreshBalances. Without coalescing, a single trigger amplifies into a
+    // storm of redundant scans (observed: ~5 scans from one dashboard open).
+    // Sharing the in-flight future collapses the echo storm into one scan;
+    // libwallet stops emitting once the value stabilizes, ending the cascade.
+    return _refreshInFlight ??= _refreshBalancesOnce().whenComplete(() {
+      _refreshInFlight = null;
+    });
+  }
+
+  Future<void> _refreshBalancesOnce() async {
     final addr = publicKey;
     if (addr == null) return;
     // Prefer libwallet's whitelist when an in-app wallet is loaded — it
