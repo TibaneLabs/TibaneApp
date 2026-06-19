@@ -115,14 +115,37 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
       final chains = _selected
           .map((i) => ChainMigration.fromProbeRow(_rows.elementAt(i)))
           .toList();
+
+      // Promote into a full 1-of-3 MPC committee: StoreKey (device-
+      // local), RemoteKey (server-side via 2FA), and Password (user
+      // memorised). This matches the canonical 3-key shape the
+      // standard wallet-create flow uses (LibwalletBackend) and is
+      // the only configuration libwallet's promoteMnemonic accepts —
+      // it rejects len(New) < 2 because a single-party "TSS" is not
+      // a meaningful threshold scheme. Reusing the already-authenticated
+      // RemoteKey from the backend avoids forcing the user through
+      // another 2FA round mid-import.
+      final remoteKeyId = ws.libwallet.remoteKeyId;
+      if (remoteKeyId == null) {
+        throw StateError(
+            'No active RemoteKey session — finish the standard wallet '
+            'onboarding (with SMS/email 2FA) before importing a mnemonic '
+            'so the promote step can write the imported keys under the '
+            'full MPC committee.');
+      }
+      final storePair = await client.storeKeys.create();
+
+      final newKeys = [
+        KeyDescription.storeKey(storePair.publicKey),
+        KeyDescription.remoteKey(remoteKeyId),
+        KeyDescription.password(pw),
+      ];
+
       final promoted = await client.wallets.promoteMnemonic(
         imported.id,
         oldKeys: [KeyDescription.password(pw)],
         chains: chains,
-        // For now wire the promoted MPC wallets with a single Password
-        // share — keeps the migration UX tight. The user can re-share
-        // with Store/Remote keys later via the wallet-rotate flow.
-        newKeys: [KeyDescription.password(pw)],
+        newKeys: newKeys,
         threshold: 1,
       );
       if (!mounted) return;
