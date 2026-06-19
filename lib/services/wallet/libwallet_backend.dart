@@ -897,6 +897,118 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
   }
 
+  /// Reset the wallet password WITHOUT the old one, using the on-device
+  /// StoreKey share + a 2FA-validated RemoteKey. Reshare committee
+  /// `[StoreKey + RemoteKey] → [StoreKey(new) + Password(new) + RemoteKey]`.
+  ///
+  /// Preconditions: [loadWalletForRecovery] has loaded the target wallet and a
+  /// RemoteKey session was started via [startRemoteKeyReshare] (its SMS/email
+  /// code is [code]). The device StoreKey priv must be readable from the
+  /// keystore WITHOUT a password — true when the OS keystore holds it (the
+  /// normal case). When only the password-encrypted fallback blob survived
+  /// (e.g. after a restore) this can't run, and the user must restore from a
+  /// backup instead.
+  ///
+  /// On success the wallet is reshared, the new device share is persisted under
+  /// [newPassword], and the wallet is left active + unlocked.
+  Future<bool> resetPasswordVia2fa({
+    required String sessionToken,
+    required String code,
+    required String newPassword,
+  }) async {
+    if (_walletId == null || _storeKeyId == null) {
+      _error = 'No wallet loaded to reset';
+      notifyListeners();
+      return false;
+    }
+    if (newPassword.length < 8) {
+      _error = 'New password must be at least 8 characters';
+      notifyListeners();
+      return false;
+    }
+    try {
+      final client = await _getClient();
+      // Device StoreKey priv, read WITHOUT the password (OS-keystore path).
+      final storeKeyPriv =
+          await _keystore.readDeviceShare(walletId: _walletId!);
+      if (storeKeyPriv == null) {
+        _error = "This device's wallet key isn't available without the "
+            'password (e.g. after a restore). Restore from a backup instead.';
+        notifyListeners();
+        return false;
+      }
+      // Validate the 2FA code → fresh RemoteKey resource (the stored one is a
+      // `done` session and can't authorize a reshare).
+      final validation = await client.remoteKeys.validate(
+        session: sessionToken,
+        code: code,
+      );
+      if (validation.remoteKey.isEmpty) {
+        _error = '2FA validation returned no remote key';
+        notifyListeners();
+        return false;
+      }
+      final freshRemote = validation.remoteKey;
+      // Reshare: authorize with StoreKey + RemoteKey (no old password), set a
+      // new Password. Mint a fresh StoreKey for the new committee.
+      final wallet = await client.wallets.get(_walletId!);
+      final newStorePair = await client.storeKeys.create();
+      final oldKeys = buildReshareOldKeys(
+        wallet: wallet,
+        password: null,
+        storeKeyPriv: storeKeyPriv,
+        freshRemoteKeyResource: freshRemote,
+      );
+      WalletKey? oldRemoteKey;
+      for (final k in wallet.keys) {
+        if (k.type == 'RemoteKey') {
+          oldRemoteKey = k;
+          break;
+        }
+      }
+      final newKeys = <KeyDescription>[
+        KeyDescription.storeKey(newStorePair.publicKey),
+        if (oldRemoteKey != null)
+          KeyDescription(type: 'RemoteKey', key: freshRemote),
+        KeyDescription.password(newPassword),
+      ];
+      Wallet? after;
+      await for (final ev in client.wallets.reshare(
+        _walletId!,
+        oldKeys: oldKeys,
+        newKeys: newKeys,
+      )) {
+        if (ev is Complete<Wallet>) after = ev.value;
+      }
+      if (after == null) {
+        throw StateError('Password-reset reshare returned no wallet');
+      }
+      // Adopt the new committee + persist under the new password. The wallet
+      // is now the active, unlocked one.
+      final freshIds = _extractKeyIdsByType(after);
+      _storeKeyId = freshIds['StoreKey'];
+      _passwordKeyId = freshIds['Password'];
+      _remoteKeyId = freshIds['RemoteKey'] ?? freshRemote;
+      _storeKeyPriv = newStorePair.privateKey;
+      _password = newPassword;
+      await _persist(storeKeyPublic: newStorePair.publicKey);
+      // The biometric cache held the OLD password — drop it.
+      if (await isBiometricEnabled()) {
+        await _keystore.deleteBiometricPassword();
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_prefsBiometricEnabled, false);
+      }
+      notifyListeners();
+      unawaited(ensureSolanaDefault());
+      return true;
+    } catch (e) {
+      _error = 'Password reset failed: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Reshare the active wallet replacing the StoreKey share with a
   /// freshly-generated one. Useful when the user suspects the device
   /// share has been exposed and wants to invalidate it. Requires the
@@ -2310,9 +2422,15 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// the entry; Password + RemoteKey still satisfies T+1 for a 2-of-3
   /// wallet, and `reshareNew` mints the replacement StoreKey.
   @visibleForTesting
+  /// Build the OLD-committee key descriptors for a reshare. Include only the
+  /// shares the caller can actually authorize with (any two of three):
+  /// - device-share recovery: pass [password] + null [storeKeyPriv] →
+  ///   `[Password, RemoteKey]`.
+  /// - password reset via 2FA: pass [storeKeyPriv] + null [password] →
+  ///   `[StoreKey, RemoteKey]`.
   static List<KeyDescription> buildReshareOldKeys({
     required Wallet wallet,
-    required String password,
+    String? password,
     required String? storeKeyPriv,
     String? freshRemoteKeyResource,
   }) {
@@ -2320,16 +2438,17 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       (k) => k.type == 'StoreKey',
       orElse: () => throw StateError('Wallet has no StoreKey share'),
     );
-    final oldPasswordKey = wallet.keys.firstWhere(
-      (k) => k.type == 'Password',
-      orElse: () => throw StateError('Wallet has no Password share'),
-    );
+    WalletKey? oldPasswordKey;
     WalletKey? oldRemoteKey;
     for (final k in wallet.keys) {
-      if (k.type == 'RemoteKey') {
-        oldRemoteKey = k;
-        break;
-      }
+      if (k.type == 'Password') oldPasswordKey = k;
+      if (k.type == 'RemoteKey') oldRemoteKey = k;
+    }
+    // A supplied password must correspond to a Password share on the wallet —
+    // preserve the original contract. (When [password] is null the Password
+    // share is intentionally omitted from the committee.)
+    if (password != null && oldPasswordKey == null) {
+      throw StateError('Wallet has no Password share');
     }
 
     // Per libwallet 0.4.37 device_share.md: the stored
@@ -2354,7 +2473,12 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
           key: remoteKeyForReshare,
           id: oldRemoteKey.id,
         ),
-      KeyDescription(type: 'Password', key: password, id: oldPasswordKey.id),
+      if (password != null && oldPasswordKey != null)
+        KeyDescription(
+          type: 'Password',
+          key: password,
+          id: oldPasswordKey.id,
+        ),
     ];
   }
 
