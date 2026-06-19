@@ -100,7 +100,7 @@ class WalletsAccountsScreen extends StatelessWidget {
               SettingsTile(
                 icon: Icons.upload_outlined,
                 title: 'Import wallet',
-                subtitle: 'Restore from an encrypted backup file',
+                subtitle: 'Seed phrase or encrypted backup file',
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const InAppImportScreen()),
                 ),

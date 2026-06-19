@@ -7,7 +7,6 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import 'device_transfer_receive_screen.dart';
 import 'inapp_create_screen.dart';
-import 'inapp_import_mnemonic_screen.dart';
 import 'share_labels.dart';
 import 'wallet_details_screen.dart';
 import '../../utils/log.dart';
@@ -92,7 +91,10 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
     await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const InAppCreateScreen()));
-    // _load triggers from WalletService listener on success.
+    // Creating a wallet switches the active one (the listener refreshes), but
+    // the create -> import -> seed-phrase path adds a wallet WITHOUT changing
+    // the active one, so reload explicitly on return to be safe.
+    if (mounted) _load();
   }
 
   @override
@@ -114,21 +116,6 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
                 ),
               );
               // A received wallet is added to the list — reload on return.
-              if (mounted) _load();
-            },
-          ),
-          IconButton(
-            tooltip: 'Import mnemonic',
-            icon: const Icon(Icons.download_outlined),
-            onPressed: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const InAppImportMnemonicScreen(),
-                ),
-              );
-              // The import promotes a wallet on the libwallet client without
-              // changing the active wallet, so the WalletService listener
-              // won't fire — reload the list explicitly on return.
               if (mounted) _load();
             },
           ),
