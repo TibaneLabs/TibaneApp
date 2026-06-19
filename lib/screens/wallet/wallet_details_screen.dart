@@ -8,6 +8,7 @@ import '../../widgets/tibane_card.dart';
 import 'device_transfer_send_screen.dart';
 import 'inapp_export_screen.dart';
 import 'inapp_unlock_screen.dart';
+import 'reset_password_screen.dart';
 import 'share_labels.dart';
 
 /// Wallet detail view. When [walletId] is null, falls back to the
@@ -87,6 +88,22 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const InAppExportScreen()));
+  }
+
+  /// Reset this wallet's password via 2FA (no old password needed). On success
+  /// the wallet becomes active + unlocked under the new password.
+  Future<void> _resetPassword() async {
+    final wallet = _wallet;
+    if (wallet == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ResetPasswordScreen(
+          walletId: wallet.id,
+          walletName: wallet.name,
+        ),
+      ),
+    );
+    if (mounted) _load();
   }
 
   /// Move this wallet to another device via QR device transfer. The send
@@ -248,6 +265,20 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                       onPressed: _transfer,
                       icon: const Icon(Icons.send_to_mobile, size: 16),
                       label: const Text('Transfer to new device'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: TibaneColors.text,
+                        side: const BorderSide(color: TibaneColors.border),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _resetPassword,
+                      icon: const Icon(Icons.lock_reset, size: 16),
+                      label: const Text('Reset password (2FA)'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: TibaneColors.text,
                         side: const BorderSide(color: TibaneColors.border),
