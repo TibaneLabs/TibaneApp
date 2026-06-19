@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../utils/log.dart';
 
 /// Import an existing in-app wallet either by picking a backup file (primary)
 /// or pasting the JSON directly (fallback for small payloads).
@@ -118,12 +119,14 @@ class _InAppImportScreenState extends State<InAppImportScreen> {
         if (!mounted) return;
         Navigator.of(context).pop(true);
       } else {
+        logError('[InAppImport._restore] import failed: ${wallet.libwallet.error}');
         setState(() {
           _busy = false;
           _error = wallet.libwallet.error ?? 'Import failed';
         });
       }
     } catch (e) {
+      logError('[InAppImport._restore] restore error: $e');
       if (!mounted) return;
       setState(() {
         _busy = false;

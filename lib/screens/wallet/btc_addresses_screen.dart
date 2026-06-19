@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../utils/log.dart';
 
 /// Receive / address-management screen for Bitcoin-family accounts. Shows
 /// the next clean receive address in the account's default (best) script
@@ -63,6 +64,7 @@ class _BtcAddressesScreenState extends State<BtcAddressesScreen> {
         _loading = false;
       });
     } catch (e) {
+      logError('[BtcAddresses._load] load addresses error: $e');
       if (!mounted) return;
       setState(() {
         _error = e.toString();
@@ -90,6 +92,7 @@ class _BtcAddressesScreenState extends State<BtcAddressesScreen> {
         _rotating = false;
       });
     } catch (e) {
+      logError('[BtcAddresses._rotate] rotate address error: $e');
       if (!mounted) return;
       setState(() {
         _error = e.toString();

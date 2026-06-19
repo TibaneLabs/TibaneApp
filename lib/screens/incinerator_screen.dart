@@ -18,6 +18,7 @@ import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
 import '../widgets/token_icon.dart';
 import 'wallet/inapp_unlock_screen.dart';
+import '../utils/log.dart';
 
 class IncineratorScreen extends StatefulWidget {
   const IncineratorScreen({super.key});
@@ -142,6 +143,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         _loadingTokens = false;
       });
     } catch (e) {
+      logError('[Incinerator._loadTokens] error: $e');
       setState(() {
         _error = 'Failed to load tokens: $e';
         _loadingTokens = false;
@@ -410,6 +412,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         wallet.notifyTxCommitted();
       }
     } catch (e) {
+      logError('[Incinerator._partialBurn] error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -559,12 +562,14 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         ).showSnackBar(SnackBar(content: Text('Burned $successCount items')));
         _clearSelection();
       } else if (wallet.error != null) {
+        logError('[Incinerator._directBurn] wallet error: ${wallet.error}');
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(wallet.error!)));
         wallet.clearError();
       }
     } catch (e) {
+      logError('[Incinerator._directBurn] error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -767,6 +772,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         _clearSelection();
       }
     } catch (e) {
+      logError('[Incinerator._sponsoredBurn] error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,

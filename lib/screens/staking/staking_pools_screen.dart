@@ -10,6 +10,7 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import 'staking_detail_screen.dart';
+import '../../utils/log.dart';
 
 class StakingPoolsScreen extends StatefulWidget {
   const StakingPoolsScreen({super.key});
@@ -52,6 +53,7 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
         _loading = false;
       });
     } catch (e) {
+      logError('[StakingPools._loadPools] load error: $e');
       if (!mounted) return;
       setState(() {
         _error = 'Failed to load pools: $e';

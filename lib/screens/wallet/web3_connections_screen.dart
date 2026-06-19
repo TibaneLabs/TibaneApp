@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../utils/log.dart';
 
 /// Lists every dApp the user has granted EIP-1193 (window.ethereum /
 /// window.solana) access to via the in-app browser. Each row exposes a
@@ -48,6 +49,7 @@ class _Web3ConnectionsScreenState extends State<Web3ConnectionsScreen> {
         _loading = false;
       });
     } catch (e) {
+      logError('[Web3Connections._load] load connections error: $e');
       if (!mounted) return;
       setState(() {
         _error = e.toString();
@@ -92,6 +94,7 @@ class _Web3ConnectionsScreenState extends State<Web3ConnectionsScreen> {
       await client.web3Connections.delete(c.id);
       _load();
     } catch (e) {
+      logError('[Web3Connections._revoke] revoke error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,

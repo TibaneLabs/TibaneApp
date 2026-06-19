@@ -7,6 +7,7 @@ import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/cat_logo.dart';
 import '../widgets/tibane_card.dart';
+import '../utils/log.dart';
 
 class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
@@ -35,6 +36,7 @@ class _AboutScreenState extends State<AboutScreen> {
       if (!mounted) return;
       setState(() => _versionInfo = v);
     } catch (e) {
+      logError('[About._loadVersion] error: $e');
       if (!mounted) return;
       setState(() => _versionError = e.toString());
     }

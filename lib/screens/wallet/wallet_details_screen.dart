@@ -10,6 +10,7 @@ import 'inapp_export_screen.dart';
 import 'inapp_unlock_screen.dart';
 import 'reset_password_screen.dart';
 import 'share_labels.dart';
+import '../../utils/log.dart';
 
 /// Wallet detail view. When [walletId] is null, falls back to the
 /// active in-app wallet (legacy callers); otherwise shows the wallet
@@ -76,6 +77,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
         _loading = false;
       });
     } catch (e) {
+      logError('[WalletDetails._load] load wallet error: $e');
       if (!mounted) return;
       setState(() {
         _loading = false;
@@ -216,6 +218,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       ws.refreshBalances();
       Navigator.of(context).pop(true);
     } else {
+      logError('[WalletDetails._remove] remove failed: ${ws.libwallet.error}');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(ws.libwallet.error ?? 'Remove failed')),
       );

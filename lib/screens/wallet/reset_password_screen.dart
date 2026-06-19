@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../utils/log.dart';
 
 /// Reset a wallet's password WITHOUT the old one, using 2FA. Launched from the
 /// wallet detail screen. Uses the on-device StoreKey share + a 2FA-validated
@@ -53,6 +54,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     final loaded = await backend.loadWalletForRecovery(widget.walletId);
     if (!mounted) return;
     if (!loaded) {
+      logError('[ResetPassword._sendCode] load wallet failed: ${backend.error}');
       setState(() {
         _busy = false;
         _error = backend.error ?? 'Could not load wallet';
@@ -62,6 +64,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     final session = await backend.startRemoteKeyReshare();
     if (!mounted) return;
     if (session == null) {
+      logError('[ResetPassword._sendCode] start reshare failed: ${backend.error}');
       setState(() {
         _busy = false;
         _error = backend.error ?? 'Could not send verification code';
@@ -110,6 +113,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       );
       Navigator.of(context).pop(true);
     } else {
+      logError('[ResetPassword._reset] reset failed: ${wallet.libwallet.error}');
       setState(() {
         _busy = false;
         _error = wallet.libwallet.error ?? 'Password reset failed';

@@ -9,6 +9,7 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import 'activity_screen.dart';
 import 'create_agent_wallet_screen.dart';
+import '../../utils/log.dart';
 
 /// USDC mainnet mint. Stage 1 demo flows transfer USDC.
 const _usdcMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
@@ -105,6 +106,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
     try {
       await ClawdWalletService().setLocked(id, locked);
     } catch (e) {
+      logError('[Agents._toggleLock] set-locked error: $e');
       if (!mounted) return;
       // Roll back optimistic state and surface the failure.
       setState(() {

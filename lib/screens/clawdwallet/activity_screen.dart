@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../services/clawdwallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../utils/log.dart';
 
 /// Polled activity feed for a single ClawdWallet.
 ///
@@ -55,6 +56,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
         _error = null;
       });
     } catch (e) {
+      logError('[Activity._refresh] load error: $e');
       if (!mounted) return;
       setState(() {
         _loading = false;

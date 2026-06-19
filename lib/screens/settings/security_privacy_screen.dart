@@ -10,6 +10,7 @@ import '../../widgets/tibane_card.dart';
 import '../settings_screen.dart' show SettingsTile;
 import '../wallet/cloud_backup_screen.dart';
 import '../wallet/inapp_unlock_screen.dart';
+import '../../utils/log.dart';
 
 /// Sub-screen reached from Settings → "Security & Privacy". Hosts the
 /// biometric toggle, password change, TSS share rotations, and cloud
@@ -104,6 +105,9 @@ class SecurityPrivacyScreen extends StatelessWidget {
       newPassword: result.newPassword,
     );
     if (!context.mounted) return;
+    if (!ok) {
+      logError('[SecurityPrivacy._changePassword] failed: ${wallet.libwallet.error}');
+    }
     messenger.showSnackBar(
       SnackBar(
         content: Text(
@@ -150,6 +154,7 @@ class SecurityPrivacyScreen extends StatelessWidget {
     final messenger = ScaffoldMessenger.of(context);
     final session = await wallet.libwallet.startRemoteKeyReshare();
     if (session == null) {
+      logError('[SecurityPrivacy._rotateRemoteKey] reshare start failed: ${wallet.libwallet.error}');
       messenger.showSnackBar(
         SnackBar(
           content: Text(wallet.libwallet.error ?? 'Reshare start failed'),
@@ -168,6 +173,9 @@ class SecurityPrivacyScreen extends StatelessWidget {
       code: code,
     );
     if (!context.mounted) return;
+    if (!ok) {
+      logError('[SecurityPrivacy._rotateRemoteKey] reshare failed: ${wallet.libwallet.error}');
+    }
     messenger.showSnackBar(
       SnackBar(
         content: Text(
@@ -216,6 +224,9 @@ class SecurityPrivacyScreen extends StatelessWidget {
     final messenger = ScaffoldMessenger.of(context);
     final ok = await wallet.libwallet.rotateDeviceShare();
     if (!context.mounted) return;
+    if (!ok) {
+      logError('[SecurityPrivacy._rotateDeviceShare] rotate failed: ${wallet.libwallet.error}');
+    }
     messenger.showSnackBar(
       SnackBar(
         content: Text(
@@ -261,14 +272,17 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
     final newPw = _newCtrl.text;
     final confirm = _confirmCtrl.text;
     if (oldPw.isEmpty) {
+      logError('[SecurityPrivacy._ChangePasswordDialog] validation error: current password empty');
       setState(() => _error = 'Enter the current password');
       return;
     }
     if (newPw.length < 8) {
+      logError('[SecurityPrivacy._ChangePasswordDialog] validation error: new password too short');
       setState(() => _error = 'New password must be at least 8 characters');
       return;
     }
     if (newPw != confirm) {
+      logError('[SecurityPrivacy._ChangePasswordDialog] validation error: new passwords do not match');
       setState(() => _error = 'New passwords do not match');
       return;
     }
@@ -371,6 +385,7 @@ class _BiometricToggleTileState extends State<_BiometricToggleTile> {
         }
         final pw = wallet.libwallet.currentPassword;
         if (pw == null) {
+          logError('[SecurityPrivacy._toggle] biometric enable: could not read cached password');
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -382,6 +397,7 @@ class _BiometricToggleTileState extends State<_BiometricToggleTile> {
         final ok = await widget.libwallet.enableBiometricUnlock(pw);
         if (!mounted) return;
         if (!ok) {
+          logError('[SecurityPrivacy._toggle] biometric setup failed: enableBiometricUnlock returned false');
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -470,6 +486,7 @@ class _PasswordCachePromptState extends State<_PasswordCachePrompt> {
     final ok = await wallet.libwallet.unlock(_pwCtrl.text);
     if (!mounted) return;
     if (!ok) {
+      logError('[SecurityPrivacy._PasswordCachePrompt] unlock failed: wrong password');
       setState(() {
         _busy = false;
         _error = "Wrong password";

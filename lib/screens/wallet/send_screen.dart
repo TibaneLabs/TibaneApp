@@ -13,6 +13,7 @@ import '../../widgets/keyboard_safe_form.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import 'inapp_unlock_screen.dart';
+import '../../utils/log.dart';
 
 class SendScreen extends StatefulWidget {
   /// Optional SPL mint to send instead of native SOL. When null the
@@ -210,6 +211,7 @@ class _SendScreenState extends State<SendScreen> {
         _resolvedAddress = r.address;
       });
     } catch (e) {
+      logError('[Send._resolveName] resolve "$name" error: $e');
       if (!mounted) return;
       if (_addrCtrl.text.trim() != name) return;
       setState(() {
@@ -234,6 +236,7 @@ class _SendScreenState extends State<SendScreen> {
           .replaceAll(RegExp(r'0+$'), '')
           .replaceAll(RegExp(r'\.$'), '');
     } catch (e) {
+      logError('[Send._setMax] max sendable error: $e');
       if (!mounted) return;
       setState(() => _error = 'Could not compute max: $e');
     }
@@ -282,6 +285,7 @@ class _SendScreenState extends State<SendScreen> {
         asset: _assetKey,
       );
     } catch (e) {
+      logError('[Send._send] simulate error: $e');
       if (!mounted) return;
       setState(() {
         _sending = false;
@@ -319,6 +323,7 @@ class _SendScreenState extends State<SendScreen> {
       // Show a success modal with the tx id; OK returns to the previous screen.
       await _showSuccessDialog(tx.hash);
     } catch (e) {
+      logError('[Send._send] send error: $e');
       if (!mounted) return;
       setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {

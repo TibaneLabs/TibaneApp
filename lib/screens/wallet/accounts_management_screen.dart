@@ -10,6 +10,7 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import 'inapp_create_screen.dart';
 import 'inapp_unlock_screen.dart';
+import '../../utils/log.dart';
 
 /// Lists every chain account derived from libwallet wallets on this
 /// device. Shows the parent wallet, the chain type, the on-chain
@@ -60,6 +61,7 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
         _loading = false;
       });
     } catch (e) {
+      logError('[AccountsManagement._load] load accounts error: $e');
       if (!mounted) return;
       setState(() {
         _error = e.toString();
@@ -96,6 +98,7 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
     final ok = await backend.switchAccount(account.id);
     if (!mounted) return;
     if (!ok) {
+      logError('[AccountsManagement._setActive] switch account failed: ${backend.error}');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(backend.error ?? 'Could not switch account')),
       );
@@ -141,6 +144,7 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
       await client.accounts.delete(account.id);
       _load();
     } catch (e) {
+      logError('[AccountsManagement._remove] remove account error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,

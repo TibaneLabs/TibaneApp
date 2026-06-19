@@ -8,6 +8,7 @@ import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
+import '../../utils/log.dart';
 
 /// Form to provision a new ClawdWallet (agent-controlled MPC wallet).
 ///
@@ -138,6 +139,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
         _stage = _Stage.done;
       });
     } catch (e) {
+      logError('[CreateAgentWallet._submit] keygen error: $e');
       if (!mounted) return;
       setState(() {
         _stage = _Stage.error;
