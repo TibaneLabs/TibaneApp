@@ -7,6 +7,7 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
 import 'create_agent_wallet_screen.dart';
+import '../../utils/log.dart';
 
 /// Handles an incoming `clawd://pair?agent=...&token=...` URL.
 ///
@@ -49,6 +50,7 @@ class _PairingScreenState extends State<PairingScreen> {
         ),
       );
     } on PairingException catch (e) {
+      logError('[Pairing._runPair] pairing error: $e');
       if (!mounted) return;
       final mapped = _messageFor(e);
       setState(() {
@@ -57,6 +59,7 @@ class _PairingScreenState extends State<PairingScreen> {
         _errorBody = mapped.$2;
       });
     } catch (e) {
+      logError('[Pairing._runPair] unexpected error: $e');
       if (!mounted) return;
       setState(() {
         _stage = _Stage.error;

@@ -22,6 +22,7 @@ import '../widgets/tibane_card.dart';
 import '../widgets/token_icon.dart';
 import '../widgets/token_search.dart';
 import 'wallet/inapp_unlock_screen.dart';
+import '../utils/log.dart';
 
 class SwapScreen extends StatefulWidget {
   /// Optional input mint to pre-select once holdings finish loading. Pass
@@ -289,6 +290,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         if (mounted && wallet.isConnected) await _loadHoldings();
       }
     } catch (e) {
+      logError('[swap._switchToSolana] error: $e');
       if (!mounted) return;
       setState(() => _switchingNetwork = false);
       ScaffoldMessenger.of(
@@ -408,6 +410,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         }
       });
     } catch (e) {
+      logError('[swap._loadHoldings] error: $e');
       if (!mounted) return;
       setState(() {
         _error = _friendlyError(e);
@@ -451,6 +454,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         await _fetchQuoteJupiter(wallet, rawAmount);
       }
     } catch (e) {
+      logError('[swap._fetchQuote] error: $e');
       if (!mounted) return;
       setState(() {
         _quoteError = _friendlyError(e);
@@ -685,6 +689,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         ),
       );
     } catch (e) {
+      logError('[swap._executeSwap] error: $e');
       if (!mounted) return;
       setState(() {
         _error = _friendlyError(e);
@@ -1625,6 +1630,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
         meta.decimals,
       );
     } catch (e) {
+      logError('[swap._selectByMint] error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -1804,6 +1810,7 @@ class _SwapResultSheet extends StatelessWidget {
   Future<void> _openExplorer(BuildContext context, String url) async {
     final uri = Uri.tryParse(url);
     if (uri == null) {
+      logError('[swap._openExplorer] invalid explorer URL: $url');
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Invalid explorer URL: $url')));
@@ -1822,6 +1829,7 @@ class _SwapResultSheet extends StatelessWidget {
         lastErr = e;
       }
     }
+    logError('[swap._openExplorer] could not open $url: $lastErr');
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

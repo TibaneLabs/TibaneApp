@@ -18,6 +18,7 @@ import '../../widgets/tibane_card.dart';
 import '../swap_screen.dart';
 import '../wallet/inapp_unlock_screen.dart';
 import 'staking_members_screen.dart';
+import '../../utils/log.dart';
 
 class StakingDetailScreen extends StatefulWidget {
   final StakingPool pool;
@@ -95,6 +96,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
         _loadingStake = false;
       });
     } catch (e) {
+      logError('[StakingDetail._loadUserStake] load error: $e');
       if (!mounted) return;
       setState(() {
         _error = 'Failed to load stake: $e';
@@ -405,6 +407,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
         );
       }
     } catch (e) {
+      logError('[StakingDetail._handleAdminAction] $action error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -462,6 +465,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
         );
       }
     } catch (e) {
+      logError('[StakingDetail._handleUpdateSettings] update error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -597,12 +601,14 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
         _beneficiaryController.clear();
         _unstakeController.clear();
       } else if (wallet.error != null) {
+        logError('[StakingDetail._handleAction] $action wallet error: ${wallet.error}');
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(wallet.error!)));
         wallet.clearError();
       }
     } catch (e) {
+      logError('[StakingDetail._handleAction] $action error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,

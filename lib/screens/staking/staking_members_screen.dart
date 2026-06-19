@@ -6,6 +6,7 @@ import '../../models/staking_pool.dart';
 import '../../services/rpc_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../utils/log.dart';
 
 class StakingMembersScreen extends StatefulWidget {
   final StakingPool pool;
@@ -71,6 +72,7 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
         _loading = false;
       });
     } catch (e) {
+      logError('[StakingMembers._loadMembers] load error: $e');
       setState(() {
         _error = 'Failed to load members: $e';
         _loading = false;

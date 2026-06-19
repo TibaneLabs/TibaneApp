@@ -9,6 +9,7 @@ import '../../services/wallet/walletconnect_bridge.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../utils/log.dart';
 
 /// WalletConnect v2 hub. Lets the user start the relay (if not already
 /// running), paste a `wc:` URI to pair with a dApp, and view / disconnect
@@ -57,6 +58,7 @@ class _WalletConnectSessionsScreenState
       }
       await _refresh();
     } catch (e) {
+      logError('[WalletConnectSessions._init] init error: $e');
       if (!mounted) return;
       setState(() {
         _error = e.toString();
@@ -79,6 +81,7 @@ class _WalletConnectSessionsScreenState
     if (!mounted) return;
     setState(() => _starting = false);
     if (!ok && bridge.error != null) {
+      logError('[WalletConnectSessions._start] relay start failed: ${bridge.error}');
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(bridge.error!)));
@@ -123,6 +126,7 @@ class _WalletConnectSessionsScreenState
     final uri = _uriCtrl.text.trim();
     if (bridge == null || uri.isEmpty) return;
     if (!uri.startsWith('wc:')) {
+      logError('[WalletConnectSessions._pair] invalid URI: must start with "wc:"');
       setState(() => _error = 'URI must start with "wc:"');
       return;
     }
@@ -132,6 +136,9 @@ class _WalletConnectSessionsScreenState
     });
     final topic = await bridge.pair(uri);
     if (!mounted) return;
+    if (topic == null) {
+      logError('[WalletConnectSessions._pair] pair failed: ${bridge.error}');
+    }
     setState(() {
       _pairing = false;
       if (topic == null) {

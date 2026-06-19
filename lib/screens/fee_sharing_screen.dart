@@ -14,6 +14,7 @@ import '../theme/tibane_theme.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
 import 'wallet/inapp_unlock_screen.dart';
+import '../utils/log.dart';
 
 class FeeSharingScreen extends StatefulWidget {
   final String mint;
@@ -80,6 +81,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         });
       }
     } catch (e) {
+      logError('[FeeSharing._loadConfig] load error: $e');
       setState(() {
         _error = 'Failed to load config: $e';
         _loading = false;
@@ -147,6 +149,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         );
       }
     } catch (e) {
+      logError('[FeeSharing._createConfig] error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -194,6 +197,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         );
       }
     } catch (e) {
+      logError('[FeeSharing._distributeFees] error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -232,6 +236,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         );
       }
     } catch (e) {
+      logError('[FeeSharing._updateShares] error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -276,6 +281,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         _newAdminController.clear();
       }
     } catch (e) {
+      logError('[FeeSharing._transferAuthority] error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -343,6 +349,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         );
       }
     } catch (e) {
+      logError('[FeeSharing._revokeAuthority] error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,

@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../utils/log.dart';
 
 /// Contacts CRUD — backed by libwallet's `Contact` API. List → tap to
 /// edit, swipe / button to delete, FAB to add. Recipient autocomplete in
@@ -47,6 +48,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
         _loading = false;
       });
     } catch (e) {
+      logError('[Contacts._load] load error: $e');
       if (!mounted) return;
       setState(() {
         _error = e.toString();
@@ -104,6 +106,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
       await client.contacts.delete(c.id);
       _load();
     } catch (e) {
+      logError('[Contacts._delete] delete error: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -342,6 +345,7 @@ class _ContactEditScreenState extends State<_ContactEditScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
+      logError('[Contacts._save] save error: $e');
       if (!mounted) return;
       setState(() {
         _busy = false;

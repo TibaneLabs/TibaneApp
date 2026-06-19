@@ -7,6 +7,7 @@ import '../../services/wallet/libwallet_backend.dart' show SwitchResult;
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
+import '../../utils/log.dart';
 
 /// Preferred initial route for the unlock screen. Pure decision, extracted
 /// so it can be unit-tested without a platform.
@@ -151,6 +152,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } else {
+      logError('[InAppUnlock._unlock] unlock failed: ${backend.error}');
       setState(() {
         _busy = false;
         _error = backend.error ?? 'Unlock failed';
@@ -171,6 +173,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } else {
+      logError('[InAppUnlock._unlockWithBiometric] biometric unlock cancelled or failed');
       setState(() {
         _busy = false;
         _error = 'Biometric unlock cancelled or failed';
@@ -191,6 +194,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
     final session = await wallet.libwallet.startRemoteKeyReshare();
     if (!mounted) return;
     if (session == null) {
+      logError('[InAppUnlock._sendRecoveryCode] send code failed: ${wallet.libwallet.error}');
       setState(() {
         _busy = false;
         _error = wallet.libwallet.error ?? 'Could not send verification code';
@@ -226,6 +230,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } else {
+      logError('[InAppUnlock._verifyAndRecover] 2FA recovery failed: ${wallet.libwallet.error}');
       setState(() {
         _busy = false;
         _error = wallet.libwallet.error ?? '2FA recovery failed';

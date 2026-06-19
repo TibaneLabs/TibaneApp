@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
+import '../../utils/log.dart';
 
 /// Two-step export flow: confirm password, then offer a native share sheet
 /// (primary) plus a clipboard fallback for the encrypted backup JSON.
@@ -74,6 +75,7 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
         _busy = false;
       });
     } catch (e) {
+      logError('[InAppExport._export] export backup error: $e');
       if (!mounted) return;
       setState(() {
         _busy = false;
@@ -118,6 +120,7 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
         ),
       );
     } catch (e) {
+      logError('[InAppExport._share] share backup error: $e');
       if (!mounted) return;
       await _showErrorDialog('Could not share backup', e.toString());
     } finally {
@@ -138,6 +141,7 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
     try {
       await Clipboard.setData(ClipboardData(text: json));
     } catch (e) {
+      logError('[InAppExport._copy] clipboard error: $e');
       if (!mounted) return;
       await _showErrorDialog(
         'Clipboard rejected the backup',

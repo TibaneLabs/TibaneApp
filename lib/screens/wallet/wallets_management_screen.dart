@@ -10,6 +10,7 @@ import 'inapp_create_screen.dart';
 import 'inapp_import_mnemonic_screen.dart';
 import 'share_labels.dart';
 import 'wallet_details_screen.dart';
+import '../../utils/log.dart';
 
 /// Lists every libwallet wallet on this device. Each row taps into
 /// [WalletDetailsScreen]; FAB adds a new wallet via the existing create
@@ -78,6 +79,7 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
         _loading = false;
       });
     } catch (e) {
+      logError('[WalletsManagement._load] load wallets error: $e');
       if (!mounted) return;
       setState(() {
         _error = e.toString();

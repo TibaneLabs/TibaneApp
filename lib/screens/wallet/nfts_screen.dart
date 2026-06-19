@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../utils/log.dart';
 
 /// NFT collection view for the active account on the active network.
 /// Empty for accounts that don't have a valid address on the current
@@ -48,6 +49,7 @@ class _NftsScreenState extends State<NftsScreen> {
         _loading = false;
       });
     } catch (e) {
+      logError('[Nfts._load] load NFTs error: $e');
       if (!mounted) return;
       setState(() {
         _error = e.toString();
