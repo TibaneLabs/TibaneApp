@@ -364,26 +364,49 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     decimals: 6,
   );
 
-  Future<LibwalletClient> _getClient() async {
-    if (_client != null) return _client!;
-    final docs = await getApplicationDocumentsDirectory();
-    final dir = Directory('${docs.path}/libwallet');
-    if (!dir.existsSync()) dir.createSync(recursive: true);
+  // Coalesces concurrent first-time initializations. Without this, several
+  // callers racing through _getClient at startup (refreshBalances,
+  // refreshCurrentNetwork, the dApp browser bootstrap, history subscribe, …)
+  // each pass the `_client == null` check during the `await` below and each
+  // call LibwalletClient.initialize — spawning a *separate* Go engine, each
+  // with its own 60 s balance poller that never stops. The orphaned pollers
+  // then hammer RPC N× forever. Sharing one in-flight future guarantees a
+  // single engine.
+  Future<LibwalletClient>? _clientInit;
 
-    _client = LibwalletClient.initialize(dir.path);
-    await _client!.info.ping();
-    await _registerWalletInfo(_client!);
-    _balanceSub ??= _client!.balanceChanges.listen((_) {
-      balanceTick.value++;
-    });
-    // On Flutter+iOS the Go runtime's stderr is dropped, so libwallet's
-    // internal logs only surface via this stream. Pipe them to
-    // debugPrint so backfill / RPC / poller activity is visible when
-    // diagnosing "empty tx list" type issues.
-    _logSub ??= _client!.logs.listen((e) {
-      debugPrint('[libwallet:${e.level}] ${e.message}');
-    });
-    return _client!;
+  Future<LibwalletClient> _getClient() {
+    final existing = _client;
+    if (existing != null) return Future.value(existing);
+    return _clientInit ??= _initClient();
+  }
+
+  Future<LibwalletClient> _initClient() async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory('${docs.path}/libwallet');
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+
+      final client = LibwalletClient.initialize(dir.path);
+      await client.info.ping();
+      await _registerWalletInfo(client);
+      _balanceSub ??= client.balanceChanges.listen((_) {
+        balanceTick.value++;
+      });
+      // On Flutter+iOS the Go runtime's stderr is dropped, so libwallet's
+      // internal logs only surface via this stream. Pipe them to
+      // debugPrint so backfill / RPC / poller activity is visible when
+      // diagnosing "empty tx list" type issues.
+      _logSub ??= client.logs.listen((e) {
+        debugPrint('[libwallet:${e.level}] ${e.message}');
+      });
+      _client = client;
+      return client;
+    } catch (e) {
+      // Let a later call retry a failed initialization instead of caching
+      // the failure for the lifetime of the process.
+      _clientInit = null;
+      rethrow;
+    }
   }
 
   Future<void> _registerWalletInfo(LibwalletClient client) async {
