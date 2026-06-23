@@ -426,8 +426,30 @@ class _SendScreenState extends State<SendScreen> {
     );
   }
 
+  /// UI balance of the currently-selected token: native SOL from the
+  /// (reactive) wallet balance, an SPL token from the loaded holdings.
+  /// Null while SPL holdings are still loading / not found.
+  double? _selectedBalance(WalletService wallet) {
+    if (_mint == null) return wallet.solBalance.toDouble() / 1e9;
+    for (final h in _holdings) {
+      if (h.mint == _mint) return h.uiBalance;
+    }
+    return null;
+  }
+
+  String _fmtBalance(double b) {
+    if (b >= 1e6) return '${(b / 1e6).toStringAsFixed(2)}M';
+    if (b >= 1e3) return '${(b / 1e3).toStringAsFixed(2)}K';
+    final s = b.toStringAsFixed(b >= 1 ? 4 : 6);
+    return s.contains('.')
+        ? s.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '')
+        : s;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final wallet = context.watch<WalletService>();
+    final selectedBalance = _selectedBalance(wallet);
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: Text('Send $_symbol')),
@@ -454,6 +476,7 @@ class _SendScreenState extends State<SendScreen> {
                   autocorrect: false,
                   decoration: InputDecoration(
                     labelText: 'Recipient address or name',
+                    labelStyle: const TextStyle(color: TibaneColors.textMuted),
                     helperText: 'Solana address, .sol name, or .eth name',
                     suffixIcon: IconButton(
                       icon: const Icon(Icons.paste, size: 18),
@@ -532,12 +555,26 @@ class _SendScreenState extends State<SendScreen> {
                   ),
                   decoration: InputDecoration(
                     labelText: 'Amount ($_symbol)',
+                    labelStyle: const TextStyle(color: TibaneColors.textMuted),
                     suffixIcon: TextButton(
                       onPressed: _sending ? null : _setMax,
                       child: const Text('MAX', style: TextStyle(fontSize: 12)),
                     ),
                   ),
                 ),
+                if (selectedBalance != null) ...[
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      'Balance: ${_fmtBalance(selectedBalance)} $_symbol',
+                      style: const TextStyle(
+                        color: TibaneColors.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Text(
