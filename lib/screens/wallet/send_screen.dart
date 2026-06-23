@@ -476,6 +476,7 @@ class _SendScreenState extends State<SendScreen> {
                   autocorrect: false,
                   decoration: InputDecoration(
                     labelText: 'Recipient address or name',
+                    labelStyle: const TextStyle(color: TibaneColors.textMuted),
                     helperText: 'Solana address, .sol name, or .eth name',
                     suffixIcon: IconButton(
                       icon: const Icon(Icons.paste, size: 18),
@@ -554,6 +555,7 @@ class _SendScreenState extends State<SendScreen> {
                   ),
                   decoration: InputDecoration(
                     labelText: 'Amount ($_symbol)',
+                    labelStyle: const TextStyle(color: TibaneColors.textMuted),
                     suffixIcon: TextButton(
                       onPressed: _sending ? null : _setMax,
                       child: const Text('MAX', style: TextStyle(fontSize: 12)),
