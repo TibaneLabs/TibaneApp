@@ -826,6 +826,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         await prefs.setString(_prefsPasswordKeyId, _passwordKeyId!);
       }
       notifyListeners();
+      unawaited(_maybeAutoBackup()); // keep iCloud/Google copy current
       return true;
     } catch (e) {
       _error = 'Change password failed: $e';
@@ -896,6 +897,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         await prefs.setString(_prefsRemoteKeyId, _remoteKeyId!);
       }
       notifyListeners();
+      unawaited(_maybeAutoBackup()); // 2FA share changed — refresh backup
       return true;
     } catch (e) {
       _error = 'Reshare validation failed: $e';
@@ -1132,6 +1134,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         password: _password!,
       );
       notifyListeners();
+      unawaited(_maybeAutoBackup()); // device share changed — refresh backup
       return true;
     } catch (e) {
       _error = 'Rotate device share failed: $e';
@@ -1872,6 +1875,19 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefsAutoBackupAt);
     notifyListeners();
+  }
+
+  /// Best-effort: re-write the auto-backup with the cached password so the
+  /// iCloud / Google copy stays current after a key-material change (password
+  /// change, device- or 2FA-share rotation). Only runs when auto-backup is
+  /// already enabled (the user has backed up at least once) — it never
+  /// auto-enrolls a wallet. No-op when locked; never throws (writeAutoBackup
+  /// swallows its own errors).
+  Future<void> _maybeAutoBackup() async {
+    final pw = _password;
+    if (pw == null) return; // locked — can't export
+    if (await lastAutoBackup() == null) return; // auto-backup not enabled
+    await writeAutoBackup(pw);
   }
 
   /// Export the connected wallet's backup bundle as a pretty-printed JSON
