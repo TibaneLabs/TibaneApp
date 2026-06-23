@@ -59,18 +59,6 @@ class SecurityPrivacyScreen extends StatelessWidget {
                   subtitle: 'Reshare the remote (email / SMS) TSS share',
                   onTap: () => _rotateRemoteKey(context, wallet),
                 ),
-                const SizedBox(height: 6),
-                SettingsTile(
-                  icon: Icons.cloud_outlined,
-                  title: 'Cloud backup',
-                  subtitle:
-                      'Auto-backup via iCloud Backup / Google Auto Backup',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const CloudBackupScreen(),
-                    ),
-                  ),
-                ),
               ] else ...[
                 TibaneCard(
                   padding: const EdgeInsets.all(16),
@@ -82,6 +70,20 @@ class SecurityPrivacyScreen extends StatelessWidget {
                   ),
                 ),
               ],
+              const SizedBox(height: 6),
+              // Cloud backup stays reachable even with no in-app wallet: it's
+              // the only restore path, and restore requires NO wallet loaded —
+              // so it can't live behind the has-in-app-wallet gate. The screen
+              // self-gates its actions (back-up needs an unlocked wallet,
+              // restore needs none).
+              SettingsTile(
+                icon: Icons.cloud_outlined,
+                title: 'Cloud backup',
+                subtitle: 'Auto-backup via iCloud Backup / Google Auto Backup',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const CloudBackupScreen()),
+                ),
+              ),
             ],
           ),
         ),
