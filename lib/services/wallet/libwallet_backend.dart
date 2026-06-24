@@ -1439,6 +1439,33 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
   }
 
+  /// Rename [walletId] on the libwallet backend (PATCH `Wallet/<id>` with the
+  /// new `Name`). libwallet imposes no naming convention — the name is an
+  /// untrusted display string — so callers validate length up front (see
+  /// [WalletDetailsScreen.validateWalletName]); [name] is trimmed defensively
+  /// here. When the renamed wallet is the active one, the cached display name
+  /// and its persisted pointer are refreshed so the home header / wallet list
+  /// reflect the change immediately. Returns true on success.
+  Future<bool> renameWallet(String walletId, String name) async {
+    final trimmed = name.trim();
+    try {
+      final client = await _getClient();
+      final updated = await client.wallets.update(walletId, name: trimmed);
+      if (walletId == _walletId) {
+        _walletName = updated.name.isNotEmpty ? updated.name : trimmed;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_prefsName, _walletName!);
+      }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Could not rename wallet: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return false;
+    }
+  }
+
   void _clearActiveFields() {
     _publicKey = null;
     _walletId = null;
