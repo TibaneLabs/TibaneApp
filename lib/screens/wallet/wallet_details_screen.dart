@@ -34,6 +34,27 @@ class WalletDetailsScreen extends StatefulWidget {
   }) {
     return (showUse: !isActive, showNeeds2fa: !isActive && !hasShareHere);
   }
+
+  /// Minimum / maximum length for a wallet name, applied to the trimmed value.
+  /// libwallet itself enforces no convention (the name is a display string),
+  /// so these are app-side limits.
+  static const int kNameMinLength = 3;
+  static const int kNameMaxLength = 28;
+
+  /// Validate + normalise a user-entered wallet name: trim surrounding
+  /// whitespace, then require [kNameMinLength]–[kNameMaxLength] characters.
+  /// Returns the cleaned `name` on success, or an `error` message to surface.
+  @visibleForTesting
+  static ({String? name, String? error}) validateWalletName(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.length < kNameMinLength) {
+      return (name: null, error: 'Name must be at least $kNameMinLength characters.');
+    }
+    if (trimmed.length > kNameMaxLength) {
+      return (name: null, error: 'Name must be $kNameMaxLength characters or fewer.');
+    }
+    return (name: trimmed, error: null);
+  }
 }
 
 class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
@@ -181,6 +202,35 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     ];
   }
 
+  /// Rename this wallet via a modal text input. Validation (3–28 trimmed
+  /// characters) lives in [WalletDetailsScreen.validateWalletName]; on success
+  /// the header re-fetches and the wallet list refreshes on return.
+  Future<void> _rename() async {
+    final wallet = _wallet;
+    if (wallet == null) return;
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (_) => _RenameWalletDialog(initialName: wallet.name),
+    );
+    if (newName == null || !mounted) return;
+    if (newName == wallet.name) return;
+    final ws = context.read<WalletService>();
+    final ok = await ws.libwallet.renameWallet(wallet.id, newName);
+    if (!mounted) return;
+    if (ok) {
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Renamed to "$newName"')));
+    } else {
+      logError('[WalletDetails._rename] rename failed: ${ws.libwallet.error}');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ws.libwallet.error ?? 'Rename failed')),
+      );
+    }
+  }
+
   Future<void> _remove() async {
     final wallet = _wallet;
     if (wallet == null) return;
@@ -255,7 +305,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _HeaderCard(wallet: _wallet!),
+                  _HeaderCard(wallet: _wallet!, onEdit: _rename),
                   const SizedBox(height: 20),
                   _SharesCard(wallet: _wallet!),
                   const SizedBox(height: 20),
@@ -303,8 +353,9 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
 
 class _HeaderCard extends StatelessWidget {
   final lw.Wallet wallet;
+  final VoidCallback onEdit;
 
-  const _HeaderCard({required this.wallet});
+  const _HeaderCard({required this.wallet, required this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -313,9 +364,26 @@ class _HeaderCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            wallet.name.isEmpty ? '(unnamed)' : wallet.name,
-            style: Theme.of(context).textTheme.titleLarge,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  wallet.name.isEmpty ? '(unnamed)' : wallet.name,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined, size: 20),
+                color: TibaneColors.orange,
+                tooltip: 'Rename wallet',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
           ),
           const SizedBox(height: 6),
           Text(
@@ -537,6 +605,75 @@ class _AccountRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Modal text input for renaming a wallet. Returns the cleaned, validated
+/// name via `Navigator.pop`, or null when cancelled. Validation mirrors
+/// [WalletDetailsScreen.validateWalletName] and is surfaced inline.
+class _RenameWalletDialog extends StatefulWidget {
+  final String initialName;
+
+  const _RenameWalletDialog({required this.initialName});
+
+  @override
+  State<_RenameWalletDialog> createState() => _RenameWalletDialogState();
+}
+
+class _RenameWalletDialogState extends State<_RenameWalletDialog> {
+  late final TextEditingController _ctrl = TextEditingController(
+    text: widget.initialName,
+  );
+  String? _error;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final result = WalletDetailsScreen.validateWalletName(_ctrl.text);
+    if (result.error != null) {
+      setState(() => _error = result.error);
+      return;
+    }
+    Navigator.of(context).pop(result.name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: TibaneColors.card,
+      title: const Text('Rename wallet'),
+      content: TextField(
+        controller: _ctrl,
+        autofocus: true,
+        maxLength: WalletDetailsScreen.kNameMaxLength,
+        textInputAction: TextInputAction.done,
+        onChanged: (_) {
+          if (_error != null) setState(() => _error = null);
+        },
+        onSubmitted: (_) => _submit(),
+        decoration: InputDecoration(
+          labelText: 'Wallet name',
+          errorText: _error,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _submit,
+          child: const Text(
+            'Save',
+            style: TextStyle(color: TibaneColors.orange),
+          ),
+        ),
+      ],
     );
   }
 }
