@@ -94,7 +94,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ? 'Lock wallet'
                   : 'Disconnect',
               destructive: true,
-              onTap: () => _confirmDisconnect(context, wallet),
+              onTap: () => _confirmLockOrDisconnect(context, wallet),
             ),
           ],
         ],
@@ -102,7 +102,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _confirmDisconnect(
+  Future<void> _confirmLockOrDisconnect(
     BuildContext context,
     WalletService wallet,
   ) async {
@@ -134,7 +134,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
     if (confirmed != true) return;
-    await wallet.disconnect();
+    // In-app "Lock" only forgets the in-memory secrets — the wallet and its
+    // device share stay on the device, so it remains in the wallet list and
+    // re-unlocks with the password. Deleting a wallet is a separate, explicit
+    // action on the wallet-detail screen. External "Disconnect" tears down
+    // the MWA session (libwallet doesn't own those keys).
+    if (inapp) {
+      wallet.libwallet.lock();
+    } else {
+      await wallet.disconnect();
+    }
   }
 }
 
