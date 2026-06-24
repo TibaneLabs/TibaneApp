@@ -22,6 +22,7 @@ import '../widgets/tibane_card.dart';
 import '../widgets/token_icon.dart';
 import '../widgets/token_search.dart';
 import 'wallet/inapp_unlock_screen.dart';
+import '../utils/amount.dart';
 import '../utils/log.dart';
 
 class SwapScreen extends StatefulWidget {
@@ -424,7 +425,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     // Accept both period and comma as the decimal separator — the iOS
     // numeric keyboard adapts to the device locale, so European users
     // get a comma key and Dart's parser would otherwise reject it.
-    final amountStr = _amountController.text.trim().replaceAll(',', '.');
+    final amountStr = normalizeDecimal(_amountController.text);
     if (amountStr.isEmpty) return;
 
     final amountFloat = double.tryParse(amountStr);
@@ -619,9 +620,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     // sheet has names + amounts to display.
     final inputSymbol = _selectedInput?.symbol ?? '';
     final outputSymbol = _selectedOutput?.symbol ?? '';
-    final inputAmount =
-        double.tryParse(_amountController.text.trim().replaceAll(',', '.')) ??
-        0;
+    final inputAmount = parseAmount(_amountController.text) ?? 0;
     final outputAmount = _quoteOutUi ?? 0;
     final outputMint = _selectedOutput?.mint;
 
@@ -1174,7 +1173,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
               hintStyle: monoStyle(fontSize: 20, color: TibaneColors.textDim),
               suffixText:
                   _selectedInput != null && _selectedInput!.priceUsd != null
-                  ? '\$${(_formatUsd(double.tryParse(_amountController.text.replaceAll(',', '.')) ?? 0, _selectedInput!.priceUsd!))}'
+                  ? '\$${(_formatUsd(parseAmount(_amountController.text) ?? 0, _selectedInput!.priceUsd!))}'
                   : null,
               suffixStyle: monoStyle(
                 fontSize: 12,
