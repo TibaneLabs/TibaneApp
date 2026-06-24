@@ -8,6 +8,7 @@ import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
+import '../../utils/amount.dart';
 import '../../utils/log.dart';
 
 /// Form to provision a new ClawdWallet (agent-controlled MPC wallet).
@@ -104,8 +105,8 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
     FocusScope.of(context).unfocus();
 
     final policy = <String, dynamic>{
-      'per_tx_max_usd': double.tryParse(_perTxCtrl.text.trim()) ?? 0,
-      'daily_max_usd': double.tryParse(_dailyCtrl.text.trim()) ?? 0,
+      'per_tx_max_usd': parseAmount(_perTxCtrl.text) ?? 0,
+      'daily_max_usd': parseAmount(_dailyCtrl.text) ?? 0,
       'recipient_allowlist': _parseAllowlist(),
       'recipient_denylist': const <String>[],
     };
@@ -337,7 +338,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
 
   String? _validateNumber(String? v) {
     if (v == null || v.trim().isEmpty) return 'Required';
-    final n = double.tryParse(v.trim());
+    final n = parseAmount(v);
     if (n == null || n < 0) return 'Invalid';
     return null;
   }

@@ -13,6 +13,7 @@ import '../../widgets/keyboard_safe_form.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import 'inapp_unlock_screen.dart';
+import '../../utils/amount.dart';
 import '../../utils/log.dart';
 
 class SendScreen extends StatefulWidget {
@@ -260,7 +261,7 @@ class _SendScreenState extends State<SendScreen> {
       setState(() => _error = 'Enter a valid Solana address');
       return;
     }
-    final amountFloat = double.tryParse(_amountCtrl.text.trim());
+    final amountFloat = parseAmount(_amountCtrl.text);
     if (amountFloat == null || amountFloat <= 0) {
       setState(() => _error = 'Enter a valid amount');
       return;

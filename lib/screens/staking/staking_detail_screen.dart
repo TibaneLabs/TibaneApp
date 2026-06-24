@@ -18,6 +18,7 @@ import '../../widgets/tibane_card.dart';
 import '../swap_screen.dart';
 import '../wallet/inapp_unlock_screen.dart';
 import 'staking_members_screen.dart';
+import '../../utils/amount.dart';
 import '../../utils/log.dart';
 
 class StakingDetailScreen extends StatefulWidget {
@@ -497,7 +498,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
         case 'stake':
           final amountText = _stakeController.text.trim();
           if (amountText.isEmpty) return;
-          final amountDouble = double.tryParse(amountText);
+          final amountDouble = parseAmount(amountText);
           if (amountDouble == null || amountDouble <= 0) return;
           final amount = BigInt.from(
             amountDouble * BigInt.from(10).pow(pool.tokenDecimals).toDouble(),
@@ -966,7 +967,7 @@ class _ActionsSection extends StatelessWidget {
   BigInt? _parseUnstakeAmount() {
     final text = unstakeController.text.trim();
     if (text.isEmpty) return null;
-    final v = double.tryParse(text);
+    final v = parseAmount(text);
     if (v == null || v <= 0) return null;
     return BigInt.from(v * BigInt.from(10).pow(pool.tokenDecimals).toDouble());
   }
@@ -1654,7 +1655,7 @@ class _AdminSectionState extends State<_AdminSection> {
               ListenableBuilder(
                 listenable: _depositController,
                 builder: (context, _) {
-                  final v = double.tryParse(_depositController.text.trim());
+                  final v = parseAmount(_depositController.text);
                   final valid = v != null && v > 0;
                   return SecondaryButton(
                     label: 'Deposit',
@@ -1744,7 +1745,7 @@ class _AdminSectionState extends State<_AdminSection> {
 
                         final minText = _minStakeController.text.trim();
                         if (minText.isNotEmpty) {
-                          final v = double.tryParse(minText);
+                          final v = parseAmount(minText);
                           if (v != null) {
                             minStake = BigInt.from(
                               v *

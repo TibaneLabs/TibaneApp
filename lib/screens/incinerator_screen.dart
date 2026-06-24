@@ -18,6 +18,7 @@ import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
 import '../widgets/token_icon.dart';
 import 'wallet/inapp_unlock_screen.dart';
+import '../utils/amount.dart';
 import '../utils/log.dart';
 
 class IncineratorScreen extends StatefulWidget {
@@ -369,7 +370,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
     );
     controller.dispose();
     if (confirmed == null || confirmed.isEmpty) return;
-    final v = double.tryParse(confirmed);
+    final v = parseAmount(confirmed);
     if (v == null || v <= 0) return;
     final amount = BigInt.from(
       v * BigInt.from(10).pow(account.decimals).toDouble(),
