@@ -1,7 +1,7 @@
 name: tibaneapp
 description: "Tibane Labs - Solana tools for the Seeker"
 publish_to: 'none'
-version: 0.1.12+70
+version: 0.1.12+71
 
 environment:
   sdk: ^3.11.1
