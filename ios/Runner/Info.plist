@@ -28,6 +28,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Tibane uses Face ID to protect your wallet's signing key and to authorize each transaction you sign. Your key never leaves this device.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Tibane needs camera access only when you choose to scan a device-transfer QR code to move a wallet from another device. The camera is not used otherwise.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
