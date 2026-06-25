@@ -141,6 +141,13 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// True when a wallet exists on this device (but may be locked).
   bool get hasWallet => _walletId != null;
 
+  /// True when the current wallet has no StoreKey share — a D5 password-only
+  /// committee `[Password, Password, RemoteKey]`. The legacy `_signingKeys()`
+  /// path expects a StoreKey, so such wallets can only be signed via the
+  /// per-transaction sign sheet — callers must route them there regardless of
+  /// `kLocklessSigning`.
+  bool get requiresSignSheet => hasWallet && _storeKeyId == null;
+
   /// True while a device-transfer has been received but not yet activated
   /// (awaiting the wallet password). Unique to the post-import/pre-activate
   /// window — the active-wallet fields are untouched during this time.
@@ -518,22 +525,34 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     try {
       final client = await _getClient();
 
-      // Device share. On a biometric device, enroll the StoreKey private
-      // behind biometric BEFORE keygen (Atonline-parity §5.2): a cancelled /
-      // failed enrollment aborts creation here, before any wallet exists.
-      final storePair = await client.storeKeys.create();
-      final storage = storeKeyStorageFor(await Biometric.hasBiometric());
-      if (storage == StoreKeyStorage.biometric) {
+      // Build the committee (Atonline-parity §5.2 / D5). Biometric: a StoreKey
+      // enrolled behind biometric BEFORE keygen — a cancelled/failed enrollment
+      // aborts creation here, before any wallet exists. D5 (no biometric): two
+      // Password shares + RemoteKey (≥3 keys for multiCreate), no StoreKey.
+      final mode = creationModeFor(
+        hasBiometric: await Biometric.hasBiometric(),
+        forceUnsafe: kForceUnsafeCreation,
+      );
+      StoreKeyPair? storePair;
+      final List<KeyDescription> keys;
+      if (mode == CreationMode.biometric) {
+        storePair = await client.storeKeys.create();
         await Biometric.setSecuredKey(
           storePair.privateKey,
           storePair.publicKey,
         );
+        keys = [
+          KeyDescription.storeKey(storePair.publicKey),
+          KeyDescription.remoteKey(remoteKey),
+          KeyDescription.password(password),
+        ];
+      } else {
+        keys = [
+          KeyDescription.password(password),
+          KeyDescription.password(password),
+          KeyDescription.remoteKey(remoteKey),
+        ];
       }
-      final keys = [
-        KeyDescription.storeKey(storePair.publicKey),
-        KeyDescription.remoteKey(remoteKey),
-        KeyDescription.password(password),
-      ];
 
       final Map<String, Wallet> createdByCurve;
       if (curves.length > 1) {
@@ -601,15 +620,17 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _accountId = account.id;
       _publicKey = account.address;
       _walletName = name;
-      _storeKeyPriv = storePair.privateKey;
-      _storeKeyId = walletKeyIds['StoreKey'];
+      _storeKeyPriv = storePair?.privateKey; // null for the D5 committee
+      _storeKeyId = walletKeyIds['StoreKey']; // null for the D5 committee
       _remoteKeyId = walletKeyIds['RemoteKey'];
       _passwordKeyId = walletKeyIds['Password'];
       _password = password;
 
+      // Biometric wallets write the StoreKey blob-only (no no-auth copy);
+      // D5 wallets have no StoreKey priv, so _persist skips the share write.
       await _persist(
-        storeKeyPublic: storePair.publicKey,
-        osKeystoreCopy: keepNoAuthKeystoreCopy(storage),
+        storeKeyPublic: storePair?.publicKey,
+        osKeystoreCopy: false,
       );
       await ensureSolanaDefault();
       notifyListeners();
@@ -1252,34 +1273,64 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// unchanged (StoreKey + Password). Returns a typed [SwitchResult] so the
   /// UI can prompt for a password or route to 2FA recovery.
   Future<SwitchResult> switchWallet(String walletId, {String? password}) async {
-    final hasShare = await _keystore.hasDeviceShare(walletId);
-    final plan = planWalletSwitch(
-      targetIsActiveAndUnlocked: _walletId == walletId && isUnlocked,
-      hasLocalDeviceShare: hasShare,
-      passwordProvided: password != null && password.isNotEmpty,
-    );
-    switch (plan) {
-      case SwitchPlan.alreadyActive:
-        return SwitchResult.ok;
-      case SwitchPlan.needsRecovery:
-        _error =
-            'This wallet has no device share on this device. '
-            'Recover it via 2FA, then try again.';
-        notifyListeners();
-        return SwitchResult.needsRecovery;
-      case SwitchPlan.needsPassword:
-        return SwitchResult.needsPassword;
-      case SwitchPlan.proceed:
-        break;
+    // Already active: a StoreKey wallet that's unlocked, or a D5 wallet (no
+    // StoreKey — nothing to unlock). Avoids a needless wallet fetch.
+    if (_walletId == walletId && (isUnlocked || _storeKeyId == null)) {
+      return SwitchResult.ok;
     }
 
     try {
       final client = await _getClient();
       final w = await client.wallets.get(walletId);
       final keyIds = _extractKeyIdsByType(w);
-      final passwordKeyId = keyIds['Password'];
       final storeKeyId = keyIds['StoreKey'];
-      if (passwordKeyId == null || storeKeyId == null) {
+      final passwordKeyId = keyIds['Password'];
+
+      // D5 (password-only) wallet: no StoreKey, no device share, no unlock.
+      // Activate it directly — signing happens per-transaction via the sheet
+      // (send routes through it via requiresSignSheet). There is nothing to
+      // read from the keystore and no 2FA recovery to run.
+      if (storeKeyId == null) {
+        final account = await _resolveAccount(client, w);
+        await client.accounts.setCurrent(account.id);
+        _walletId = walletId;
+        _accountId = account.id;
+        _publicKey = account.address;
+        _walletName = w.name.isNotEmpty ? w.name : 'In-app wallet';
+        _storeKeyId = null;
+        _remoteKeyId = keyIds['RemoteKey'];
+        _passwordKeyId = passwordKeyId;
+        _storeKeyPriv = null;
+        _password = null;
+        await _persist(storeKeyPublic: null);
+        notifyListeners();
+        if (w.curve == 'ed25519') unawaited(ensureSolanaDefault());
+        return SwitchResult.ok;
+      }
+
+      // StoreKey wallet: needs the device share + password.
+      final hasShare = await _keystore.hasDeviceShare(walletId);
+      final plan = planWalletSwitch(
+        targetIsActiveAndUnlocked: _walletId == walletId && isUnlocked,
+        hasLocalDeviceShare: hasShare,
+        passwordProvided: password != null && password.isNotEmpty,
+      );
+      switch (plan) {
+        case SwitchPlan.alreadyActive:
+          return SwitchResult.ok;
+        case SwitchPlan.needsRecovery:
+          _error =
+              'This wallet has no device share on this device. '
+              'Recover it via 2FA, then try again.';
+          notifyListeners();
+          return SwitchResult.needsRecovery;
+        case SwitchPlan.needsPassword:
+          return SwitchResult.needsPassword;
+        case SwitchPlan.proceed:
+          break;
+      }
+
+      if (passwordKeyId == null) {
         _error = 'Wallet is missing required key shares';
         notifyListeners();
         return SwitchResult.error;
@@ -2779,7 +2830,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   }
 
   Future<void> _persist({
-    required String storeKeyPublic,
+    String? storeKeyPublic,
     bool osKeystoreCopy = true,
   }) async {
     final prefs = await SharedPreferences.getInstance();
@@ -2787,8 +2838,18 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     await prefs.setString(_prefsAccountId, _accountId!);
     await prefs.setString(_prefsAddress, _publicKey!);
     await prefs.setString(_prefsName, _walletName!);
-    await prefs.setString(_prefsStorePub, storeKeyPublic);
-    await prefs.setString(_prefsStoreKeyId, _storeKeyId!);
+    // A D5 (password-only) wallet has no StoreKey — clear any stale entries
+    // so tryRestore sees null and routes signing through the sheet.
+    if (storeKeyPublic != null) {
+      await prefs.setString(_prefsStorePub, storeKeyPublic);
+    } else {
+      await prefs.remove(_prefsStorePub);
+    }
+    if (_storeKeyId != null) {
+      await prefs.setString(_prefsStoreKeyId, _storeKeyId!);
+    } else {
+      await prefs.remove(_prefsStoreKeyId);
+    }
     if (_remoteKeyId != null) {
       await prefs.setString(_prefsRemoteKeyId, _remoteKeyId!);
     }
@@ -2796,13 +2857,16 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       await prefs.setString(_prefsPasswordKeyId, _passwordKeyId!);
     }
     // The device-share private key — the only true secret on this side —
-    // goes through SecureKeystore, never plaintext SharedPreferences.
-    await _keystore.writeDeviceShare(
-      walletId: _walletId!,
-      value: _storeKeyPriv!,
-      password: _password!,
-      osKeystoreCopy: osKeystoreCopy,
-    );
+    // goes through SecureKeystore, never plaintext SharedPreferences. A D5
+    // wallet has no device share, so there's nothing to write.
+    if (_storeKeyPriv != null) {
+      await _keystore.writeDeviceShare(
+        walletId: _walletId!,
+        value: _storeKeyPriv!,
+        password: _password!,
+        osKeystoreCopy: osKeystoreCopy,
+      );
+    }
     // If we somehow still have a legacy plaintext entry, scrub it.
     await prefs.remove(_prefsStorePriv);
   }

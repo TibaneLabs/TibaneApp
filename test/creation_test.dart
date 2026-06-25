@@ -1,26 +1,59 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tibaneapp/services/wallet/creation.dart';
 
-/// Phase 2a (Atonline-parity) — pure StoreKey-custody decision at creation.
-/// The biometric enrollment prompt and the at-rest writes are device-verified.
+/// Phase 2 (Atonline-parity) — pure creation-committee decisions (§5.2 / D5).
+/// The biometric enrollment prompt, keygen, and at-rest writes are
+/// device-verified.
 void main() {
-  group('storeKeyStorageFor', () {
-    test('biometric device → biometric custody', () {
-      expect(storeKeyStorageFor(true), StoreKeyStorage.biometric);
+  group('creationModeFor', () {
+    test('biometric device → biometric committee', () {
+      expect(
+        creationModeFor(hasBiometric: true),
+        CreationMode.biometric,
+      );
     });
 
-    test('no biometric → no-auth keystore (today\'s behavior)', () {
-      expect(storeKeyStorageFor(false), StoreKeyStorage.noAuthKeystore);
+    test('no biometric → D5 password-only committee', () {
+      expect(
+        creationModeFor(hasBiometric: false),
+        CreationMode.passwordOnly,
+      );
+    });
+
+    test('forceUnsafe overrides a biometric device → password-only', () {
+      expect(
+        creationModeFor(hasBiometric: true, forceUnsafe: true),
+        CreationMode.passwordOnly,
+      );
     });
   });
 
-  group('keepNoAuthKeystoreCopy', () {
-    test('biometric wallet must NOT keep a no-auth copy', () {
-      expect(keepNoAuthKeystoreCopy(StoreKeyStorage.biometric), isFalse);
+  group('creationKeyTypes', () {
+    test('biometric → [StoreKey, RemoteKey, Password]', () {
+      expect(
+        creationKeyTypes(CreationMode.biometric),
+        ['StoreKey', 'RemoteKey', 'Password'],
+      );
     });
 
-    test('no-biometric wallet keeps the no-auth copy', () {
-      expect(keepNoAuthKeystoreCopy(StoreKeyStorage.noAuthKeystore), isTrue);
+    test('D5 → [Password, Password, RemoteKey] (two password shares)', () {
+      expect(
+        creationKeyTypes(CreationMode.passwordOnly),
+        ['Password', 'Password', 'RemoteKey'],
+      );
+    });
+
+    test('both committees have ≥3 keys (multiCreate floor)', () {
+      for (final mode in CreationMode.values) {
+        expect(creationKeyTypes(mode).length, greaterThanOrEqualTo(3));
+      }
+    });
+  });
+
+  group('modeHasStoreKey', () {
+    test('biometric wallet has a StoreKey; D5 does not', () {
+      expect(modeHasStoreKey(CreationMode.biometric), isTrue);
+      expect(modeHasStoreKey(CreationMode.passwordOnly), isFalse);
     });
   });
 }
