@@ -201,6 +201,40 @@ class SecureKeystore {
     await prefs.remove(_blobKey(walletId));
   }
 
+  /// True when the **no-auth OS-keystore** copy of [walletId]'s device share
+  /// exists. Cheap existence probe for the biometric migration (§6.3) — does
+  /// not consult the password blob.
+  Future<bool> hasNoAuthKeystoreCopy(String walletId) async {
+    if (!await isSecureStorageUsable()) return false;
+    try {
+      final v = await _storage.read(
+        key: _dsKey(walletId),
+        iOptions: _iosPlain,
+        aOptions: _androidPlain,
+      );
+      return v != null;
+    } catch (e) {
+      debugPrint('hasNoAuthKeystoreCopy($walletId): $e');
+      return false;
+    }
+  }
+
+  /// Delete ONLY the no-auth OS-keystore copy of [walletId]'s device share,
+  /// leaving the password-encrypted blob intact (D8). Used by the biometric
+  /// migration AFTER the StoreKey has been re-stored behind biometric and
+  /// verified (verify-before-delete, §6.3).
+  Future<void> deleteNoAuthKeystoreCopy(String walletId) async {
+    try {
+      await _storage.delete(
+        key: _dsKey(walletId),
+        iOptions: _iosPlain,
+        aOptions: _androidPlain,
+      );
+    } catch (e) {
+      debugPrint('deleteNoAuthKeystoreCopy($walletId): $e');
+    }
+  }
+
   // ---------------------------------------------------------------------
   // Migration: single-slot (v1) → per-wallet (v2). Idempotent, verify-
   // before-delete. Runs once from tryRestore, before any unlock.
