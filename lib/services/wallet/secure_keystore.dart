@@ -35,8 +35,10 @@ class SecureKeystore {
   static const _legacyDeviceShare = 'libw_device_share';
   static const _legacyFallbackBlob = 'libw_device_share_blob_v1';
 
-  // --- biometric (unchanged, still single-slot) ---
-  static const _ksBiometricPw = 'libw_biometric_pw';
+  // --- legacy biometric password cache (removed; purged once on launch) ---
+  static const _legacyBiometricPw = 'libw_biometric_pw';
+  static const _legacyBiometricEnabled = 'libw_biometric_enabled';
+  static const _spBiometricPurged = 'libw_biometric_purged_v1';
 
   static const _spProbeKey = 'libw_keystore_probe';
 
@@ -48,14 +50,6 @@ class SecureKeystore {
   static String _dsKey(String walletId) => 'libw_device_share_$walletId';
   static String _blobKey(String walletId) =>
       'libw_device_share_blob_v1_$walletId';
-
-  /// iOS: biometric-or-passcode gate, this-device-only (no iCloud).
-  /// Android: enforces biometric on read/write via Keystore.
-  static const IOSOptions _iosBio = IOSOptions(
-    accessibility: KeychainAccessibility.unlocked_this_device,
-    accessControlFlags: [AccessControlFlag.userPresence],
-  );
-  static const AndroidOptions _androidBio = AndroidOptions();
 
   /// Non-biometric OS keystore options — encryption at rest, no user
   /// presence required. Used for the device share when [isSecureStorageUsable].
@@ -323,56 +317,30 @@ class SecureKeystore {
   }
 
   // ---------------------------------------------------------------------
-  // Biometric password cache — opt-in, single-slot (per-wallet in Phase 2).
+  // Legacy biometric password cache — REMOVED (Atonline-parity Phase 3b). The
+  // StoreKey itself now lives behind biometric (see [Biometric]); the old
+  // "cache the password behind biometric to unlock" feature is gone. This
+  // one-shot purge deletes its orphaned entry on first launch after the update.
   // ---------------------------------------------------------------------
 
-  /// Save the wallet password into the biometric-gated keystore.
-  /// Subsequent [readBiometricPassword] calls trigger FaceID/TouchID/
-  /// fingerprint. Throws if biometric storage isn't available — the host
-  /// should hide the toggle when [isBiometricAvailable] returns false.
-  Future<void> writeBiometricPassword(String password) async {
-    await _storage.write(
-      key: _ksBiometricPw,
-      value: password,
-      iOptions: _iosBio,
-      aOptions: _androidBio,
-    );
-  }
-
-  /// Read the cached password. On iOS / Android this triggers the
-  /// platform biometric prompt. Returns null if the user cancels, or if
-  /// no entry exists.
-  Future<String?> readBiometricPassword() async {
-    try {
-      return await _storage.read(
-        key: _ksBiometricPw,
-        iOptions: _iosBio,
-        aOptions: _androidBio,
-      );
-    } catch (e) {
-      // User cancelled biometric or no entry. Don't surface as an error.
-      debugPrint('readBiometricPassword: $e');
-      return null;
-    }
-  }
-
-  Future<void> deleteBiometricPassword() async {
+  /// Delete the orphaned legacy biometric password-cache entry once. Deleting a
+  /// keystore key needs no biometric prompt; uses the plain options (matches on
+  /// Android, best-effort on iOS). Idempotent via [_spBiometricPurged].
+  Future<void> purgeLegacyBiometricPassword() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_spBiometricPurged) == true) return;
     try {
       await _storage.delete(
-        key: _ksBiometricPw,
-        iOptions: _iosBio,
-        aOptions: _androidBio,
+        key: _legacyBiometricPw,
+        iOptions: _iosPlain,
+        aOptions: _androidPlain,
       );
-    } catch (_) {
-      /* best-effort */
+    } catch (e) {
+      debugPrint('purgeLegacyBiometricPassword: $e');
     }
+    await prefs.remove(_legacyBiometricEnabled);
+    await prefs.setBool(_spBiometricPurged, true);
   }
-
-  /// Best-effort probe for whether the biometric path can be used. Right
-  /// now we equate "secure storage usable" with "biometric usable" since
-  /// flutter_secure_storage handles graceful biometric degradation
-  /// internally on Android and iOS rejects biometric reads at use-time.
-  Future<bool> isBiometricAvailable() => isSecureStorageUsable();
 
   // ---------------------------------------------------------------------
   // Password-derived AES-GCM fallback.
