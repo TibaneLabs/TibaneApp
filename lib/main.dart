@@ -13,6 +13,7 @@ import 'screens/clawdwallet/pairing_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/swap_screen.dart';
+import 'screens/wallet/biometric_migration_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
 import 'services/browser_preferences.dart';
 import 'services/favorites_service.dart';
@@ -100,6 +101,10 @@ class TibaneShellState extends State<TibaneShell>
   late int _currentIndex = widget.initialIndex;
   late bool _isSeekerDevice = widget.forceSeeker ?? false;
 
+  /// Null while checking; true shows the mandatory biometric-migration screen
+  /// (Phase 3 / D7); false renders the normal home.
+  bool? _needsMigration;
+
   final AppLinks _appLinks = AppLinks();
   StreamSubscription<Uri>? _linkSub;
 
@@ -113,6 +118,14 @@ class TibaneShellState extends State<TibaneShell>
       });
     }
     _initDeepLinks();
+    _checkBiometricMigration();
+  }
+
+  Future<void> _checkBiometricMigration() async {
+    final need =
+        await context.read<WalletService>().libwallet.needsBiometricMigration();
+    if (!mounted) return;
+    setState(() => _needsMigration = need);
   }
 
   // Report foreground/background to libwallet so its pollers pause off-screen
@@ -173,6 +186,12 @@ class TibaneShellState extends State<TibaneShell>
 
   @override
   Widget build(BuildContext context) {
+    // Mandatory one-time biometric migration (Phase 3 / D7) gates the home.
+    if (_needsMigration == true) {
+      return BiometricMigrationScreen(
+        onDone: () => setState(() => _needsMigration = false),
+      );
+    }
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
