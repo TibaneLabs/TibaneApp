@@ -2,17 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:libwallet/libwallet.dart' show Amount, TransactionSimulation;
+import 'package:libwallet/libwallet.dart'
+    show Amount, SigningKey, TransactionSimulation;
 import 'package:provider/provider.dart';
 
 import '../../constants/solana_constants.dart';
 import '../../services/jupiter_service.dart';
+import '../../services/wallet/signing.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import 'inapp_unlock_screen.dart';
+import 'widgets/sign_sheet.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
 
@@ -300,20 +303,38 @@ class _SendScreenState extends State<SendScreen> {
     if (approved != true) return;
     if (!mounted) return;
 
-    if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
+    // Authorize the spend. Lockless (Phase 1, kLocklessSigning): collect the
+    // signing shares per transaction via the sign sheet. Legacy: unlock the
+    // app-level session. Both run in parallel until the new path is proven on
+    // device (ATONLINE_PARITY §7).
+    List<SigningKey>? keys;
+    if (kLocklessSigning) {
+      keys = await _authorizeInApp();
+      if (keys == null) return; // cancelled / unsignable
+    } else {
+      if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
+    }
     if (!mounted) return;
 
     setState(() {
       _sending = true;
-      _error = null;    });
+      _error = null;
+    });
 
     final wallet = context.read<WalletService>();
     try {
-      final tx = await wallet.libwallet.send(
-        to: addr,
-        amount: amount,
-        asset: _assetKey,
-      );
+      final tx = kLocklessSigning
+          ? await wallet.libwallet.sendWithKeys(
+              to: addr,
+              amount: amount,
+              asset: _assetKey,
+              keys: keys!,
+            )
+          : await wallet.libwallet.send(
+              to: addr,
+              amount: amount,
+              asset: _assetKey,
+            );
       if (!mounted) return;
       _amountCtrl.clear();
       // notifyTxCommitted (not just refreshBalances) so the dashboard reloads
@@ -330,6 +351,31 @@ class _SendScreenState extends State<SendScreen> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  /// Collect the per-transaction signing shares for the in-app wallet via the
+  /// sign sheet (Phase 1, §4.3). Returns the collected keys, or null when the
+  /// user cancels or the wallet can't be signed on this device.
+  Future<List<SigningKey>?> _authorizeInApp() async {
+    final lw = context.read<WalletService>().libwallet;
+    final wallet = await lw.currentWallet();
+    if (!mounted) return null;
+    if (wallet == null) {
+      setState(() => _error = 'No in-app wallet to sign with.');
+      return null;
+    }
+    if (!canAssembleThreshold(wallet)) {
+      setState(() => _error =
+          'This wallet can’t be signed on this device. Recover the device key '
+          'via 2FA in wallet settings.');
+      return null;
+    }
+    return showSignSheet(
+      context,
+      wallet: wallet,
+      readStoreKey: (storeKey, password) =>
+          lw.readStoreKeyPrivate(storeKey, password: password),
+    );
   }
 
   /// Success modal shown after a broadcast: confirmation + the transaction id

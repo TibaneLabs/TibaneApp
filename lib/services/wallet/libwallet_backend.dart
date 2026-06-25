@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../constants/solana_constants.dart';
 import '../relay_service.dart' show tibaneApi;
 import '../solana_common.dart';
+import 'biometric.dart';
 import 'secure_keystore.dart';
 import 'wallet_backend.dart';
 
@@ -2176,6 +2177,80 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     // `validate` requires an explicit asset and surfaces any build/funding
     // problem before we pull signing keys; signAndSend then builds, signs,
     // and broadcasts.
+    await client.transactions.validate(tx);
+    return client.transactions.signAndSendSimple(tx, keys: keys);
+  }
+
+  // ------------------------------------------------------------------
+  // Per-transaction (lockless) signing — Phase 1 (ATONLINE_PARITY §4.3 / §3.2).
+  // These run IN PARALLEL with unlock()/lock()/_signingKeys()/send(): they
+  // collect shares per call instead of from the cached session, never touch
+  // the _storeKeyPriv/_password caches, and skip _ensureReady()'s unlock gate.
+  // Reached only via the sign sheet when kLocklessSigning is on.
+  // ------------------------------------------------------------------
+
+  /// Fetch the current wallet record (its key shares + threshold) for the
+  /// per-transaction sign sheet. Null when no in-app wallet exists.
+  Future<Wallet?> currentWallet() async {
+    if (_walletId == null) return null;
+    final client = await _getClient();
+    return client.wallets.get(_walletId!);
+  }
+
+  /// Resolve [storeKey]'s private share via the §3.2 fallback chain — used by
+  /// the sign sheet and by any not-yet-migrated wallet:
+  ///   1. `biometric_storage` (post-migration / biometric-created wallets),
+  ///   2. the no-auth OS keystore copy (no password),
+  ///   3. the password-encrypted recovery blob ([password] required, D8).
+  /// Returns null when none of the three holds it (caller → 2FA recovery, §4.8).
+  Future<String?> readStoreKeyPrivate(
+    WalletKey storeKey, {
+    String? password,
+  }) async {
+    if (_walletId == null) return null;
+    // 1. biometric-gated copy (triggers a biometric prompt; null on cancel /
+    //    when there's no entry — Phase-1 wallets aren't here yet).
+    try {
+      final bio = await Biometric.askSecuredKey(storeKey.key);
+      if (bio != null && bio.isNotEmpty) return bio;
+    } catch (e) {
+      debugPrint('readStoreKeyPrivate biometric: $e');
+    }
+    // 2. no-auth OS keystore copy (no password needed).
+    final noAuth = await _keystore.readDeviceShare(
+      walletId: _walletId!,
+      password: null,
+    );
+    if (noAuth != null) return noAuth;
+    // 3. password-encrypted recovery blob — needs the typed password.
+    if (password != null) {
+      return _keystore.readDeviceShare(
+        walletId: _walletId!,
+        password: password,
+      );
+    }
+    return null;
+  }
+
+  /// Send SOL or an SPL token using pre-collected per-transaction [keys] (from
+  /// the sign sheet) instead of the cached session. Mirrors [send] but needs
+  /// no app-level unlock. Returns the broadcast transaction.
+  Future<Transaction> sendWithKeys({
+    required String to,
+    required Amount amount,
+    String? asset,
+    required List<SigningKey> keys,
+  }) async {
+    final client = await _getClient();
+    final resolvedAsset = await _resolveAssetKey(client, asset);
+    final tx = UnsignedTransaction(
+      type: 'transfer',
+      to: to,
+      from: _accountId,
+      amount: amount,
+      asset: resolvedAsset,
+      priorityLevel: 'medium',
+    );
     await client.transactions.validate(tx);
     return client.transactions.signAndSendSimple(tx, keys: keys);
   }
