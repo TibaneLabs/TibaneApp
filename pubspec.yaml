@@ -31,6 +31,8 @@ dependencies:
   phone_form_field: ^10.0.17
   flutter_secure_storage: ^10.2.0
   cryptography: ^2.9.0
+  biometric_storage: ^5.1.0-rc.5
+  local_auth: ^3.0.1
 
 dev_dependencies:
   flutter_test:
