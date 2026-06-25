@@ -68,11 +68,17 @@ class _SignSheetState extends State<_SignSheet> {
     setState(() => _error = null);
 
     if (key.isPassword) {
-      final pwd = await _askPassword();
-      if (pwd == null || pwd.isEmpty) return;
+      // Reuse the password already typed this sheet, so a D5 wallet's two
+      // Password shares only prompt once.
+      var pwd = _password;
+      if (pwd == null) {
+        pwd = await _askPassword();
+        if (pwd == null || pwd.isEmpty) return;
+      }
+      final entered = pwd;
       setState(() {
-        _password = pwd;
-        _collected.add(SigningKey(id: key.id, key: pwd, type: 'Password'));
+        _password = entered;
+        _collected.add(SigningKey(id: key.id, key: entered, type: 'Password'));
       });
       return;
     }

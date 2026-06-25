@@ -303,12 +303,14 @@ class _SendScreenState extends State<SendScreen> {
     if (approved != true) return;
     if (!mounted) return;
 
-    // Authorize the spend. Lockless (Phase 1, kLocklessSigning): collect the
-    // signing shares per transaction via the sign sheet. Legacy: unlock the
-    // app-level session. Both run in parallel until the new path is proven on
-    // device (ELLIPX_PARITY §7).
+    // Authorize the spend. Use the per-transaction sign sheet when lockless
+    // signing is on OR when the wallet has no StoreKey (a D5 password-only
+    // committee the legacy unlock path can't sign); otherwise unlock the
+    // app-level session (ELLIPX_PARITY §7 / D5).
+    final useSheet = kLocklessSigning ||
+        context.read<WalletService>().libwallet.requiresSignSheet;
     List<SigningKey>? keys;
-    if (kLocklessSigning) {
+    if (useSheet) {
       keys = await _authorizeInApp();
       if (keys == null) return; // cancelled / unsignable
     } else {
@@ -323,7 +325,7 @@ class _SendScreenState extends State<SendScreen> {
 
     final wallet = context.read<WalletService>();
     try {
-      final tx = kLocklessSigning
+      final tx = useSheet
           ? await wallet.libwallet.sendWithKeys(
               to: addr,
               amount: amount,
