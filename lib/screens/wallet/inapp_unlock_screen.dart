@@ -11,7 +11,7 @@ import '../../utils/log.dart';
 
 /// Preferred initial route for the unlock screen. Pure decision, extracted
 /// so it can be unit-tested without a platform.
-enum UnlockRoute { biometric, password, recovery }
+enum UnlockRoute { password, recovery }
 
 /// Prompt for the in-app wallet password so we can sign until the app is killed.
 ///
@@ -37,24 +37,16 @@ class InAppUnlockScreen extends StatefulWidget {
   @override
   State<InAppUnlockScreen> createState() => _InAppUnlockScreenState();
 
-  /// Pure routing decision (biometric → password → recovery), extracted so it
-  /// can be unit-tested without a platform.
+  /// Pure routing decision (password vs 2FA recovery), extracted so it can be
+  /// unit-tested without a platform.
   @visibleForTesting
-  static UnlockRoute unlockRoute({
-    required bool hasLocalShare,
-    required bool biometricEnabled,
-    required bool targetIsActive,
-  }) {
-    if (!hasLocalShare) return UnlockRoute.recovery;
-    if (biometricEnabled && targetIsActive) return UnlockRoute.biometric;
-    return UnlockRoute.password;
-  }
+  static UnlockRoute unlockRoute({required bool hasLocalShare}) =>
+      hasLocalShare ? UnlockRoute.password : UnlockRoute.recovery;
 
   /// Make sure [walletId] (or the active wallet when null) is unlocked before
-  /// a signing action. Non-inapp backends are a no-op (returns true). Tries
-  /// the biometric password cache first — but only for the already-active
-  /// wallet, since that cache is single-slot — else pushes the unlock screen
-  /// targeting [walletId] and reports whether it ended up active + unlocked.
+  /// a signing action. Non-inapp backends are a no-op (returns true). Pushes
+  /// the unlock screen targeting [walletId] when a password is needed and
+  /// reports whether it ended up active + unlocked.
   static Future<bool> ensureUnlocked(
     BuildContext context, {
     String? walletId,
@@ -67,9 +59,6 @@ class InAppUnlockScreen extends StatefulWidget {
     // A D5 (password-only) wallet has no unlock. If it's already active it's
     // ready (signing happens per-transaction via the sheet).
     if (backend.walletId == target && backend.requiresSignSheet) return true;
-    if (backend.walletId == target && await backend.unlockWithBiometric()) {
-      return true;
-    }
     // Cross-wallet: a password-free switch ACTIVATES a D5 wallet; a StoreKey
     // wallet returns needsPassword/needsRecovery without side effects, so we
     // fall through to the unlock screen below.
@@ -93,7 +82,6 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
   final _codeCtrl = TextEditingController();
   _Mode _mode = _Mode.probing;
   bool _busy = false;
-  bool _biometricEnabled = false;
   String? _error;
   RemoteKeySession? _recoverySession;
 
@@ -119,17 +107,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
       setState(() => _mode = _Mode.recovery);
       return;
     }
-    final biometricEnabled = await backend.isBiometricEnabled();
-    if (!mounted) return;
-    final route = InAppUnlockScreen.unlockRoute(
-      hasLocalShare: hasShare,
-      biometricEnabled: biometricEnabled,
-      targetIsActive: targetIsActive,
-    );
-    setState(() {
-      _mode = _Mode.password;
-      _biometricEnabled = route == UnlockRoute.biometric;
-    });
+    setState(() => _mode = _Mode.password);
   }
 
   @override
@@ -166,27 +144,6 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
       setState(() {
         _busy = false;
         _error = backend.error ?? 'Unlock failed';
-      });
-    }
-  }
-
-  Future<void> _unlockWithBiometric() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    final wallet = context.read<WalletService>();
-    final ok = await wallet.libwallet.unlockWithBiometric();
-    if (!mounted) return;
-    if (ok) {
-      await wallet.useLibwallet();
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
-    } else {
-      logError('[InAppUnlock._unlockWithBiometric] biometric unlock cancelled or failed');
-      setState(() {
-        _busy = false;
-        _error = 'Biometric unlock cancelled or failed';
       });
     }
   }
@@ -287,19 +244,6 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
           Text(_error!, style: const TextStyle(color: TibaneColors.error)),
         ],
         const Spacer(),
-        if (_biometricEnabled) ...[
-          OutlinedButton.icon(
-            onPressed: _busy ? null : _unlockWithBiometric,
-            icon: const Icon(Icons.fingerprint, size: 20),
-            label: const Text('Use biometric'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: TibaneColors.orange,
-              side: const BorderSide(color: TibaneColors.orange),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-          ),
-          const SizedBox(height: 10),
-        ],
         FilledButton(
           onPressed: _busy ? null : _unlock,
           style: FilledButton.styleFrom(

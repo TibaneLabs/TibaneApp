@@ -80,9 +80,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   static const _prefsRemoteKeyId = 'libw_remote_kid';
   static const _prefsPasswordKeyId = 'libw_pass_kid';
   static const _prefsName = 'libw_name';
-  static const _prefsBiometricEnabled = 'libw_biometric_enabled';
   static const _prefsNetworkPicked = 'libw_network_picked';
   static const _prefsEllipxMigrated = 'libw_ellipx_migrated_v1';
+  // Legacy 'libw_biometric_enabled' pref + its keystore cache were removed in
+  // Phase 3b; SecureKeystore.purgeLegacyBiometricPassword clears the orphans.
 
   final SecureKeystore _keystore = SecureKeystore();
 
@@ -180,11 +181,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   String? get remoteKeyId => _remoteKeyId;
 
   String? get passwordKeyId => _passwordKeyId;
-
-  /// In-memory password while the wallet is unlocked, or null. Exposed
-  /// only so the biometric-cache toggle can stash it; do not hold on to
-  /// the returned string longer than necessary.
-  String? get currentPassword => _password;
 
   Network? _currentNetwork;
   bool _networkLoading = false;
@@ -460,6 +456,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     // One-shot, idempotent: move any legacy single-slot device share to the
     // active wallet's per-wallet keys before anything reads it.
     await _keystore.migrateToPerWalletV2(_walletId);
+    // One-shot: purge the removed legacy biometric password-cache (Phase 3b).
+    await _keystore.purgeLegacyBiometricPassword();
     if (hasWallet) notifyListeners();
   }
 
@@ -966,9 +964,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
           password: newPassword,
         );
       }
-      if (await isBiometricEnabled()) {
-        await _keystore.writeBiometricPassword(newPassword);
-      }
       if (_passwordKeyId != null) {
         await prefs.setString(_prefsPasswordKeyId, _passwordKeyId!);
       }
@@ -1212,12 +1207,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _storeKeyPriv = newStorePair.privateKey;
       _password = newPassword;
       await _persist(storeKeyPublic: newStorePair.publicKey);
-      // The biometric cache held the OLD password — drop it.
-      if (await isBiometricEnabled()) {
-        await _keystore.deleteBiometricPassword();
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool(_prefsBiometricEnabled, false);
-      }
       notifyListeners();
       unawaited(ensureSolanaDefault());
       return true;
@@ -1569,8 +1558,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       await client.wallets.delete(walletId);
       await _keystore.deleteDeviceShare(walletId);
       if (wasActive) {
-        // The single-slot biometric cache held the removed wallet's password.
-        await _keystore.deleteBiometricPassword();
         final remaining = (await client.wallets.list())
             .map((w) => w.id)
             .toList();
@@ -1674,56 +1661,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     notifyListeners();
   }
 
-  // ------------------------------------------------------------------
-  // Biometric password cache
-  // ------------------------------------------------------------------
-
-  /// Whether the user has opted in to the biometric password cache. Read
-  /// from SharedPreferences so the flag survives a process restart.
-  Future<bool> isBiometricEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_prefsBiometricEnabled) ?? false;
-  }
-
-  /// True when the platform exposes a usable biometric-backed keystore.
-  /// The Settings toggle should be hidden when this is false.
-  Future<bool> isBiometricSupported() => _keystore.isBiometricAvailable();
-
-  /// Enable the biometric cache: store [password] behind a biometric gate
-  /// so future signing flows can unlock with FaceID / Touch ID instead
-  /// of asking for the password. Requires the wallet to currently be
-  /// unlocked (i.e. [isUnlocked] true with this password).
-  Future<bool> enableBiometricUnlock(String password) async {
-    try {
-      await _keystore.writeBiometricPassword(password);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_prefsBiometricEnabled, true);
-      notifyListeners();
-      return true;
-    } catch (e) {
-      debugPrint('enableBiometricUnlock failed: $e');
-      return false;
-    }
-  }
-
-  /// Disable the biometric cache and wipe the stored password.
-  Future<void> disableBiometricUnlock() async {
-    await _keystore.deleteBiometricPassword();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_prefsBiometricEnabled, false);
-    notifyListeners();
-  }
-
-  /// Prompt FaceID / Touch ID, read the cached password, and run [unlock]
-  /// with it. Returns false if biometric isn't enabled, the user cancelled,
-  /// or the underlying password unlock failed.
-  Future<bool> unlockWithBiometric() async {
-    if (!await isBiometricEnabled()) return false;
-    final cached = await _keystore.readBiometricPassword();
-    if (cached == null) return false;
-    return unlock(cached);
-  }
-
   @override
   Future<void> disconnect() async {
     final id = _walletId;
@@ -1757,13 +1694,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _prefsRemoteKeyId,
       _prefsPasswordKeyId,
       _prefsName,
-      _prefsBiometricEnabled,
       _prefsNetworkPicked,
     ]) {
       await prefs.remove(key);
     }
     if (id != null) await _keystore.deleteDeviceShare(id);
-    await _keystore.deleteBiometricPassword();
     notifyListeners();
   }
 
