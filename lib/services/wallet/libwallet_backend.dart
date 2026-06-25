@@ -12,6 +12,7 @@ import '../relay_service.dart' show tibaneApi;
 import '../solana_common.dart';
 import 'biometric.dart';
 import 'creation.dart';
+import 'migration.dart';
 import 'secure_keystore.dart';
 import 'wallet_backend.dart';
 
@@ -81,6 +82,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   static const _prefsName = 'libw_name';
   static const _prefsBiometricEnabled = 'libw_biometric_enabled';
   static const _prefsNetworkPicked = 'libw_network_picked';
+  static const _prefsEllipxMigrated = 'libw_ellipx_migrated_v1';
 
   final SecureKeystore _keystore = SecureKeystore();
 
@@ -642,6 +644,93 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _connecting = false;
       notifyListeners();
     }
+  }
+
+  // ------------------------------------------------------------------
+  // Biometric migration of existing wallets (Ellipx-parity Phase 3 / D7).
+  // Moves each StoreKey private from the no-auth keystore to biometric_storage,
+  // verify-before-delete, KEEPING the password blob (D8). Idempotent.
+  // ------------------------------------------------------------------
+
+  /// Whether the eager one-time biometric-migration screen should be shown:
+  /// the device can custody behind biometric, the one-shot flag isn't set, and
+  /// at least one StoreKey wallet still has a no-auth keystore copy.
+  Future<bool> needsBiometricMigration() async {
+    final prefs = await SharedPreferences.getInstance();
+    final alreadyMigrated = prefs.getBool(_prefsEllipxMigrated) == true;
+    final biometric = await Biometric.hasBiometric();
+    if (alreadyMigrated || !biometric) return false;
+    var hasWalletToMigrate = false;
+    try {
+      final client = await _getClient();
+      for (final w in await client.wallets.list()) {
+        final action = migrationActionForWallet(
+          hasStoreKey: w.keys.any((k) => k.type == 'StoreKey'),
+          hasNoAuthCopy: await _keystore.hasNoAuthKeystoreCopy(w.id),
+        );
+        if (action == MigrationAction.migrate) {
+          hasWalletToMigrate = true;
+          break;
+        }
+      }
+    } catch (e) {
+      debugPrint('needsBiometricMigration: $e');
+      return false;
+    }
+    return shouldMigrate(
+      alreadyMigrated: alreadyMigrated,
+      hasWalletToMigrate: hasWalletToMigrate,
+      biometricAvailable: biometric,
+    );
+  }
+
+  /// Migrate every in-app wallet's StoreKey private from the no-auth keystore
+  /// to biometric storage — verify-before-delete, keeping the password blob
+  /// (D8). Per-wallet idempotent (a migrated wallet has no no-auth copy left).
+  /// Sets the one-shot flag only when EVERY wallet is handled without failure;
+  /// any failure leaves the old copy in place to retry. Returns true on full
+  /// success.
+  Future<bool> migrateToBiometricV1() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_prefsEllipxMigrated) == true) return true;
+    if (!await Biometric.hasBiometric()) return false;
+    final client = await _getClient();
+    var allOk = true;
+    for (final w in await client.wallets.list()) {
+      final storeKeys = w.keys.where((k) => k.type == 'StoreKey');
+      final storeKey = storeKeys.isEmpty ? null : storeKeys.first;
+      final action = migrationActionForWallet(
+        hasStoreKey: storeKey != null,
+        hasNoAuthCopy: await _keystore.hasNoAuthKeystoreCopy(w.id),
+      );
+      if (action == MigrationAction.skip) continue;
+      try {
+        // 1. Read the no-auth share (no password needed).
+        final priv = await _keystore.readDeviceShare(
+          walletId: w.id,
+          password: null,
+        );
+        if (priv == null) {
+          allOk = false; // raced away since the probe — retry next launch
+          continue;
+        }
+        // 2. Enroll behind biometric (prompt) + 3. verify-read (prompt).
+        await Biometric.setSecuredKey(priv, storeKey!.key);
+        final back = await Biometric.askSecuredKey(storeKey.key);
+        if (back != priv) {
+          allOk = false; // verify failed — keep the no-auth copy
+          continue;
+        }
+        // 4. Verified — drop the no-auth copy, KEEP the blob (D8).
+        await _keystore.deleteNoAuthKeystoreCopy(w.id);
+      } catch (e) {
+        debugPrint('migrateToBiometricV1(${w.id}): $e');
+        allOk = false; // biometric cancel / error — retry next launch
+      }
+    }
+    if (allOk) await prefs.setBool(_prefsEllipxMigrated, true);
+    notifyListeners();
+    return allOk;
   }
 
   /// Import a BIP-39 mnemonic and promote it IN PLACE to the canonical
