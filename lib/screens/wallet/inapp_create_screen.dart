@@ -3,6 +3,8 @@ import 'package:libwallet/libwallet.dart';
 import 'package:phone_form_field/phone_form_field.dart';
 import 'package:provider/provider.dart';
 
+import '../../services/wallet/biometric.dart';
+import '../../services/wallet/creation.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
@@ -44,6 +46,10 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
   String? _error;
   double? _progress;
 
+  /// True when this device has no biometric (or FORCE_UNSAFE) → the wallet
+  /// will be created with the D5 password-only committee. Drives the banner.
+  bool _lowerSecurity = false;
+
   RemoteKeySession? _session;
   String? _remoteKey;
 
@@ -51,6 +57,21 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
   /// (email or `+E164` phone). Stored at send-time so the user editing
   /// the field afterward doesn't change what we say we sent to.
   String _sentTo = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _checkSecurityLevel();
+  }
+
+  Future<void> _checkSecurityLevel() async {
+    final mode = creationModeFor(
+      hasBiometric: await Biometric.hasBiometric(),
+      forceUnsafe: kForceUnsafeCreation,
+    );
+    if (!mounted) return;
+    setState(() => _lowerSecurity = mode == CreationMode.passwordOnly);
+  }
 
   @override
   void dispose() {
@@ -347,6 +368,29 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (_lowerSecurity) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: TibaneColors.warning.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: TibaneColors.warning.withValues(alpha: 0.4),
+              ),
+            ),
+            child: const Text(
+              'Lower-security wallet: this device has no biometric, so this '
+              'wallet is protected by your password alone (with 2FA kept for '
+              'recovery). Keep your password safe.',
+              style: TextStyle(
+                color: TibaneColors.warning,
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
         const Text(
           'Set a password. This is the third share — without it, your device '
           'and 2FA share alone cannot sign.',
