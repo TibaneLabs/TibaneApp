@@ -60,6 +60,11 @@ dialog. The **StoreKey private key itself lives behind biometric**
 | D5 | MPC creation on a device **without** biometric | **Password + 2FA fallback** — create a no-StoreKey committee from `Password + RemoteKey`. NOT Ellipx's "3× same password unsafe" wallet, and not blocking. |
 | D6 | "Add biometric" for **MWA / Seed Vault** wallets | **Nothing extra** — Seed Vault does its own auth; do not add an app-level biometric layer for MWA accounts. (This simplifies Feature 2's MWA scope to "no-op".) |
 | D7 | Migration of existing in-app wallets | **Eager one-time screen** at first launch after the update that re-secures the StoreKey behind biometric. |
+| D8 | Password-encrypted fallback blob (the device-share copy in SharedPreferences) | **KEEP it** — prioritize recovery. The blob stays as a local, OS-restore-surviving recovery copy. ⚠️ Consequence: password-alone can still reconstruct the device share, so **biometric is a UX/convenience gate, not a hard second factor** (see §3.1 "Security consequence"). This intentionally diverges from Ellipx, which keeps the StoreKey *only* behind biometric. |
+| D9 | RemoteKey as a signing factor | **Keep recovery-only** — RemoteKey is NOT used to sign (matches both apps; signing = StoreKey + Password). Consequence: the no-biometric D5 fallback must be **password-signable** on its own — see §5.2 + OPEN ITEM S1. |
+| D10 | Account creation in the account-centric model | **Support add-account** — provide an "add account" flow (Ellipx `SharedAccount.createAccount`) so the unified list can grow (more chains / multiple accounts per wallet). |
+| D11 | How the external MWA/Seed Vault account enters the unified list | **Explicit connect** — keep an MWA "connect" action; the external account appears in the list **only while connected** (MWA can't enumerate offline). Resolves the §4.2 open question. |
+| D12 | Cloud backup / recovery scope for this migration | **Out of scope now** — new wallets recover via the kept password blob (D8) + existing 2FA reshare + device transfer. Ellipx-style iCloud/Drive backup is a later follow-up. |
 
 ---
 
@@ -98,6 +103,58 @@ Trade-off / what we keep `flutter_secure_storage` for:
 > Ellipx references: `lib/service/biometric.dart` (`setSecuredKey`,
 > `askSecuredKey`, `hasBiometric`), pkg `biometric_storage: ^5.1.0-rc.5`,
 > `local_auth: ^3.0.1`.
+
+#### Data migration & no-loss guarantee (adopting `biometric_storage` does NOT lose data)
+
+`biometric_storage` and `flutter_secure_storage` are **independent stores**.
+Adding/using `biometric_storage` does not touch or wipe anything already in
+`flutter_secure_storage` — nothing is auto-deleted. Existing data is only ever
+removed by the explicit, verify-before-delete migration in **§6.3**.
+
+What exists today for each in-app wallet (`secure_keystore.dart`,
+`writeDeviceShare`) — the device share (StoreKey private) is written to **two**
+at-rest copies:
+1. **No-auth OS-keystore copy** — `libw_device_share_<walletId>` via
+   `flutter_secure_storage` (`_iosPlain`/`_androidPlain`). Readable when the
+   device is unlocked, **no password**.
+2. **Password-encrypted blob** — `libw_device_share_blob_v1_<walletId>` in
+   **SharedPreferences** (AES-GCM under the password). Survives OS restore.
+
+Migration target (per **D7** + **D8**):
+- **Move copy #1 → `biometric_storage`** (read the no-auth copy — no password
+  needed — write to biometric_storage, **read it back to verify**, then delete
+  the no-auth copy). Verify-before-delete ⇒ **zero data loss**; on failure the
+  old copy stays and it retries next launch.
+- **Keep copy #2 as-is (D8)** — the password-encrypted blob remains the local,
+  OS-restore-surviving recovery copy.
+- **No biometric on the device** → don't move anything; the share stays in
+  `flutter_secure_storage` (no loss), and the wallet behaves like a D5
+  `Password + 2FA` wallet.
+
+End-state storage roles:
+- `biometric_storage` → biometric-gated StoreKey private (primary, custody).
+- `flutter_secure_storage` / SharedPreferences blob → password-decryptable
+  recovery copy (kept) + storage for no-biometric wallets.
+
+> **Enrollment-invalidation config:** `biometric_storage` can be configured to
+> invalidate the stored key when the device's biometric enrollment changes (a
+> finger/face is added/removed). Decide this at implementation time — but note
+> that **D8 makes it safe either way**: if the biometric key is invalidated, the
+> StoreKey is recoverable from the kept password blob (copy #2). Check how Ellipx
+> configures `StorageFileInitOptions` / `AndroidPromptInfo` in
+> `ellipx/lib/service/biometric.dart` and match it unless there's reason not to.
+
+#### ⚠️ Security consequence of D8 (keep the blob)
+
+Because the password-encrypted blob is retained, **the password alone can still
+reconstruct the device share** (decrypt blob → device share), and together with
+the Password share that is enough to sign. So with D8, **biometric is a
+convenience/UX gate over the StoreKey, NOT a hard second factor** — the real
+security floor stays "password = full access," the same as today. This is a
+deliberate divergence from Ellipx (which stores the StoreKey *only* behind
+biometric and pushes recovery to cloud backup + 2FA reshare). If a future
+decision wants true biometric-as-second-factor, revisit D8 (drop the blob) and
+strengthen the cloud-backup / 2FA recovery story to compensate.
 
 ### 3.2 Signing model & the threshold question (D4) — **READ CAREFULLY**
 
@@ -144,6 +201,15 @@ This must be resolved empirically before finalizing the signing UX:
 > `unlock`). So the migration's signing change is really about **when** shares are
 > collected (per-tx vs cached session) and **how the StoreKey is protected**
 > (biometric vs no-auth keystore) — not about which shares.
+
+**"Not-yet-migrated" signing fallback (important during Phases 1–3).** The new
+per-tx sign path reads the StoreKey from `biometric_storage`, but a wallet isn't
+moved there until the Feature 3 migration runs (and the user may cancel the
+biometric prompt, leaving it un-migrated). So the StoreKey read **must fall back**
+to the legacy locations when `biometric_storage` has no entry: the no-auth
+OS-keystore copy (copy #1) or the password-decryptable blob (copy #2). Implement
+the read as: `biometric_storage` → else no-auth keystore → else password blob.
+Never assume the StoreKey is already behind biometric.
 
 ### 3.3 What "remove lock/unlock" concretely deletes
 
@@ -193,18 +259,23 @@ Removing the app-level lock model (D4) means removing/repurposing:
 - **No lock/unlock** (see §3.3). Nothing is "unlocked"; the current account just
   determines which backend signs and (for in-app) which wallet's shares to
   collect per transaction.
+- **Add-account (D10).** Provide an "add account" flow so the unified list can
+  grow — additional chains and/or multiple accounts per in-app wallet. Port
+  Ellipx `SharedAccount.createAccount(walletId, name, type)`
+  (`lib/crypto/shared_account.dart`); the account-add UI lives near the account
+  switcher. (MWA accounts are added by connecting, per D11, not via this flow.)
 
 ### 4.2 Dual-backend reconciliation — the hard part (investigate first)
 
 The product owner wants both backends in one list "if possible." Known frictions
 to resolve during implementation:
-- **MWA account enumeration.** Seed Vault/MWA typically exposes only the
-  *currently authorized* account, and only while a connection/authorization is
-  live. There may be no way to enumerate MWA accounts without an active MWA
-  session. **Decide:** does the MWA entry appear only when connected (a single
-  "External wallet" entry), or do we persist the last-known MWA pubkey to show it
-  offline? Check `lib/services/wallet/mwa_wallet_backend.dart` for what it exposes
-  (connect, publicKey, disconnect) before designing the list.
+- **MWA account enumeration — RESOLVED (D11): explicit connect.** Seed Vault/MWA
+  exposes only the *currently authorized* account, and only while a connection is
+  live — it can't enumerate offline. Per D11, keep an MWA **"connect"** action;
+  once authorized, the external account appears in the unified list and is
+  selectable, and it is **only shown while connected**. Check
+  `lib/services/wallet/mwa_wallet_backend.dart` for `connect`/`publicKey`/
+  `disconnect` and wire the connect entry point into the account switcher.
 - **Signing divergence.** In-app accounts → per-tx Password + biometric StoreKey
   (§3.2). MWA accounts → Seed Vault's own auth, **no app-level biometric** (D6).
   The send/sign flows must branch on the current account's backend.
@@ -277,9 +348,14 @@ creatingWallet → wallet`). Key steps to port into Tibane's
    `intro/biometric.dart`): on entering creation, check
    `local_auth`/`biometric_storage` availability.
    - available → proceed to the standard (biometric) creation.
-   - **not available → D5 fallback**: create a `Password + RemoteKey` committee
-     (no StoreKey). Implement this as a distinct, clearly-labeled path (NOT
-     Ellipx's "3× same password unsafe").
+   - **not available → D5 fallback**: create a no-StoreKey committee. ⚠️ Because
+     **RemoteKey is recovery-only (D9)** and isn't a signer, the fallback must be
+     **password-signable on its own**. Resolve via **S1**: if libwallet signs with
+     1 share, a `Password + RemoteKey` committee where the Password alone meets
+     the sign threshold works (RemoteKey stays a recovery factor). If 2 shares are
+     required and RemoteKey can't sign, the fallback must instead be a
+     **password-only (1-of-1)** wallet. Implement as a distinct, clearly-labeled
+     path (NOT Ellipx's "3× same password unsafe").
 2. **Password** (≥ 8 chars, confirmed) + wallet name.
 3. **2FA method** (email or SMS) → send → **OTP confirmation** →
    `remoteKeys.validate` returns the RemoteKey resource. (Tibane already does
@@ -359,9 +435,14 @@ and not yet migrated (gate on a new pref, e.g. `libw_ellipx_migrated_v1`):
      path so the screen doesn't have to ask for the password.
    - **Re-store it behind biometric** via `biometric_storage` (triggers a
      biometric prompt). **Verify the biometric read returns the same value
-     before deleting** the old no-auth entry (zero-data-loss principle).
+     before deleting** the old no-auth entry (copy #1) (zero-data-loss principle).
+   - **Do NOT delete the password-encrypted blob (copy #2)** — per **D8** it is
+     intentionally kept as the OS-restore-surviving recovery copy.
 3. Delete the obsolete biometric **password** cache (`libw_biometric_pw`) and the
    `libw_biometric_enabled` toggle; the password is never lost (it's the user's).
+   (Note: the short-lived "auth-upgrade" migration / reset-notice attempt
+   — `_migrateBiometricToAuthRequired`, `biometricResetNotice` — was reverted and
+   never shipped, so there is nothing to remove there.)
 4. Establish the account-centric current pointer from the old active wallet.
 5. Set `libw_ellipx_migrated_v1 = true` **only after** all wallets verified.
    If any step fails, do not set the flag and do not delete old data — retry next
@@ -382,10 +463,16 @@ Edge cases:
   dedicated migrator), called from `TibaneShell`/`main.dart` startup (similar
   wiring to the current `biometricResetNotice` one-shot, but a full screen).
 - `lib/services/wallet/secure_keystore.dart` — add the biometric (`biometric_storage`)
-  path; keep the fallback blob; reuse the existing verify-before-delete idiom from
-  `migrateToPerWalletV2`.
-- Remove the now-obsolete `_migrateBiometricToAuthRequired` /
-  `biometricResetNotice` / password-cache code (superseded by this migration).
+  path; **keep** the password-encrypted fallback blob (D8); reuse the existing
+  verify-before-delete idiom from `migrateToPerWalletV2`.
+- Remove the **original optional password-cache** code that gated the password
+  behind biometric for app-level unlock: `libw_biometric_pw`
+  (`writeBiometricPassword`/`readBiometricPassword`/`deleteBiometricPassword`),
+  the `libw_biometric_enabled` toggle (`isBiometricEnabled`/`enableBiometricUnlock`/
+  `disableBiometricUnlock`/`unlockWithBiometric`), and the Settings
+  `_BiometricToggleTile`. (The `_androidBio`/`_iosBio` options and the
+  `_migrateBiometricToAuthRequired`/`biometricResetNotice` experiment were already
+  reverted — see git history — so they no longer exist to remove.)
 
 ### 6.5 Tests (Feature 3)
 
@@ -434,8 +521,6 @@ committing.
   is Ellipx's `threshold + 1` (2 shares) actually required? Determines
   biometric-only vs Password+biometric per transaction (§3.2). **Verify before
   Phase 1.**
-- **MWA account enumeration:** can the MWA/Seed Vault account appear in the
-  unified list while disconnected, or only when connected? (§4.2)
 - **Per-transaction password friction:** if S1 says 2 shares, every send needs a
   typed password + biometric. Confirm the product owner accepts this (Ellipx
   does) or wants the biometric-only path (requires S1 == 1 share, or a threshold
@@ -443,9 +528,25 @@ committing.
 - **Two secure-storage libraries** coexisting (`biometric_storage` for the
   biometric StoreKey, `flutter_secure_storage` for the fallback). Keep roles
   crisply separated (§3.1).
-- **iCloud/Drive backup parity:** Ellipx uses explicit `icloud_storage` /
-  Google Drive APIs (`lib/utils/backup.dart`); Tibane relies on OS auto-backup.
-  Out of scope for these three features but note it for later parity.
+- **ClawdWallet (agent wallets):** Tibane has agent/ClawdWallet flows
+  (`lib/screens/clawdwallet/*`, `create_agent_wallet_screen.dart`,
+  `services/clawdwallet_service.dart`). They were **not** covered by D1–D12 —
+  verify how agent wallets fit the account-centric model (do their accounts join
+  the unified list? do they need biometric?) before Phase 4.
+- **Localization / strings:** the new migration, creation, and sign-dialog
+  screens need user-facing strings. Tibane inlines strings (no `AppLocalizations`
+  like Ellipx) — keep that style unless a decision says otherwise.
+
+### Resolved (kept for the record)
+- **MWA account enumeration** → **D11**: explicit connect; the external account
+  shows only while connected (§4.2).
+- **Cloud backup / recovery scope** → **D12**: out of scope now; new wallets
+  recover via the kept password blob (**D8**) + existing 2FA reshare + device
+  transfer. Ellipx-style iCloud/Drive backup (`ellipx/lib/utils/backup.dart`,
+  `icloud_storage` / Google Drive) is a documented **follow-up**, not part of
+  this migration.
+- **"Not-yet-migrated" StoreKey reads** → documented in §3.2 (read fallback
+  chain: `biometric_storage` → no-auth keystore → password blob).
 
 ---
 
