@@ -82,6 +82,25 @@ void main() {
       expect(await ks.hasDeviceShare('wlt-A'), isFalse);
       expect(await ks.hasDeviceShare('wlt-B'), isTrue);
     });
+
+    // Phase 2a: biometric wallets skip the no-auth OS-keystore copy but still
+    // write the password-encrypted recovery blob (D8), so the share remains
+    // readable with the password.
+    test('osKeystoreCopy:false still writes a readable password blob',
+        () async {
+      final ks = SecureKeystore();
+      await ks.writeDeviceShare(
+        walletId: 'wlt-bio',
+        value: 'bioShare',
+        password: 'pw',
+        osKeystoreCopy: false,
+      );
+      expect(await ks.hasDeviceShare('wlt-bio'), isTrue);
+      expect(
+        await ks.readDeviceShare(walletId: 'wlt-bio', password: 'pw'),
+        'bioShare',
+      );
+    });
   });
 
   group('migration v1 (single-slot) -> v2 (per-wallet)', () {
