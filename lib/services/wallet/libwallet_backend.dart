@@ -11,6 +11,7 @@ import '../../constants/solana_constants.dart';
 import '../relay_service.dart' show tibaneApi;
 import '../solana_common.dart';
 import 'biometric.dart';
+import 'creation.dart';
 import 'secure_keystore.dart';
 import 'wallet_backend.dart';
 
@@ -517,8 +518,17 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     try {
       final client = await _getClient();
 
-      // Device share.
+      // Device share. On a biometric device, enroll the StoreKey private
+      // behind biometric BEFORE keygen (Ellipx-parity §5.2): a cancelled /
+      // failed enrollment aborts creation here, before any wallet exists.
       final storePair = await client.storeKeys.create();
+      final storage = storeKeyStorageFor(await Biometric.hasBiometric());
+      if (storage == StoreKeyStorage.biometric) {
+        await Biometric.setSecuredKey(
+          storePair.privateKey,
+          storePair.publicKey,
+        );
+      }
       final keys = [
         KeyDescription.storeKey(storePair.publicKey),
         KeyDescription.remoteKey(remoteKey),
@@ -597,7 +607,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _passwordKeyId = walletKeyIds['Password'];
       _password = password;
 
-      await _persist(storeKeyPublic: storePair.publicKey);
+      await _persist(
+        storeKeyPublic: storePair.publicKey,
+        osKeystoreCopy: keepNoAuthKeystoreCopy(storage),
+      );
       await ensureSolanaDefault();
       notifyListeners();
     } catch (e) {
@@ -2765,7 +2778,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     return newStorePair.privateKey;
   }
 
-  Future<void> _persist({required String storeKeyPublic}) async {
+  Future<void> _persist({
+    required String storeKeyPublic,
+    bool osKeystoreCopy = true,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefsWalletId, _walletId!);
     await prefs.setString(_prefsAccountId, _accountId!);
@@ -2785,6 +2801,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       walletId: _walletId!,
       value: _storeKeyPriv!,
       password: _password!,
+      osKeystoreCopy: osKeystoreCopy,
     );
     // If we somehow still have a legacy plaintext entry, scrub it.
     await prefs.remove(_prefsStorePriv);

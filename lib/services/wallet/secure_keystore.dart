@@ -103,16 +103,23 @@ class SecureKeystore {
   // Device share — per wallet, always encrypted at rest, OS keystore preferred.
   // ---------------------------------------------------------------------
 
-  /// Persist [walletId]'s device-share private key. Writes the OS-keystore
-  /// copy (when usable) and ALWAYS the password-encrypted fallback blob.
-  /// Both copies are keyed by [walletId], so writing one wallet's share
-  /// never disturbs another's.
+  /// Persist [walletId]'s device-share private key. Writes the no-auth
+  /// OS-keystore copy (when usable and [osKeystoreCopy]) and ALWAYS the
+  /// password-encrypted fallback blob. Both copies are keyed by [walletId],
+  /// so writing one wallet's share never disturbs another's.
+  ///
+  /// [osKeystoreCopy] defaults true (the historical behavior). Pass `false`
+  /// for biometric-custody wallets (Ellipx-parity §3.1): the StoreKey private
+  /// lives behind biometric via [Biometric] + this password blob (D8 recovery
+  /// copy), and must NOT also sit in the no-auth keystore — that would defeat
+  /// the biometric gate.
   Future<void> writeDeviceShare({
     required String walletId,
     required String value,
     required String password,
+    bool osKeystoreCopy = true,
   }) async {
-    if (await isSecureStorageUsable()) {
+    if (osKeystoreCopy && await isSecureStorageUsable()) {
       await _storage.write(
         key: _dsKey(walletId),
         value: value,
