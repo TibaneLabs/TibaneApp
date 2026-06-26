@@ -14,6 +14,7 @@ import 'biometric.dart';
 import 'creation.dart';
 import 'migration.dart';
 import 'secure_keystore.dart';
+import 'signing.dart';
 import 'wallet_backend.dart';
 
 /// Minimal token result shape returned by
@@ -1351,9 +1352,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// unchanged (StoreKey + Password). Returns a typed [SwitchResult] so the
   /// UI can prompt for a password or route to 2FA recovery.
   Future<SwitchResult> switchWallet(String walletId, {String? password}) async {
-    // Already active: a StoreKey wallet that's unlocked, or a D5 wallet (no
-    // StoreKey — nothing to unlock). Avoids a needless wallet fetch.
-    if (_walletId == walletId && (isUnlocked || _storeKeyId == null)) {
+    // Already active: a StoreKey wallet that's unlocked, a D5 wallet (no
+    // StoreKey), or any wallet under lockless signing (nothing to unlock).
+    // Avoids a needless wallet fetch.
+    if (_walletId == walletId &&
+        (isUnlocked || _storeKeyId == null || kLocklessSigning)) {
       return SwitchResult.ok;
     }
 
@@ -1364,23 +1367,26 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       final storeKeyId = keyIds['StoreKey'];
       final passwordKeyId = keyIds['Password'];
 
-      // D5 (password-only) wallet: no StoreKey, no device share, no unlock.
-      // Activate it directly — signing happens per-transaction via the sheet
-      // (send routes through it via requiresSignSheet). There is nothing to
-      // read from the keystore and no 2FA recovery to run.
-      if (storeKeyId == null) {
+      // Free, password-free activation: a D5 (password-only) wallet always, or
+      // ANY wallet under lockless signing. No device-share load, no password —
+      // signing authorizes per-transaction via the sheet. StoreKey metadata is
+      // kept; only the session secrets (_storeKeyPriv/_password) stay null.
+      if (storeKeyId == null || kLocklessSigning) {
         final account = await _resolveAccount(client, w);
         await client.accounts.setCurrent(account.id);
         _walletId = walletId;
         _accountId = account.id;
         _publicKey = account.address;
         _walletName = w.name.isNotEmpty ? w.name : 'In-app wallet';
-        _storeKeyId = null;
+        _storeKeyId = storeKeyId;
         _remoteKeyId = keyIds['RemoteKey'];
         _passwordKeyId = passwordKeyId;
         _storeKeyPriv = null;
         _password = null;
-        await _persist(storeKeyPublic: null);
+        final storeKeyPub = storeKeyId == null
+            ? null
+            : w.keys.firstWhere((k) => k.type == 'StoreKey').key;
+        await _persist(storeKeyPublic: storeKeyPub);
         notifyListeners();
         if (w.curve == 'ed25519') unawaited(ensureSolanaDefault());
         return SwitchResult.ok;
@@ -2343,6 +2349,83 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     return client.transactions.signAndSendSimple(tx, keys: keys);
   }
 
+  /// Sign [message] with pre-collected per-transaction [keys] (from the sign
+  /// sheet). Lockless analogue of [signMessage] — no app-level unlock.
+  Future<Uint8List?> signMessageWithKeys(
+    Uint8List message,
+    List<SigningKey> keys,
+  ) async {
+    if (_accountId == null) return null;
+    try {
+      final client = await _getClient();
+      final result = await client.accounts.signMessage(
+        _accountId!,
+        message: message,
+        keys: keys.map((k) => k.toJson()).toList(),
+        mode: 'solana',
+      );
+      return base58Decode(result.signature);
+    } catch (e) {
+      _error = 'Message signing failed: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Sign (only) each tx with pre-collected [keys]. Lockless analogue of
+  /// [signTransactions] — collect the keys ONCE and reuse across the batch.
+  Future<List<Uint8List?>> signTransactionsWithKeys(
+    List<Uint8List> transactions,
+    List<SigningKey> keys,
+  ) async {
+    if (_accountId == null) return List.filled(transactions.length, null);
+    final client = await _getClient();
+    final keyMaps = keys.map((k) => k.toJson()).toList();
+    final out = <Uint8List?>[];
+    for (final tx in transactions) {
+      try {
+        final signed = await client.accounts.signTransaction(
+          _accountId!,
+          transaction: tx,
+          keys: keyMaps,
+        );
+        out.add(signed);
+      } catch (e) {
+        debugPrint('signTransactionsWithKeys error: $e');
+        out.add(null);
+      }
+    }
+    return out;
+  }
+
+  /// Sign + broadcast each tx with pre-collected [keys]. Lockless analogue of
+  /// [signAndSendTransactions] — collect the keys ONCE and reuse across the
+  /// batch.
+  Future<List<String?>> signAndSendTransactionsWithKeys(
+    List<Uint8List> transactions,
+    List<SigningKey> keys,
+  ) async {
+    if (_accountId == null) return List.filled(transactions.length, null);
+    final client = await _getClient();
+    final keyMaps = keys.map((k) => k.toJson()).toList();
+    final out = <String?>[];
+    for (final tx in transactions) {
+      try {
+        final sig = await client.accounts.signAndSendTransaction(
+          _accountId!,
+          transaction: tx,
+          keys: keyMaps,
+        );
+        out.add(sig);
+      } catch (e) {
+        debugPrint('signAndSendTransactionsWithKeys error: $e');
+        out.add(null);
+      }
+    }
+    return out;
+  }
+
   /// Resolve the canonical asset key for a transfer. SPL transfers pass an
   /// explicit `solana.mainnet.<mint>` key; native SOL passes null, which
   /// libwallet's `validate` rejects ("asset is required"), so fill in the
@@ -2629,34 +2712,52 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// confirm time (the send screen switches/unlocks first). 5-minute,
   /// single-use session.
   Future<DeviceTransferSession> startDeviceTransferExport(
-    String walletId,
-  ) async {
+    String walletId, {
+    String? storeKeyPriv,
+  }) async {
     if (_walletId != walletId) {
       throw StateError(
         'This wallet is not the active one — open it first, then transfer',
       );
     }
-    if (_storeKeyId == null || _storeKeyPriv == null) {
-      throw StateError('Unlock the wallet before transferring it');
+    // Lockless passes the share collected on-demand; legacy uses the cached
+    // session. Either way the share must be available to release at confirm.
+    if (_storeKeyId == null || (storeKeyPriv ?? _storeKeyPriv) == null) {
+      throw StateError('Could not read the device key to transfer it');
     }
     final client = await _getClient();
     return client.wallets.exportToDevice(walletId);
+  }
+
+  /// Read the ACTIVE wallet's StoreKey private via the §3.2 fallback chain
+  /// (biometric → no-auth keystore → password blob). Used by lockless flows
+  /// that must release/use the device share without a cached session (e.g.
+  /// device-transfer export). Null when there's no StoreKey or the read fails.
+  Future<String?> readActiveStoreKeyPrivate() async {
+    final w = await currentWallet();
+    if (w == null) return null;
+    final storeKeys = w.keys.where((k) => k.type == 'StoreKey');
+    if (storeKeys.isEmpty) return null;
+    return readStoreKeyPrivate(storeKeys.first);
   }
 
   /// Approve a pending transfer after the new device connected
   /// (`wallet:transfer:pair_received`). Releases this device's StoreKey share
   /// so the new device ends up with a full, signable wallet — no reshare.
   /// Requires the wallet to still be unlocked.
-  Future<void> confirmDeviceTransferExport(String sid) async {
+  Future<void> confirmDeviceTransferExport(
+    String sid, {
+    String? storeKeyPriv,
+  }) async {
     final storeKeyId = _storeKeyId;
-    final storeKeyPriv = _storeKeyPriv;
-    if (storeKeyId == null || storeKeyPriv == null) {
-      throw StateError('Wallet is locked; cannot release the device share');
+    final priv = storeKeyPriv ?? _storeKeyPriv;
+    if (storeKeyId == null || priv == null) {
+      throw StateError('Could not read the device key to release it');
     }
     final client = await _getClient();
     final entry = DeviceShareEntry(
       walletKeyId: storeKeyId,
-      privateKey: storeKeyPriv,
+      privateKey: priv,
     );
     await client.wallets.exportToDeviceConfirm(sid: sid, deviceShares: [entry]);
   }

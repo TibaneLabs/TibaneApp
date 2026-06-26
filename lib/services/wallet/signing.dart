@@ -16,11 +16,13 @@ import 'package:libwallet/libwallet.dart' show Wallet, WalletKey;
 /// collect shares per transaction via the sign sheet instead. Phase 1 ships
 /// this OFF (the new path is present but dormant, in parallel — §7).
 ///
-/// Driven by `--dart-define` so it can be flipped on for device validation
-/// without editing code and without leaving a non-default committed:
-///   flutter run --dart-define=LOCKLESS_SIGNING=true
-/// (Environment-based so the wired branches aren't flagged as dead code.)
-const bool kLocklessSigning = bool.fromEnvironment('LOCKLESS_SIGNING');
+/// Phase 4a: lockless signing is now the DEFAULT — switching is free and every
+/// signature is authorized per-transaction via the sign sheet. The legacy
+/// unlock/cached-session path is still reachable for fallback testing via
+/// `--dart-define=LOCKLESS_SIGNING=false`, and is deleted entirely in 4a-4.
+/// (Environment-based so the legacy branches aren't flagged as dead code.)
+const bool kLocklessSigning =
+    bool.fromEnvironment('LOCKLESS_SIGNING', defaultValue: true);
 
 /// Number of key shares libwallet needs to produce a signature: `threshold + 1`.
 ///
@@ -48,3 +50,14 @@ bool canAssembleThreshold(Wallet wallet) =>
 /// Whether the sheet has collected enough shares to enable "Confirm".
 bool signSheetReady(int collectedCount, int threshold) =>
     collectedCount >= requiredSigningShares(threshold);
+
+/// Whether a sign should authorize per-transaction via the sheet (Phase 4a):
+/// only for in-app wallets, and only under lockless signing OR when the wallet
+/// has no StoreKey (a D5 committee the cached path can't sign). MWA always
+/// takes the legacy path (Seed Vault does its own auth).
+bool useSignSheetFor({
+  required bool isInApp,
+  required bool lockless,
+  required bool walletRequiresSheet,
+}) =>
+    isInApp && (lockless || walletRequiresSheet);

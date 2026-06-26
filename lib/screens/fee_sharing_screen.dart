@@ -13,7 +13,7 @@ import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
-import 'wallet/inapp_unlock_screen.dart';
+import 'wallet/widgets/authorize_and_sign.dart';
 import '../utils/log.dart';
 
 class FeeSharingScreen extends StatefulWidget {
@@ -126,7 +126,6 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
   Future<void> _createConfig() async {
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
-    if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
     if (!mounted) return;
 
     setState(() => _executing = true);
@@ -141,8 +140,14 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         feePayer: wallet.publicKey!,
         instructions: [ix],
       );
-      final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
       if (!mounted) return;
+      final sigs = await authorizeAndSignAndSend(
+        context,
+        [Uint8List.fromList(tx)],
+      );
+      if (!mounted) return;
+      if (sigs == null) return; // cancelled / not authorized
+      final sig = sigs.first;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Config created: ${sig.substring(0, 8)}...')),
@@ -163,7 +168,6 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
   Future<void> _distributeFees() async {
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected || _config == null) return;
-    if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
     if (!mounted) return;
 
     setState(() => _executing = true);
@@ -187,8 +191,14 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         feePayer: wallet.publicKey!,
         instructions: instructions,
       );
-      final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
       if (!mounted) return;
+      final sigs = await authorizeAndSignAndSend(
+        context,
+        [Uint8List.fromList(tx)],
+      );
+      if (!mounted) return;
+      if (sigs == null) return; // cancelled / not authorized
+      final sig = sigs.first;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -211,7 +221,6 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
   Future<void> _updateShares() async {
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected || _config == null || !_isAdmin) return;
-    if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
     if (!mounted) return;
 
     setState(() => _executing = true);
@@ -228,8 +237,14 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         feePayer: wallet.publicKey!,
         instructions: [ix],
       );
-      final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
       if (!mounted) return;
+      final sigs = await authorizeAndSignAndSend(
+        context,
+        [Uint8List.fromList(tx)],
+      );
+      if (!mounted) return;
+      if (sigs == null) return; // cancelled / not authorized
+      final sig = sigs.first;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Shares updated: ${sig.substring(0, 8)}...')),
@@ -254,7 +269,6 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
     final newAdmin = _newAdminController.text.trim();
     if (newAdmin.length < 32) return;
 
-    if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
     if (!mounted) return;
 
     setState(() => _executing = true);
@@ -270,8 +284,14 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         feePayer: wallet.publicKey!,
         instructions: [ix],
       );
-      final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
       if (!mounted) return;
+      final sigs = await authorizeAndSignAndSend(
+        context,
+        [Uint8List.fromList(tx)],
+      );
+      if (!mounted) return;
+      if (sigs == null) return; // cancelled / not authorized
+      final sig = sigs.first;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -324,7 +344,6 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
 
     if (confirmed != true) return;
     if (!mounted) return;
-    if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
     if (!mounted) return;
 
     setState(() => _executing = true);
@@ -339,8 +358,14 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         feePayer: wallet.publicKey!,
         instructions: [ix],
       );
-      final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
       if (!mounted) return;
+      final sigs = await authorizeAndSignAndSend(
+        context,
+        [Uint8List.fromList(tx)],
+      );
+      if (!mounted) return;
+      if (sigs == null) return; // cancelled / not authorized
+      final sig = sigs.first;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

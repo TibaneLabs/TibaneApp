@@ -8,14 +8,13 @@ import 'package:provider/provider.dart';
 
 import '../../constants/solana_constants.dart';
 import '../../services/jupiter_service.dart';
-import '../../services/wallet/signing.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import 'inapp_unlock_screen.dart';
-import 'widgets/sign_sheet.dart';
+import 'widgets/authorize_and_sign.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
 
@@ -307,11 +306,10 @@ class _SendScreenState extends State<SendScreen> {
     // signing is on OR when the wallet has no StoreKey (a D5 password-only
     // committee the legacy unlock path can't sign); otherwise unlock the
     // app-level session (ELLIPX_PARITY §7 / D5).
-    final useSheet = kLocklessSigning ||
-        context.read<WalletService>().libwallet.requiresSignSheet;
+    final useSheet = useSignSheet(context.read<WalletService>());
     List<SigningKey>? keys;
     if (useSheet) {
-      keys = await _authorizeInApp();
+      keys = await collectSigningKeys(context);
       if (keys == null) return; // cancelled / unsignable
     } else {
       if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
@@ -353,31 +351,6 @@ class _SendScreenState extends State<SendScreen> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
-  }
-
-  /// Collect the per-transaction signing shares for the in-app wallet via the
-  /// sign sheet (Phase 1, §4.3). Returns the collected keys, or null when the
-  /// user cancels or the wallet can't be signed on this device.
-  Future<List<SigningKey>?> _authorizeInApp() async {
-    final lw = context.read<WalletService>().libwallet;
-    final wallet = await lw.currentWallet();
-    if (!mounted) return null;
-    if (wallet == null) {
-      setState(() => _error = 'No in-app wallet to sign with.');
-      return null;
-    }
-    if (!canAssembleThreshold(wallet)) {
-      setState(() => _error =
-          'This wallet can’t be signed on this device. Recover the device key '
-          'via 2FA in wallet settings.');
-      return null;
-    }
-    return showSignSheet(
-      context,
-      wallet: wallet,
-      readStoreKey: (storeKey, password) =>
-          lw.readStoreKeyPrivate(storeKey, password: password),
-    );
   }
 
   /// Success modal shown after a broadcast: confirmation + the transaction id
