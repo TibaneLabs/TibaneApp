@@ -9,6 +9,7 @@ import '../../services/wallet/libwallet_backend.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import 'inapp_unlock_screen.dart';
+import 'widgets/authorize_and_sign.dart';
 
 enum _Phase { starting, showing, expired, confirming, done, declined, error }
 
@@ -50,6 +51,10 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
   Duration _remaining = Duration.zero;
   bool _pairHandled = false;
 
+  /// Lockless: the StoreKey share read on-demand at start, released at confirm.
+  /// Null on the legacy path (which uses the cached session).
+  String? _exportPriv;
+
   @override
   void initState() {
     super.initState();
@@ -77,29 +82,67 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
   Future<void> _start() async {
     final wallet = _wallet ?? context.read<WalletService>();
     final backend = wallet.libwallet;
-    // Releasing the StoreKey share needs the target wallet active + unlocked.
-    // When it isn't, switch to and/or unlock it first — ensureUnlocked does
-    // both (it switches the active wallet when the target differs).
-    final route = LibwalletBackend.deviceTransferSendRoute(
-      activeWalletId: backend.walletId,
-      targetWalletId: widget.walletId,
-      isUnlocked: backend.isUnlocked,
-    );
-    if (route != DeviceTransferSendRoute.exportDirectly) {
-      final proceed = await _confirmPrepareDialog(route);
+    if (useSignSheet(wallet)) {
+      // Lockless: switch to the target (free), confirm intent, then read its
+      // StoreKey share on-demand (biometric). Releasing the device share is a
+      // deliberate export action, so authenticate here rather than at every tx.
+      final proceed = await _confirmPrepareDialog(
+        DeviceTransferSendRoute.unlockFirst,
+      );
       if (!mounted) return;
       if (!proceed) {
         Navigator.of(context).pop(false);
         return;
       }
-      final ready = await InAppUnlockScreen.ensureUnlocked(
-        context,
-        walletId: widget.walletId,
-      );
+      if (backend.walletId != widget.walletId) {
+        final r = await backend.switchWallet(widget.walletId);
+        if (!mounted) return;
+        if (r != SwitchResult.ok) {
+          debugPrint('[device-transfer] switch to ${widget.walletId} failed: '
+              '$r (${backend.error})');
+          setState(() {
+            _phase = _Phase.error;
+            _message = 'Could not open the wallet to transfer it.';
+          });
+          return;
+        }
+      }
+      _exportPriv = await backend.readActiveStoreKeyPrivate();
       if (!mounted) return;
-      if (!ready) {
-        Navigator.of(context).pop(false);
+      if (_exportPriv == null) {
+        debugPrint('[device-transfer] StoreKey unreadable for '
+            '${widget.walletId} — needs 2FA recovery');
+        setState(() {
+          _phase = _Phase.error;
+          _message = "Could not read this wallet's device key. Recover it via "
+              '2FA, then try again.';
+        });
         return;
+      }
+    } else {
+      // Legacy: releasing the StoreKey share needs the target wallet active +
+      // unlocked. ensureUnlocked switches and/or unlocks it first.
+      final route = LibwalletBackend.deviceTransferSendRoute(
+        activeWalletId: backend.walletId,
+        targetWalletId: widget.walletId,
+        isUnlocked: backend.isUnlocked,
+      );
+      if (route != DeviceTransferSendRoute.exportDirectly) {
+        final proceed = await _confirmPrepareDialog(route);
+        if (!mounted) return;
+        if (!proceed) {
+          Navigator.of(context).pop(false);
+          return;
+        }
+        final ready = await InAppUnlockScreen.ensureUnlocked(
+          context,
+          walletId: widget.walletId,
+        );
+        if (!mounted) return;
+        if (!ready) {
+          Navigator.of(context).pop(false);
+          return;
+        }
       }
     }
     try {
@@ -107,7 +150,10 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
       if (!mounted) return;
       // Subscribe BEFORE opening the session so we can't miss pair_received.
       _eventSub = client.events.listen(_onEvent);
-      final session = await backend.startDeviceTransferExport(widget.walletId);
+      final session = await backend.startDeviceTransferExport(
+        widget.walletId,
+        storeKeyPriv: _exportPriv,
+      );
       if (!mounted) return;
       setState(() {
         _session = session;
@@ -165,7 +211,10 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
     }
     setState(() => _phase = _Phase.confirming);
     try {
-      await _wallet!.libwallet.confirmDeviceTransferExport(s.sid);
+      await _wallet!.libwallet.confirmDeviceTransferExport(
+        s.sid,
+        storeKeyPriv: _exportPriv,
+      );
       if (!mounted) return;
       _ticker?.cancel();
       setState(() => _phase = _Phase.done);

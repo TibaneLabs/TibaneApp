@@ -2,9 +2,12 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart';
+import 'package:provider/provider.dart';
 
 import '../../screens/browser/approval_sheets.dart';
 import '../../screens/wallet/inapp_unlock_screen.dart';
+import '../../screens/wallet/widgets/authorize_and_sign.dart';
+import '../wallet_service.dart';
 import 'libwallet_backend.dart';
 
 /// Routes pending Web3 requests from the libwallet client to approval sheets,
@@ -87,14 +90,12 @@ class LibwalletRequestBridge {
     BuildContext ctx,
     TransactionSignRequest req,
   ) async {
-    if (!await _requireUnlocked(ctx, req.id)) return;
-    if (!ctx.mounted) {
+    if (!backend.hasWallet) {
       await _reject(req.id);
       return;
     }
     final addr = backend.publicKey;
-    final keys = _signingKeys();
-    if (addr == null || keys.isEmpty) {
+    if (addr == null) {
       await _reject(req.id);
       return;
     }
@@ -114,6 +115,12 @@ class LibwalletRequestBridge {
       await _reject(req.id);
       return;
     }
+    if (!ctx.mounted) {
+      await _reject(req.id);
+      return;
+    }
+    final keys = await _collectApprovalKeys(ctx, req.id);
+    if (keys == null) return; // already rejected
     try {
       await client.requests.approve(req.id, keys: keys);
       // The dApp tx is signed + submitted — refresh balances/token list now
@@ -129,14 +136,12 @@ class LibwalletRequestBridge {
     BuildContext ctx,
     MessageSignRequest req,
   ) async {
-    if (!await _requireUnlocked(ctx, req.id)) return;
-    if (!ctx.mounted) {
+    if (!backend.hasWallet) {
       await _reject(req.id);
       return;
     }
     final addr = backend.publicKey;
-    final keys = _signingKeys();
-    if (addr == null || keys.isEmpty) {
+    if (addr == null) {
       await _reject(req.id);
       return;
     }
@@ -145,6 +150,12 @@ class LibwalletRequestBridge {
       await _reject(req.id);
       return;
     }
+    if (!ctx.mounted) {
+      await _reject(req.id);
+      return;
+    }
+    final keys = await _collectApprovalKeys(ctx, req.id);
+    if (keys == null) return; // already rejected
     try {
       await client.requests.approve(req.id, keys: keys);
     } catch (e) {
@@ -227,6 +238,31 @@ class LibwalletRequestBridge {
           ),
         )
         .toList();
+  }
+
+  /// Collect the signing keys to approve a request, AFTER the dApp approval
+  /// preview. Lockless: per-transaction via the sign sheet. Legacy: the cached
+  /// session (after [_requireUnlocked]). Rejects [reqId] and returns null on
+  /// cancel / no signable keys.
+  Future<List<SigningKey>?> _collectApprovalKeys(
+    BuildContext ctx,
+    String reqId,
+  ) async {
+    if (useSignSheet(ctx.read<WalletService>())) {
+      final collected = await collectSigningKeys(ctx);
+      if (collected == null) {
+        await _reject(reqId);
+        return null;
+      }
+      return collected;
+    }
+    if (!await _requireUnlocked(ctx, reqId)) return null;
+    final keys = _signingKeys();
+    if (keys.isEmpty) {
+      await _reject(reqId);
+      return null;
+    }
+    return keys;
   }
 
   Future<void> _reject(String reqId) async {

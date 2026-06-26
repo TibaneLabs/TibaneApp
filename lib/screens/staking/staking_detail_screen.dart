@@ -16,7 +16,7 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
 import '../swap_screen.dart';
-import '../wallet/inapp_unlock_screen.dart';
+import '../wallet/widgets/authorize_and_sign.dart';
 import 'staking_members_screen.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
@@ -372,7 +372,6 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
   Future<void> _handleAdminAction(String action, BigInt amount) async {
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
-    if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
     if (!mounted) return;
 
     setState(() => _staking = true);
@@ -398,8 +397,14 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
         feePayer: wallet.publicKey!,
         instructions: instructions,
       );
-      final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
       if (!mounted) return;
+      final sigs = await authorizeAndSignAndSend(
+        context,
+        [Uint8List.fromList(tx)],
+      );
+      if (!mounted) return;
+      if (sigs == null) return; // cancelled / not authorized
+      final sig = sigs.first;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -438,7 +443,6 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
   }) async {
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
-    if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
     if (!mounted) return;
 
     setState(() => _staking = true);
@@ -456,8 +460,14 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
         feePayer: wallet.publicKey!,
         instructions: [ix],
       );
-      final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
       if (!mounted) return;
+      final sigs = await authorizeAndSignAndSend(
+        context,
+        [Uint8List.fromList(tx)],
+      );
+      if (!mounted) return;
+      if (sigs == null) return; // cancelled / not authorized
+      final sig = sigs.first;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -482,7 +492,6 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
   Future<void> _handleAction(String action, {BigInt? unstakeAmount}) async {
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
-    if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
     if (!mounted) return;
 
     setState(() => _staking = true);
@@ -589,9 +598,14 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
         instructions: instructions,
       );
 
-      final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
-
       if (!mounted) return;
+      final sigs = await authorizeAndSignAndSend(
+        context,
+        [Uint8List.fromList(tx)],
+      );
+      if (!mounted) return;
+      if (sigs == null) return; // cancelled / not authorized
+      final sig = sigs.first;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

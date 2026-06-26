@@ -17,7 +17,7 @@ import '../theme/tibane_theme.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
 import '../widgets/token_icon.dart';
-import 'wallet/inapp_unlock_screen.dart';
+import 'wallet/widgets/authorize_and_sign.dart';
 import '../utils/amount.dart';
 import '../utils/log.dart';
 
@@ -302,15 +302,15 @@ class _IncineratorScreenState extends State<IncineratorScreen>
     if (confirmed != true) return;
     if (!mounted) return;
 
-    // In-app wallet must be unlocked before signing — otherwise
-    // `signTransaction` returns null and the user gets a useless
-    // "Wallet is locked" toast. Route to the unlock screen first.
-    if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
+    // Authorize ONCE for the whole batch (sign sheet or legacy unlock), then
+    // sign each tx with the collected keys so the sheet isn't shown per item.
+    final auth = await authorizeBatch(context);
+    if (auth == null) return;
 
     if (_sponsoredMode) {
-      await _sponsoredBurn();
+      await _sponsoredBurn(auth);
     } else {
-      await _directBurn();
+      await _directBurn(auth);
     }
   }
 
@@ -380,7 +380,6 @@ class _IncineratorScreenState extends State<IncineratorScreen>
     if (!mounted) return;
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
-    if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
 
     setState(() => _burning = true);
     try {
@@ -401,8 +400,14 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         feePayer: wallet.publicKey!,
         instructions: [ix],
       );
-      final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
       if (!mounted) return;
+      final sigs = await authorizeAndSignAndSend(
+        context,
+        [Uint8List.fromList(tx)],
+      );
+      if (!mounted) return;
+      if (sigs == null) return; // cancelled / not authorized
+      final sig = sigs.first;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Burned: ${sig.substring(0, 8)}...')),
@@ -435,8 +440,9 @@ class _IncineratorScreenState extends State<IncineratorScreen>
     }
   }
 
-  /// Direct burn: user pays fees, sign & send
-  Future<void> _directBurn() async {
+  /// Direct burn: user pays fees, sign & send. [auth] was collected once by
+  /// the caller so the sign sheet isn't shown per tx.
+  Future<void> _directBurn(BatchAuth auth) async {
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
 
@@ -472,7 +478,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
           feePayer: wallet.publicKey!,
           instructions: instructions,
         );
-        final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
+        final sig = await signAndSendOne(wallet, Uint8List.fromList(tx), auth.keys);
         if (sig != null) {
           successCount += batch.length;
           lastSig = sig;
@@ -498,7 +504,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
           feePayer: wallet.publicKey!,
           instructions: instructions,
         );
-        final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
+        final sig = await signAndSendOne(wallet, Uint8List.fromList(tx), auth.keys);
         if (sig != null) {
           successCount += batch.length;
           lastSig = sig;
@@ -518,7 +524,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
           feePayer: wallet.publicKey!,
           instructions: [ix],
         );
-        final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
+        final sig = await signAndSendOne(wallet, Uint8List.fromList(tx), auth.keys);
         if (sig != null) {
           successCount++;
           lastSig = sig;
@@ -547,7 +553,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
           feePayer: wallet.publicKey!,
           instructions: instructions,
         );
-        final sig = await wallet.signAndSendTransaction(Uint8List.fromList(tx));
+        final sig = await signAndSendOne(wallet, Uint8List.fromList(tx), auth.keys);
         if (sig != null) {
           successCount += batch.length;
           lastSig = sig;
@@ -589,7 +595,8 @@ class _IncineratorScreenState extends State<IncineratorScreen>
 
   /// Sponsored burn: relayer pays fees, user signs only, relay submits.
   /// Matches tibanenet IncineratorView.vue executeCombinedSponsoredBurn().
-  Future<void> _sponsoredBurn() async {
+  /// [auth] was collected once by the caller (no per-tx sheet).
+  Future<void> _sponsoredBurn(BatchAuth auth) async {
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
 
@@ -742,8 +749,10 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         }
 
         // Sign only — relay adds fee payer signature and submits
-        final signed = await wallet.signTransaction(
+        final signed = await signOne(
+          wallet,
           Uint8List.fromList(txBytes),
+          auth.keys,
         );
         if (signed == null) {
           debugPrint(
