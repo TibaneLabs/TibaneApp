@@ -509,25 +509,47 @@ class WalletService extends ChangeNotifier {
 
   Future<void> _runAuthenticate() async {
     try {
-      final addr = publicKey;
-      if (addr == null) return;
-      // A session for a different address no longer applies — drop it first.
-      if (_auth.isAuthenticated && _authedAddress != addr) {
-        await _auth.logout();
-      }
-      final (:message, :ticket) = await _auth.getTicket(addr);
+      final login = await beginServerLogin();
+      if (login == null) return;
+      // Legacy/eager path: sign with the cached session. Under lockless there
+      // are no cached keys, so this returns null and login is skipped silently
+      // (no sheet on launch) — the lazy `ensureServerAuthenticated(ctx)` path
+      // signs it via the sheet when a server-backed feature is opened.
       final signature = await signMessage(
-        Uint8List.fromList(utf8.encode(message)),
+        Uint8List.fromList(utf8.encode(login.message)),
       );
       if (signature == null) return;
-      await _auth.login(ticket, signature);
-      _authedAddress = addr;
-      notifyListeners();
+      await completeServerLogin(login.ticket, signature);
     } catch (e) {
       debugPrint('authenticateWithServer failed: $e');
     } finally {
       _authFuture = null;
     }
+  }
+
+  /// Whether the atonline server session is authenticated for the CURRENT
+  /// account address (a stale session for another address doesn't count).
+  bool get isAuthenticatedForCurrent =>
+      _auth.isAuthenticated && _authedAddress == publicKey;
+
+  /// Begin a server (atonline) login: returns the ticket + the message to sign,
+  /// or null when already authenticated for this address or there's no address.
+  /// Drops a stale session for a different address first.
+  Future<({String message, String ticket})?> beginServerLogin() async {
+    if (isAuthenticatedForCurrent) return null;
+    final addr = publicKey;
+    if (addr == null) return null;
+    if (_auth.isAuthenticated && _authedAddress != addr) {
+      await _auth.logout();
+    }
+    return _auth.getTicket(addr);
+  }
+
+  /// Complete a server login with the [signature] over the ticket message.
+  Future<void> completeServerLogin(String ticket, Uint8List signature) async {
+    await _auth.login(ticket, signature);
+    _authedAddress = publicKey;
+    notifyListeners();
   }
 
   @override

@@ -7,6 +7,7 @@ import '../../services/clawdwallet_service.dart';
 import '../../services/rpc_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../wallet/widgets/authorize_and_sign.dart';
 import 'activity_screen.dart';
 import 'create_agent_wallet_screen.dart';
 import '../../utils/log.dart';
@@ -41,6 +42,19 @@ class _AgentsScreenState extends State<AgentsScreen> {
       _loading = true;
       _error = null;
     });
+    // Agent wallets run under the user's atonline session. Ensure it's
+    // authenticated first — under lockless this signs the login ticket via the
+    // sheet here (no eager auto-login); in the legacy session it's a no-op.
+    if (!await ensureServerAuthenticated(context)) {
+      if (!mounted) return;
+      debugPrint('[agents] server authentication cancelled/failed');
+      setState(() {
+        _loading = false;
+        _error = 'Sign in required to view agent wallets.';
+      });
+      return;
+    }
+    if (!mounted) return;
     try {
       final wallets = await ClawdWalletService().list();
       if (!mounted) return;

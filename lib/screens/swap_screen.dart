@@ -21,7 +21,7 @@ import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
 import '../widgets/token_icon.dart';
 import '../widgets/token_search.dart';
-import 'wallet/inapp_unlock_screen.dart';
+import 'wallet/widgets/authorize_and_sign.dart';
 import '../utils/amount.dart';
 import '../utils/log.dart';
 
@@ -449,7 +449,8 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     });
 
     try {
-      if (wallet.kind == WalletKind.inapp && wallet.libwallet.isUnlocked) {
+      if (wallet.kind == WalletKind.inapp &&
+          (wallet.libwallet.isUnlocked || useSignSheet(wallet))) {
         await _fetchQuoteLibwallet(wallet, rawAmount);
       } else {
         await _fetchQuoteJupiter(wallet, rawAmount);
@@ -613,7 +614,8 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     if (!_hasQuote || _swapping) return;
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
-    if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
+    final auth = await authorizeBatch(context);
+    if (auth == null) return;
     if (!mounted) return;
 
     // Snapshot the trade before clearing state on success so the result
@@ -632,9 +634,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     try {
       String signature;
       if (_lwQuote != null) {
-        signature = await _executeSwapLibwallet(wallet);
+        signature = await _executeSwapLibwallet(wallet, auth);
       } else {
-        signature = await _executeSwapJupiter(wallet);
+        signature = await _executeSwapJupiter(wallet, auth);
       }
 
       if (!mounted) return;
@@ -747,11 +749,13 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     );
   }
 
-  Future<String> _executeSwapJupiter(WalletService wallet) async {
+  Future<String> _executeSwapJupiter(WalletService wallet, BatchAuth auth) async {
     final q = _jupiterQuote!;
     final txBytes = base64Decode(q.transaction);
-    final signedBytes = await wallet.signTransaction(
+    final signedBytes = await signOne(
+      wallet,
       Uint8List.fromList(txBytes),
+      auth.keys,
     );
     if (signedBytes == null)
       throw Exception('Transaction signing was rejected');
@@ -762,18 +766,21 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     );
   }
 
-  Future<String> _executeSwapLibwallet(WalletService wallet) async {
+  Future<String> _executeSwapLibwallet(WalletService wallet, BatchAuth auth) async {
     final q = _lwQuote!;
     final client = await wallet.libwallet.ensureClient();
-    final keys = wallet.libwallet.currentSigningKeys
-        .map(
-          (k) => SigningKey(
-            id: k['Id'] as String,
-            key: k['Key'] as String,
-            type: k['Type'] as String?,
-          ),
-        )
-        .toList();
+    // Lockless: keys collected once via the sheet (auth.keys). Legacy: the
+    // cached session (currentSigningKeys).
+    final keys = auth.keys ??
+        wallet.libwallet.currentSigningKeys
+            .map(
+              (k) => SigningKey(
+                id: k['Id'] as String,
+                key: k['Key'] as String,
+                type: k['Type'] as String?,
+              ),
+            )
+            .toList();
     final result = await client.swap.execute(quoteId: q.quoteId, keys: keys);
     return result.hash;
   }

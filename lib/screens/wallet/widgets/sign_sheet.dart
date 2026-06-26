@@ -90,6 +90,8 @@ class _SignSheetState extends State<_SignSheet> {
             await widget.readStoreKey(key, _password);
         if (!mounted) return;
         if (priv == null || priv.isEmpty) {
+          debugPrint('[signSheet] StoreKey ${key.id} unreadable on this device '
+              '(biometric/keystore/blob all empty)');
           setState(() => _error =
               'Could not read your device key on this device. Recover it via '
               '2FA in wallet settings, or enter your password first.');
@@ -100,6 +102,7 @@ class _SignSheetState extends State<_SignSheet> {
           _collected.add(SigningKey(id: key.id, key: priv, type: 'StoreKey'));
         });
       } catch (e) {
+        debugPrint('[signSheet] device key unlock failed: $e');
         setState(() => _error = 'Device key unlock failed: $e');
       } finally {
         if (mounted) setState(() => _busy = false);
