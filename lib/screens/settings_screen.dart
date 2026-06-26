@@ -86,15 +86,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ).push(MaterialPageRoute(builder: (_) => const GeneralScreen())),
           ),
 
-          if (wallet.isConnected) ...[
+          // In-app wallets are lockless (no persistent unlock to lock), so the
+          // tile applies only to external MWA wallets — "Disconnect".
+          if (wallet.isConnected && wallet.kind != WalletKind.inapp) ...[
             const SizedBox(height: 24),
             SettingsTile(
               icon: Icons.logout_outlined,
-              title: wallet.kind == WalletKind.inapp
-                  ? 'Lock wallet'
-                  : 'Disconnect',
+              title: 'Disconnect',
               destructive: true,
-              onTap: () => _confirmLockOrDisconnect(context, wallet),
+              onTap: () => _confirmDisconnect(context, wallet),
             ),
           ],
         ],
@@ -102,21 +102,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _confirmLockOrDisconnect(
+  Future<void> _confirmDisconnect(
     BuildContext context,
     WalletService wallet,
   ) async {
-    final inapp = wallet.kind == WalletKind.inapp;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
-        title: Text(inapp ? 'Lock wallet?' : 'Disconnect wallet?'),
-        content: Text(
-          inapp
-              ? 'You will need to re-enter your password to unlock the wallet again.'
-              : 'You can reconnect by tapping the wallet button at the top.',
-          style: const TextStyle(color: TibaneColors.textMuted),
+        title: const Text('Disconnect wallet?'),
+        content: const Text(
+          'You can reconnect by tapping the wallet button at the top.',
+          style: TextStyle(color: TibaneColors.textMuted),
         ),
         actions: [
           TextButton(
@@ -125,25 +122,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              inapp ? 'Lock' : 'Disconnect',
-              style: const TextStyle(color: TibaneColors.error),
+            child: const Text(
+              'Disconnect',
+              style: TextStyle(color: TibaneColors.error),
             ),
           ),
         ],
       ),
     );
     if (confirmed != true) return;
-    // In-app "Lock" only forgets the in-memory secrets — the wallet and its
-    // device share stay on the device, so it remains in the wallet list and
-    // re-unlocks with the password. Deleting a wallet is a separate, explicit
-    // action on the wallet-detail screen. External "Disconnect" tears down
-    // the MWA session (libwallet doesn't own those keys).
-    if (inapp) {
-      wallet.libwallet.lock();
-    } else {
-      await wallet.disconnect();
-    }
+    // External "Disconnect" tears down the MWA session (libwallet doesn't own
+    // those keys). In-app wallets are lockless and stay on the device — there's
+    // nothing to lock; switch away via the wallet switcher instead.
+    await wallet.disconnect();
   }
 }
 

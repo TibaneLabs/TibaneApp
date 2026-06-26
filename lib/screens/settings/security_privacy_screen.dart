@@ -55,6 +55,15 @@ class SecurityPrivacyScreen extends StatelessWidget {
                   subtitle: 'Reshare the remote (email / SMS) TSS share',
                   onTap: () => _rotateRemoteKey(context, wallet),
                 ),
+                const SizedBox(height: 6),
+                SettingsTile(
+                  icon: Icons.healing_outlined,
+                  title: 'Recover device key (2FA)',
+                  subtitle:
+                      "Re-mint this device's TSS share via 2FA — use if signing "
+                      "can't find the device key (e.g. on a new device)",
+                  onTap: () => _recoverDeviceShare(context, wallet),
+                ),
               ] else ...[
                 TibaneCard(
                   padding: const EdgeInsets.all(16),
@@ -180,6 +189,25 @@ class SecurityPrivacyScreen extends StatelessWidget {
           ok
               ? '2FA share rotated'
               : (wallet.libwallet.error ?? 'Reshare failed'),
+        ),
+      ),
+    );
+  }
+
+  /// Explicit 2FA device-share recovery (Ellipx-parity §4.8). Routes to the
+  /// unlock screen's recovery mode, which re-mints this device's StoreKey share
+  /// via 2FA. Reachable when signing can't read the device key (cross-device).
+  Future<void> _recoverDeviceShare(
+    BuildContext context,
+    WalletService wallet,
+  ) async {
+    final walletId = wallet.libwallet.walletId;
+    if (walletId == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => InAppUnlockScreen(
+          walletId: walletId,
+          forceRecovery: true,
         ),
       ),
     );

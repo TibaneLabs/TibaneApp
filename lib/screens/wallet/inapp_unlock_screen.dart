@@ -32,7 +32,17 @@ class InAppUnlockScreen extends StatefulWidget {
   /// `LibwalletBackend.switchWallet`.
   final String? walletId;
 
-  const InAppUnlockScreen({super.key, this.walletId});
+  /// Skip the password path and go straight to 2FA device-share recovery (the
+  /// explicit "Recover device key" entry point — Ellipx-parity §4.8). Used when
+  /// a wallet's StoreKey isn't on this device (cross-device) so signing can't
+  /// read it; re-mints a fresh share via 2FA.
+  final bool forceRecovery;
+
+  const InAppUnlockScreen({
+    super.key,
+    this.walletId,
+    this.forceRecovery = false,
+  });
 
   @override
   State<InAppUnlockScreen> createState() => _InAppUnlockScreenState();
@@ -95,6 +105,16 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
     final backend = context.read<WalletService>().libwallet;
     final targetIsActive =
         widget.walletId == null || widget.walletId == backend.walletId;
+    if (widget.forceRecovery) {
+      // Explicit recovery entry — go straight to 2FA reshare, targeting the
+      // requested wallet (load its metadata into the active slot first).
+      if (widget.walletId != null && !targetIsActive) {
+        await backend.loadWalletForRecovery(widget.walletId!);
+        if (!mounted) return;
+      }
+      setState(() => _mode = _Mode.recovery);
+      return;
+    }
     final hasShare = await backend.hasLocalDeviceShare(widget.walletId);
     if (!mounted) return;
     if (!hasShare) {
