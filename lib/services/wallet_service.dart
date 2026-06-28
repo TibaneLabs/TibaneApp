@@ -12,6 +12,7 @@ import 'rpc_service.dart';
 import 'tx_confirmation.dart';
 import 'wallet/libwallet_backend.dart';
 import 'wallet/mwa_wallet_backend.dart';
+import 'wallet/unified_account.dart';
 import 'wallet/wallet_backend.dart';
 import 'wallet/walletconnect_bridge.dart';
 
@@ -42,12 +43,28 @@ class WalletService extends ChangeNotifier {
   BigInt _solBalance = BigInt.zero;
   BigInt _chiefPussyBalance = BigInt.zero;
 
+  // Account-centric model (Ellipx-parity Phase 4b). Additive in this phase:
+  // the active backend is still driven by [_kind]; [_currentAccount] reflects
+  // it as a UnifiedAccount so the upcoming account switcher (4b-2) has data.
+  static const _prefsCurrentAccountId = 'current_account_id';
+  List<UnifiedAccount> _accounts = const [];
+  UnifiedAccount? _currentAccount;
+
   // --- public API kept compatible with previous WalletService ---
 
   WalletBackend get active => _kind == WalletKind.inapp ? _libwallet : _mwa;
 
   /// The current backend kind. UI reads this to decide what buttons to show.
   WalletKind get kind => _kind;
+
+  /// The unified account list (in-app accounts across all wallets + the
+  /// connected MWA account). Rebuilt by [refreshAccounts]. Empty until the
+  /// first refresh.
+  List<UnifiedAccount> get accounts => _accounts;
+
+  /// The account that signs right now, as a [UnifiedAccount]. Reflects the
+  /// active backend; null when no account is resolved yet.
+  UnifiedAccount? get currentAccount => _currentAccount;
 
   /// Direct access to specific backends for setup flows (create wallet, unlock).
   MwaWalletBackend get mwa => _mwa;
@@ -117,6 +134,7 @@ class WalletService extends ChangeNotifier {
         _authenticateWithServer();
       }
     }
+    unawaited(refreshAccounts());
     notifyListeners();
   }
 
@@ -127,6 +145,7 @@ class WalletService extends ChangeNotifier {
     if (ok) {
       refreshBalances();
       _authenticateWithServer();
+      unawaited(refreshAccounts());
     }
   }
 
@@ -138,6 +157,7 @@ class WalletService extends ChangeNotifier {
       refreshBalances();
       _authenticateWithServer();
     }
+    unawaited(refreshAccounts());
   }
 
   Future<void> disconnect() async {
@@ -145,7 +165,88 @@ class WalletService extends ChangeNotifier {
     resetSessionState();
     _authedAddress = null;
     await _auth.logout();
+    unawaited(refreshAccounts());
     notifyListeners();
+  }
+
+  /// Rebuild [accounts] from libwallet (`accounts.list()` across all wallets) +
+  /// the connected MWA account, and reconcile [currentAccount] with the active
+  /// backend. Additive in Phase 4b-1: the active backend is still driven by
+  /// [_kind]; this only mirrors it as a [UnifiedAccount]. Best-effort.
+  Future<void> refreshAccounts() async {
+    try {
+      final client = await _libwallet.ensureClient();
+      final inapp = await client.accounts.list();
+      final wallets = {for (final w in await client.wallets.list()) w.id: w};
+      final mwaAddr = _mwa.isConnected ? _mwa.publicKey : null;
+      _accounts = buildUnifiedAccounts(
+        inappAccounts: inapp,
+        walletsById: wallets,
+        mwaAddress: mwaAddr,
+      );
+      final prefs = await SharedPreferences.getInstance();
+      _currentAccount =
+          _matchActiveAccount(_accounts) ??
+          resolvePersistedAccount(
+            accounts: _accounts,
+            savedId: prefs.getString(_prefsCurrentAccountId),
+          );
+      notifyListeners();
+    } catch (e) {
+      debugPrint('refreshAccounts failed: $e');
+    }
+  }
+
+  /// The unified-list entry corresponding to the active backend, so
+  /// [currentAccount] stays consistent with [_kind] during Phase 4b-1.
+  UnifiedAccount? _matchActiveAccount(List<UnifiedAccount> accounts) {
+    if (_kind == WalletKind.mwa) {
+      for (final a in accounts) {
+        if (a.isMwa) return a;
+      }
+      return null;
+    }
+    final aid = _libwallet.accountId;
+    for (final a in accounts) {
+      if (a.isInApp && a.accountId == aid) return a;
+    }
+    return null;
+  }
+
+  /// Make [acct] the current account: route signing to its backend, switch
+  /// libwallet to its wallet + account when in-app (lockless free switch),
+  /// persist the choice, and refresh. Returns false if an in-app switch failed.
+  /// Wired into the account switcher in Phase 4b-2.
+  Future<bool> setCurrentAccount(UnifiedAccount acct) async {
+    if (acct.isMwa) {
+      await _setKind(WalletKind.mwa);
+    } else {
+      final targetWallet = acct.walletId;
+      if (targetWallet != null && targetWallet != _libwallet.walletId) {
+        final r = await _libwallet.switchWallet(targetWallet);
+        if (r != SwitchResult.ok) {
+          debugPrint('setCurrentAccount: switchWallet failed ($r)');
+          return false;
+        }
+      }
+      final targetAccount = acct.accountId;
+      if (targetAccount != null && targetAccount != _libwallet.accountId) {
+        if (!await _libwallet.switchAccount(targetAccount)) {
+          debugPrint('setCurrentAccount: switchAccount failed: ${_libwallet.error}');
+          return false;
+        }
+      }
+      await _setKind(WalletKind.inapp);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefsCurrentAccountId, acct.id);
+    _currentAccount = acct;
+    if (isConnected) {
+      refreshBalances();
+      _authenticateWithServer();
+    }
+    notifyListeners();
+    return true;
   }
 
   /// Report the host app's foreground/background state to libwallet so its
