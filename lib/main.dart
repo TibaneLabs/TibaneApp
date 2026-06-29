@@ -48,6 +48,20 @@ void main() {
 /// pairing screen without needing a `BuildContext`.
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
+/// Whether the startup gate (D16) can reveal the app instead of the loading
+/// splash. Pending until the biometric-migration check resolves; then reveal
+/// immediately when migration is needed (its screen comes next), otherwise wait
+/// for the first wallet-data snapshot. Pure, for unit testing.
+@visibleForTesting
+bool startupGateReady({
+  required bool? needsMigration,
+  required bool walletDataReady,
+}) {
+  if (needsMigration == null) return false;
+  if (needsMigration) return true;
+  return walletDataReady;
+}
+
 class TibaneApp extends StatelessWidget {
   const TibaneApp({super.key});
 
@@ -105,6 +119,11 @@ class TibaneShellState extends State<TibaneShell>
   /// (Phase 3 / D7); false renders the normal home.
   bool? _needsMigration;
 
+  /// Startup splash backstop (D16): reveal even if the wallet snapshot never
+  /// lands (e.g. RPC down), so the app never hangs on the splash.
+  bool _splashTimedOut = false;
+  Timer? _splashTimeout;
+
   final AppLinks _appLinks = AppLinks();
   StreamSubscription<Uri>? _linkSub;
 
@@ -112,6 +131,9 @@ class TibaneShellState extends State<TibaneShell>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _splashTimeout = Timer(const Duration(seconds: 8), () {
+      if (mounted) setState(() => _splashTimedOut = true);
+    });
     if (widget.forceSeeker == null) {
       hasMwaWallet().then((v) {
         if (mounted) setState(() => _isSeekerDevice = v);
@@ -174,6 +196,7 @@ class TibaneShellState extends State<TibaneShell>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _linkSub?.cancel();
+    _splashTimeout?.cancel();
     super.dispose();
   }
 
@@ -186,6 +209,18 @@ class TibaneShellState extends State<TibaneShell>
 
   @override
   Widget build(BuildContext context) {
+    // Startup loading gate (D16): hold a branded splash until the migration
+    // check resolves AND the first wallet-data snapshot lands (or there's no
+    // wallet, or the timeout fires). WalletService is the single libwallet
+    // listener and owns `dataReady`; the shell just reads it here.
+    final wallet = context.watch<WalletService>();
+    if (!startupGateReady(
+      needsMigration: _needsMigration,
+      walletDataReady: wallet.dataReady || _splashTimedOut,
+    )) {
+      return const _StartupSplash();
+    }
+
     // Mandatory one-time biometric migration (Phase 3 / D7) gates the home.
     if (_needsMigration == true) {
       return BiometricMigrationScreen(
@@ -269,6 +304,42 @@ class TibaneShellState extends State<TibaneShell>
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// Branded startup loading screen (D16) shown until wallet data is ready, so
+/// the user never sees the cold-start `0`-balance flash before the snapshot
+/// lands. See `startupGateReady` + `WalletService.dataReady`.
+class _StartupSplash extends StatelessWidget {
+  const _StartupSplash();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: TibaneColors.black,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CatLogo(size: 84, glow: true),
+            const SizedBox(height: 24),
+            Text(
+              'Tibane Labs',
+              style: monoStyle(fontSize: 13, color: TibaneColors.textMuted),
+            ),
+            const SizedBox(height: 28),
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: TibaneColors.orange,
+              ),
+            ),
+          ],
         ),
       ),
     );
