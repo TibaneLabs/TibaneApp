@@ -9,6 +9,7 @@ import '../constants/solana_constants.dart';
 import 'relay_service.dart';
 import 'rpc_service.dart';
 import 'tx_confirmation.dart';
+import 'wallet/accounts_service.dart';
 import 'wallet/libwallet_backend.dart';
 import 'wallet/mwa_wallet_backend.dart';
 import 'wallet/unified_account.dart';
@@ -47,6 +48,10 @@ WalletKind reconcileWalletKind({
 /// and auth flows continue to use this class; only the backends change.
 class WalletService extends ChangeNotifier {
   WalletService() {
+    _accountsService = AccountsService(_libwallet, _mwa);
+    // Re-emit so existing `context.watch<WalletService>()` consumers rebuild
+    // when the account list / current account changes.
+    _accountsService.addListener(notifyListeners);
     _mwa.addListener(_onBackendChanged);
     _libwallet.addListener(_onBackendChanged);
     _libwallet.balanceTick.addListener(_onBalanceTick);
@@ -54,6 +59,12 @@ class WalletService extends ChangeNotifier {
 
   final MwaWalletBackend _mwa = MwaWalletBackend();
   final LibwalletBackend _libwallet = LibwalletBackend();
+
+  /// Single source of truth for the account list + current account (Phase
+  /// "accounts cubit"). WalletService delegates its account API to this.
+  late final AccountsService _accountsService;
+  AccountsService get accountsService => _accountsService;
+
   final _auth = AuthService();
 
   WalletKind _kind = WalletKind.mwa;
@@ -74,13 +85,6 @@ class WalletService extends ChangeNotifier {
   bool _dataReady = false;
   bool get dataReady => _dataReady;
 
-  // Account-centric model (Atonline-parity Phase 4b). Additive in this phase:
-  // the active backend is still driven by [_kind]; [_currentAccount] reflects
-  // it as a UnifiedAccount so the upcoming account switcher (4b-2) has data.
-  static const _prefsCurrentAccountId = 'current_account_id';
-  List<UnifiedAccount> _accounts = const [];
-  UnifiedAccount? _currentAccount;
-
   // True once tryRestore() has finished. Lets the startup splash (D16) tell
   // "no wallet yet, restore pending" apart from "restored, genuinely no
   // wallet" — the latter can reveal the app immediately.
@@ -95,18 +99,19 @@ class WalletService extends ChangeNotifier {
   WalletKind get kind => _kind;
 
   /// The unified account list (in-app accounts across all wallets + the
-  /// connected MWA account). Rebuilt by [refreshAccounts]. Empty until the
-  /// first refresh.
-  List<UnifiedAccount> get accounts => _accounts;
+  /// connected MWA account). Owned by [accountsService]; rebuilt by
+  /// [refreshAccounts]. Empty until the first refresh.
+  List<UnifiedAccount> get accounts => _accountsService.accounts;
 
   /// The account that signs right now, as a [UnifiedAccount]. Reflects the
   /// active backend; null when no account is resolved yet.
-  UnifiedAccount? get currentAccount => _currentAccount;
+  UnifiedAccount? get currentAccount => _accountsService.current;
 
   /// Whether to show Solana-only features (Staking, Incinerator) for the
   /// current account. False only when the current account is a known
   /// non-Solana (e.g. an EVM in-app account); see [solanaOnlyFeaturesEnabled].
-  bool get solanaFeaturesEnabled => solanaOnlyFeaturesEnabled(_currentAccount);
+  bool get solanaFeaturesEnabled =>
+      solanaOnlyFeaturesEnabled(_accountsService.current);
 
   /// Direct access to specific backends for setup flows (create wallet, unlock).
   MwaWalletBackend get mwa => _mwa;
@@ -127,6 +132,7 @@ class WalletService extends ChangeNotifier {
     final bridge = WalletConnectBridge(
       client: client,
       backend: _libwallet,
+      accounts: _accountsService,
       rootNavigatorKey: navKey,
     );
     _wc = bridge;
@@ -223,29 +229,8 @@ class WalletService extends ChangeNotifier {
   /// the connected MWA account, and reconcile [currentAccount] with the active
   /// backend. Additive in Phase 4b-1: the active backend is still driven by
   /// [_kind]; this only mirrors it as a [UnifiedAccount]. Best-effort.
-  Future<void> refreshAccounts() async {
-    try {
-      final client = await _libwallet.ensureClient();
-      final inapp = await client.accounts.list();
-      final wallets = {for (final w in await client.wallets.list()) w.id: w};
-      final mwaAddr = _mwa.isConnected ? _mwa.publicKey : null;
-      _accounts = buildUnifiedAccounts(
-        inappAccounts: inapp,
-        walletsById: wallets,
-        mwaAddress: mwaAddr,
-      );
-      final prefs = await SharedPreferences.getInstance();
-      _currentAccount =
-          _matchActiveAccount(_accounts) ??
-          resolvePersistedAccount(
-            accounts: _accounts,
-            savedId: prefs.getString(_prefsCurrentAccountId),
-          );
-      notifyListeners();
-    } catch (e) {
-      debugPrint('refreshAccounts failed: $e');
-    }
-  }
+  Future<void> refreshAccounts() =>
+      _accountsService.refresh(preferMwa: _kind == WalletKind.mwa);
 
   /// Create a new account on [walletId] (D10 add-account), refresh the unified
   /// list, and switch to it. [type] must be curve-compatible (constrained in
@@ -255,14 +240,14 @@ class WalletService extends ChangeNotifier {
     required String name,
     required String type,
   }) async {
-    final acct = await _libwallet.createAccount(
+    final acct = await _accountsService.createAccount(
       walletId: walletId,
       name: name,
       type: type,
     );
     if (acct == null) return false;
     await refreshAccounts();
-    for (final a in _accounts) {
+    for (final a in _accountsService.accounts) {
       if (a.accountId == acct.id) {
         await setCurrentAccount(a);
         break;
@@ -271,53 +256,19 @@ class WalletService extends ChangeNotifier {
     return true;
   }
 
-  /// The unified-list entry corresponding to the active backend, so
-  /// [currentAccount] stays consistent with [_kind] during Phase 4b-1.
-  UnifiedAccount? _matchActiveAccount(List<UnifiedAccount> accounts) {
-    if (_kind == WalletKind.mwa) {
-      for (final a in accounts) {
-        if (a.isMwa) return a;
-      }
-      return null;
-    }
-    final aid = _libwallet.accountId;
-    for (final a in accounts) {
-      if (a.isInApp && a.accountId == aid) return a;
-    }
-    return null;
-  }
-
-  /// Make [acct] the current account: route signing to its backend, switch
-  /// libwallet to its wallet + account when in-app (lockless free switch),
-  /// persist the choice, and refresh. Returns false if an in-app switch failed.
-  /// Wired into the account switcher in Phase 4b-2.
-  Future<bool> setCurrentAccount(UnifiedAccount acct) async {
-    if (acct.isMwa) {
-      await _setKind(WalletKind.mwa);
-    } else {
-      final targetWallet = acct.walletId;
-      if (targetWallet != null && targetWallet != _libwallet.walletId) {
-        final r = await _libwallet.switchWallet(targetWallet);
-        if (r != SwitchResult.ok) {
-          debugPrint('setCurrentAccount: switchWallet failed ($r)');
-          return false;
-        }
-      }
-      final targetAccount = acct.accountId;
-      if (targetAccount != null && targetAccount != _libwallet.accountId) {
-        if (!await _libwallet.switchAccount(targetAccount)) {
-          debugPrint('setCurrentAccount: switchAccount failed: ${_libwallet.error}');
-          return false;
-        }
-      }
-      await _setKind(WalletKind.inapp);
-    }
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefsCurrentAccountId, acct.id);
-    _currentAccount = acct;
-    if (isConnected) {
-      refreshBalances();
-    }
+  /// Make [acct] the current account: route signing to its backend, then have
+  /// [accountsService] switch libwallet to its wallet + account (in-app) and
+  /// persist the choice. Reconciles backend kind + refreshes balances around
+  /// the switch. Returns false if an in-app switch failed.
+  Future<bool> setCurrentAccount(
+    UnifiedAccount acct, {
+    String? networkId,
+  }) async {
+    if (acct.isMwa) await _setKind(WalletKind.mwa);
+    final ok = await _accountsService.setCurrent(acct, networkId: networkId);
+    if (!ok) return false;
+    if (acct.isInApp) await _setKind(WalletKind.inapp);
+    if (isConnected) refreshBalances();
     notifyListeners();
     return true;
   }
@@ -722,6 +673,8 @@ class WalletService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _accountsService.removeListener(notifyListeners);
+    _accountsService.dispose();
     _mwa.removeListener(_onBackendChanged);
     _libwallet.removeListener(_onBackendChanged);
     _libwallet.balanceTick.removeListener(_onBalanceTick);

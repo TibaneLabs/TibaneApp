@@ -104,11 +104,15 @@ class _WalletDashboardState extends State<WalletDashboard> {
     final addr = wallet.publicKey;
     // Assets/balances now come from WalletService (the single libwallet
     // listener; read via `wallet.assets` in build). Here we only load the
-    // transaction history and the Jupiter SPL list (untracked-mint discovery).
+    // transaction history and (Solana only) the Jupiter SPL list. Jupiter is a
+    // Solana RPC — calling it with an EVM address fails ("Invalid param"), so
+    // skip it off-Solana; EVM tokens come from wallet.assets instead.
+    final isSolana =
+        (lw.currentNetwork?.type ?? NetworkType.solana) == NetworkType.solana;
     try {
       final results = await Future.wait([
         lw.getTransactions(limit: 50, forAddress: addr),
-        if (addr != null)
+        if (addr != null && isSolana)
           _jupiter.fetchHoldings(addr, excludeMint: wsolMint)
         else
           Future.value(const <TokenHolding>[]),
@@ -185,10 +189,13 @@ class _WalletDashboardState extends State<WalletDashboard> {
                       0,
                       (sum, a) => sum + (a.fiatAmount?.toDouble() ?? 0),
                     );
-                final tokensFiat = _holdings.fold<double>(
-                  0,
-                  (sum, h) => sum + (h.valueUsd ?? 0),
-                );
+                // Sum every non-native displayed token's USD value. On
+                // Solana these are the Jupiter holdings; on EVM/BTC they
+                // are the libwallet asset rows — keeping the headline in
+                // step with the token list on every chain.
+                final tokensFiat = _displayTokens(wallet)
+                    .where((h) => !h.mint.endsWith('.NATIVE'))
+                    .fold<double>(0, (sum, h) => sum + (h.valueUsd ?? 0));
                 final totalUsd = solFiat + tokensFiat;
                 // Express the dollar total in SOL when we have enough
                 // signal to compute the SOL price (native fiat ÷ native
@@ -430,8 +437,57 @@ class _WalletDashboardState extends State<WalletDashboard> {
   /// path never duplicates SOL.
   List<TokenHolding> _displayTokens(WalletService wallet) {
     final native = _nativeRowForCurrentNetwork(wallet);
-    if (native == null) return _holdings;
-    return [native, ..._holdings];
+    final net = wallet.libwallet.currentNetwork;
+    final isSolana = (net?.type ?? NetworkType.solana) == NetworkType.solana;
+
+    if (isSolana) {
+      // Solana: native SOL row + Jupiter-discovered SPL holdings
+      // (`_holdings` is built with `excludeMint: wsolMint`, so SOL is
+      // never duplicated).
+      if (native == null) return _holdings;
+      return [native, ..._holdings];
+    }
+
+    // Non-Solana (EVM / Bitcoin): libwallet's getAssets is the source of
+    // truth for token balances — Jupiter is Solana-only and `_holdings`
+    // is empty here. Build a row per non-native asset on the active
+    // network; the native asset is already rendered by `native`.
+    final tokens = <TokenHolding>[];
+    for (final a in wallet.assets) {
+      if (net != null && a.network != net.id) continue;
+      if (a.isNative) continue;
+      tokens.add(_assetToHolding(a));
+    }
+    if (native == null) return tokens;
+    return [native, ...tokens];
+  }
+
+  /// Convert a libwallet [Asset] (non-native token on the active
+  /// network) into a [TokenHolding] row. Decimals come from
+  /// `amount.exp` (authoritative); the fiat unit price is derived from
+  /// the fiat total ÷ ui-balance when both are present.
+  TokenHolding _assetToHolding(Asset a) {
+    final balance = a.amount.value;
+    final decimals = a.amount.exp;
+    final divisor = BigInt.from(10).pow(decimals);
+    final uiBalance = decimals > 0
+        ? balance.toDouble() / divisor.toDouble()
+        : balance.toDouble();
+    final valueUsd = a.fiatAmount?.toDouble();
+    final priceUsd = (uiBalance > 0 && valueUsd != null && valueUsd > 0)
+        ? valueUsd / uiBalance
+        : null;
+    return TokenHolding(
+      mint: a.tokenAddress ?? a.key,
+      symbol: a.symbol,
+      name: a.name.isNotEmpty ? a.name : a.symbol,
+      imageUrl: null,
+      balance: balance,
+      decimals: decimals,
+      uiBalance: uiBalance,
+      priceUsd: priceUsd,
+      valueUsd: (valueUsd != null && valueUsd > 0) ? valueUsd : null,
+    );
   }
 
   TokenHolding? _nativeRowForCurrentNetwork(WalletService wallet) {

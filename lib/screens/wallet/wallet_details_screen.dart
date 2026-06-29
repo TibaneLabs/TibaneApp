@@ -83,16 +83,16 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     }
     try {
       final client = await ws.libwallet.ensureClient();
-      final results = await Future.wait([
-        client.wallets.get(id),
-        client.accounts.list(wallet: id),
-      ]);
+      // Single source of truth: refresh once, then read this wallet's
+      // filtered accounts from AccountsService (phantoms already removed).
+      final wallet = await client.wallets.get(id);
+      await ws.refreshAccounts();
       final isActive = id == ws.libwallet.walletId;
       final hasShareHere = await ws.libwallet.hasLocalDeviceShare(id);
       if (!mounted) return;
       setState(() {
-        _wallet = results[0] as lw.Wallet;
-        _accounts = results[1] as List<lw.Account>;
+        _wallet = wallet;
+        _accounts = ws.accountsService.rawAccountsForWallet(id);
         _isActive = isActive;
         _hasShareHere = hasShareHere;
         _loading = false;

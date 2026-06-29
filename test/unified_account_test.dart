@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:libwallet/libwallet.dart' show Account, Wallet;
+import 'package:libwallet/libwallet.dart' show Account, NetworkType, Wallet;
 import 'package:tibaneapp/services/wallet/unified_account.dart';
 
 /// Unit tests for the account-centric model (Atonline-parity Phase 4b-1). The
@@ -12,7 +12,7 @@ Account _acct({
   required String wallet,
   String name = 'Account 1',
   String type = 'solana',
-  String address = 'addr',
+  String? address,
 }) => Account(
   id: id,
   wallet: wallet,
@@ -20,7 +20,10 @@ Account _acct({
   index: 0,
   type: type,
   path: '',
-  address: address,
+  // Default to a type-appropriate, usable address so accounts pass
+  // [isUsableAccount] unless a test overrides it (e.g. with 'N/A' or a
+  // mismatched format). Ethereum requires a 0x address.
+  address: address ?? (type == 'ethereum' ? '0xAbc123' : 'addr'),
   uri: '',
   pubkey: '',
   chaincode: '',
@@ -126,6 +129,127 @@ void main() {
       expect(out[1].isSolana, isFalse);
       expect(out[1].curve, 'secp256k1');
       expect(out.last.backend, AccountBackend.mwa);
+    });
+  });
+
+  group('isUsableAccountAddress / N/A filtering', () {
+    test('rejects empty, whitespace, and the "N/A" sentinel', () {
+      expect(isUsableAccountAddress(null), isFalse);
+      expect(isUsableAccountAddress(''), isFalse);
+      expect(isUsableAccountAddress('   '), isFalse);
+      expect(isUsableAccountAddress('N/A'), isFalse);
+      expect(isUsableAccountAddress('  N/A  '), isFalse);
+    });
+    test('accepts a real address', () {
+      expect(isUsableAccountAddress('SoLaddr'), isTrue);
+      expect(isUsableAccountAddress('0xabc'), isTrue);
+    });
+    test('buildUnifiedAccounts drops "N/A"- and empty-address accounts', () {
+      final out = buildUnifiedAccounts(
+        inappAccounts: [
+          _acct(id: 'good', wallet: 'w1', name: 'Good', address: 'SoLaddr'),
+          _acct(id: 'bad', wallet: 'w1', name: 'Bad', address: 'N/A'),
+          _acct(id: 'empty', wallet: 'w1', name: 'Empty', address: ''),
+        ],
+        walletsById: {'w1': _wallet(id: 'w1')},
+      );
+      expect(out.map((a) => a.id).toList(), ['good']);
+    });
+    test('MWA account is unaffected by the in-app filter', () {
+      final out = buildUnifiedAccounts(
+        inappAccounts: [_acct(id: 'bad', wallet: 'w1', address: 'N/A')],
+        walletsById: {'w1': _wallet(id: 'w1')},
+        mwaAddress: 'MwaPubkey',
+      );
+      expect(out.map((a) => a.id).toList(), ['mwa:MwaPubkey']);
+    });
+  });
+
+  group('isUsableAccount (single phantom filter)', () {
+    test('rejects "N/A" / empty address', () {
+      expect(
+        isUsableAccount(_acct(id: 'a', wallet: 'w', address: 'N/A'),
+            _wallet(id: 'w')),
+        isFalse,
+      );
+      expect(
+        isUsableAccount(
+            _acct(id: 'a', wallet: 'w', address: ''), _wallet(id: 'w')),
+        isFalse,
+      );
+    });
+    test('rejects an ethereum account with a non-0x (base58) address', () {
+      // The real bug: list() returns a phantom EVM account with the wallet's
+      // base58 Solana address as a fallback.
+      expect(
+        isUsableAccount(
+          _acct(
+              id: 'a',
+              wallet: 'w',
+              type: 'ethereum',
+              address: 'E47NsfqHUqGTVGGcUjBR1aTENJPxAbywEigVMKNtvNry'),
+          _wallet(id: 'w', curve: 'secp256k1'),
+        ),
+        isFalse,
+      );
+    });
+    test('accepts an ethereum account with a 0x address', () {
+      expect(
+        isUsableAccount(
+          _acct(
+              id: 'a',
+              wallet: 'w',
+              type: 'ethereum',
+              address: '0x4d9477b1cDf10155eE5E2c55F781D48B18fD59fE'),
+          _wallet(id: 'w', curve: 'secp256k1'),
+        ),
+        isTrue,
+      );
+    });
+    test('rejects type incompatible with wallet curve (ethereum under ed25519)',
+        () {
+      expect(
+        isUsableAccount(
+          _acct(id: 'a', wallet: 'w', type: 'ethereum', address: '0xabc'),
+          _wallet(id: 'w', curve: 'ed25519'),
+        ),
+        isFalse,
+      );
+    });
+    test('accepts solana under ed25519', () {
+      expect(
+        isUsableAccount(
+          _acct(id: 'a', wallet: 'w', type: 'solana', address: 'SoLaddr'),
+          _wallet(id: 'w', curve: 'ed25519'),
+        ),
+        isTrue,
+      );
+    });
+    test('unknown wallet (null): curve skipped, address + 0x still apply', () {
+      expect(
+        isUsableAccount(
+            _acct(id: 'a', wallet: 'w', type: 'solana', address: 'SoL'), null),
+        isTrue,
+      );
+      expect(
+        isUsableAccount(
+            _acct(id: 'a', wallet: 'w', type: 'ethereum', address: 'SoL'),
+            null),
+        isFalse,
+      );
+    });
+    test('buildUnifiedAccounts drops phantom ethereum accounts under ed25519',
+        () {
+      final out = buildUnifiedAccounts(
+        inappAccounts: [
+          _acct(id: 'sol', wallet: 'w1', type: 'solana', address: 'E47Nsf'),
+          // Phantom: ethereum-typed under an ed25519 wallet, base58 fallback.
+          _acct(
+              id: 'phantom', wallet: 'w1', type: 'ethereum', address: 'E47Nsf'),
+        ],
+        walletsById: {'w1': _wallet(id: 'w1', curve: 'ed25519')},
+      );
+      expect(out.map((a) => a.id).toList(), ['sol']);
     });
   });
 
@@ -247,6 +371,29 @@ void main() {
       expect(chainLabel('bitcoin'), 'Bitcoin');
       expect(chainLabel('polygon'), 'Polygon');
       expect(chainLabel(''), '');
+    });
+  });
+
+  group('network compatibility (cross-chain account switch)', () {
+    test('networkTypeForChain maps chains to network families', () {
+      expect(networkTypeForChain('solana'), NetworkType.solana);
+      expect(networkTypeForChain('ethereum'), NetworkType.evm);
+      expect(networkTypeForChain('bitcoin'), NetworkType.bitcoin);
+      expect(networkTypeForChain('bogus'), NetworkType.solana); // Solana-first
+    });
+    test('accountMatchesNetwork', () {
+      final sol = buildUnifiedAccounts(
+        inappAccounts: [_acct(id: 'a', wallet: 'w', type: 'solana')],
+        walletsById: {'w': _wallet(id: 'w')},
+      ).single;
+      final eth = buildUnifiedAccounts(
+        inappAccounts: [_acct(id: 'b', wallet: 'w2', type: 'ethereum')],
+        walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+      ).single;
+      expect(accountMatchesNetwork(sol, NetworkType.solana), isTrue);
+      expect(accountMatchesNetwork(sol, NetworkType.evm), isFalse);
+      expect(accountMatchesNetwork(eth, NetworkType.evm), isTrue);
+      expect(accountMatchesNetwork(eth, NetworkType.solana), isFalse);
     });
   });
 

@@ -1,4 +1,5 @@
-import 'package:libwallet/libwallet.dart' show Account, Wallet;
+import 'package:libwallet/libwallet.dart'
+    show Account, Network, NetworkType, Wallet;
 
 /// Which backend owns / signs for an account.
 enum AccountBackend { inapp, mwa }
@@ -51,6 +52,45 @@ class UnifiedAccount {
 /// Label shown for the external Seed Vault account.
 const String mwaAccountLabel = 'External (Seed Vault)';
 
+/// libwallet backend bug sentinel: an account whose address it couldn't
+/// resolve comes back with `address == "N/A"` (or empty). The libwallet team
+/// confirmed such accounts shouldn't exist — they're a server-side bug — so we
+/// treat them as unusable and never display, select, or switch to them.
+bool isUsableAccountAddress(String? address) {
+  final a = address?.trim() ?? '';
+  return a.isNotEmpty && a != 'N/A';
+}
+
+/// The SINGLE predicate for "is this a real, transactable account" — applied
+/// wherever raw `client.accounts.list()` results reach the UI or the
+/// current-account model so phantom accounts can never appear anywhere.
+///
+/// libwallet can emit phantom accounts (typically from a restore) whose type
+/// is incompatible with the parent wallet's curve — e.g. an `ethereum` account
+/// under an `ed25519`/Solana wallet. `list()` returns these with the wallet's
+/// native (base58) address as a fallback, but they can't derive a real EVM
+/// address, so any real resolution gives `"N/A"`. We reject an account when:
+///
+/// - its [address] is empty / `"N/A"` ([isUsableAccountAddress]); or
+/// - it is `ethereum`-typed but the address isn't `0x…` hex (a base58 address
+///   means a fallback for an account that can't produce a real EVM address); or
+/// - its `type` isn't allowed for the parent wallet's curve
+///   ([allowedAccountTypesForCurve]) — the principled, network-independent
+///   check. [wallet] null (unknown) → the curve check is skipped, the address
+///   and `0x` checks still apply.
+bool isUsableAccount(Account account, Wallet? wallet) {
+  if (!isUsableAccountAddress(account.address)) return false;
+  if (account.type == 'ethereum' && !account.address.startsWith('0x')) {
+    return false;
+  }
+  final curve = wallet?.curve;
+  if (curve != null &&
+      !allowedAccountTypesForCurve(curve).contains(account.type)) {
+    return false;
+  }
+  return true;
+}
+
 /// Pure builder for the unified account list (D1).
 ///
 /// - [inappAccounts] — `client.accounts.list()` across all in-app wallets.
@@ -69,6 +109,9 @@ List<UnifiedAccount> buildUnifiedAccounts({
   final out = <UnifiedAccount>[];
   for (final a in inappAccounts) {
     final w = walletsById[a.wallet];
+    // Skip phantom accounts (curve/type mismatch, non-0x EVM address, or
+    // "N/A" — see [isUsableAccount]); they can't be displayed or transacted on.
+    if (!isUsableAccount(a, w)) continue;
     final walletName = w?.name ?? '';
     final label = walletName.isEmpty ? a.name : '${a.name} — $walletName';
     out.add(
@@ -161,6 +204,34 @@ UnifiedAccount? addAccountTarget(
 /// Default name for the next account on a wallet: "Account N" (1-based on the
 /// number of accounts the wallet already has).
 String suggestAccountName(int existingCount) => 'Account ${existingCount + 1}';
+
+/// The libwallet [NetworkType] an account of [chain] runs on. An account's
+/// address only works while the current network matches this family — so
+/// switching to a different-chain account needs a compatible network.
+NetworkType networkTypeForChain(String chain) {
+  switch (chain) {
+    case 'ethereum':
+      return NetworkType.evm;
+    case 'bitcoin':
+      return NetworkType.bitcoin;
+    case 'solana':
+    default:
+      return NetworkType.solana;
+  }
+}
+
+/// Networks compatible with [account] (same chain family) — the list offered
+/// when switching to a different-chain account so the user picks which network
+/// to connect on (e.g. an EVM account → Ethereum / Polygon / BSC / …).
+List<Network> networksForAccount(UnifiedAccount account, List<Network> all) {
+  final t = networkTypeForChain(account.chain);
+  return all.where((n) => n.type == t).toList();
+}
+
+/// Whether [networkType] matches [account]'s chain — i.e. the account is
+/// usable on that network without a network switch.
+bool accountMatchesNetwork(UnifiedAccount account, NetworkType networkType) =>
+    networkTypeForChain(account.chain) == networkType;
 
 /// Whether Solana-only features (Staking, Incinerator — both are Solana
 /// programs / SPL operations) should be offered for [current]. True when the

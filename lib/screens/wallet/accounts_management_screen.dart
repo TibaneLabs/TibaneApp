@@ -49,15 +49,13 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
       });
     }
     try {
-      final client = await ws.libwallet.ensureClient();
-      final results = await Future.wait([
-        client.accounts.list(),
-        client.wallets.list(),
-      ]);
+      // Single source of truth: refresh + read the filtered list from
+      // AccountsService (phantom accounts already removed there).
+      await ws.refreshAccounts();
       if (!mounted) return;
       setState(() {
-        _accounts = results[0] as List<lw.Account>;
-        _walletsById = {for (final w in results[1] as List<lw.Wallet>) w.id: w};
+        _accounts = ws.accountsService.rawAccounts;
+        _walletsById = ws.accountsService.walletsById;
         _loading = false;
       });
     } catch (e) {
