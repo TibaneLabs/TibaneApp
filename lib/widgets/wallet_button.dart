@@ -1,16 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/solana_constants.dart';
 import '../screens/wallet/inapp_create_screen.dart';
-import '../screens/wallet/inapp_export_screen.dart';
 import '../screens/wallet/inapp_unlock_screen.dart';
+import '../screens/wallet/widgets/account_switcher_sheet.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
-import 'network_chip.dart';
 
 /// Wallet connect/disconnect button for the app bar
 class WalletButton extends StatelessWidget {
@@ -256,7 +254,7 @@ class _ConnectedButton extends StatelessWidget {
       color: TibaneColors.card,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
-        onTap: () => _showDisconnectDialog(context),
+        onTap: () => showAccountSwitcher(context),
         borderRadius: BorderRadius.circular(8),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -301,143 +299,4 @@ class _ConnectedButton extends StatelessWidget {
     );
   }
 
-  void _showDisconnectDialog(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: TibaneColors.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: TibaneColors.textDim,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 20),
-            // Wallet name stays visually centered; the network-switch chip
-            // floats at the right edge of the same row via a full-width
-            // Stack so the title's centering isn't pulled off-axis by the
-            // chip's variable width.
-            SizedBox(
-              width: double.infinity,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Text(
-                    wallet.walletName ?? 'Connected Wallet',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const Align(
-                    alignment: Alignment.centerRight,
-                    child: NetworkChip(iconOnly: true),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: TibaneColors.darker,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                wallet.publicKey ?? '',
-                style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  '${formatSol(wallet.solBalance)} SOL',
-                  style: monoStyle(fontSize: 14, color: TibaneColors.text),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () async {
-                  final addr = wallet.publicKey ?? '';
-                  final messenger = ScaffoldMessenger.of(context);
-                  await Clipboard.setData(ClipboardData(text: addr));
-                  if (!context.mounted) return;
-                  Navigator.pop(context);
-                  messenger.showSnackBar(
-                    const SnackBar(
-                      content: Text('Address copied'),
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.copy, size: 18),
-                label: const Text('Copy address'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: TibaneColors.text,
-                  side: const BorderSide(color: TibaneColors.borderHover),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (wallet.kind == WalletKind.inapp) ...[
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    final navigator = Navigator.of(context);
-                    Navigator.pop(context);
-                    navigator.push(
-                      MaterialPageRoute(
-                        builder: (_) => const InAppExportScreen(),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.file_download_outlined, size: 18),
-                  label: const Text('Export wallet'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: TibaneColors.text,
-                    side: const BorderSide(color: TibaneColors.borderHover),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  wallet.disconnect();
-                  Navigator.pop(context);
-                },
-                icon: const Icon(Icons.logout, size: 18),
-                label: const Text('Disconnect'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: TibaneColors.error,
-                  side: BorderSide(
-                    color: TibaneColors.error.withValues(alpha: 0.4),
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
 }

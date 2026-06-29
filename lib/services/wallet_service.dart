@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -130,9 +129,6 @@ class WalletService extends ChangeNotifier {
     unawaited(_libwallet.ensureSolanaDefault());
     if (isConnected) {
       refreshBalances();
-      if (!_auth.isAuthenticated) {
-        _authenticateWithServer();
-      }
     }
     unawaited(refreshAccounts());
     notifyListeners();
@@ -140,13 +136,18 @@ class WalletService extends ChangeNotifier {
 
   /// Connect via the Seed Vault / external MWA flow.
   Future<void> connectMwa() async {
-    await _setKind(WalletKind.mwa);
+    // Connect FIRST, then switch the active backend — so a cancelled/declined
+    // authorize leaves the current (e.g. in-app) wallet active instead of
+    // stranding the app on a half-connected MWA backend. NO eager atonline
+    // login here: under the lockless model server-login is lazy
+    // (ensureServerAuthenticated). For MWA an eager signMessage would re-launch
+    // the wallet right after authorize — the "stuck on the other wallet" +
+    // background-kill loop. ClawdWallet pulls auth on demand.
     final ok = await _mwa.connect();
-    if (ok) {
-      refreshBalances();
-      _authenticateWithServer();
-      unawaited(refreshAccounts());
-    }
+    if (!ok) return;
+    await _setKind(WalletKind.mwa);
+    refreshBalances();
+    unawaited(refreshAccounts());
   }
 
   /// Switch to the in-app libwallet backend. Assumes the wallet has already
@@ -155,7 +156,6 @@ class WalletService extends ChangeNotifier {
     await _setKind(WalletKind.inapp);
     if (isConnected) {
       refreshBalances();
-      _authenticateWithServer();
     }
     unawaited(refreshAccounts());
   }
@@ -195,6 +195,30 @@ class WalletService extends ChangeNotifier {
     } catch (e) {
       debugPrint('refreshAccounts failed: $e');
     }
+  }
+
+  /// Create a new account on [walletId] (D10 add-account), refresh the unified
+  /// list, and switch to it. [type] must be curve-compatible (constrained in
+  /// the UI via `allowedAccountTypesForCurve`). Returns false on failure.
+  Future<bool> addAccount({
+    required String walletId,
+    required String name,
+    required String type,
+  }) async {
+    final acct = await _libwallet.createAccount(
+      walletId: walletId,
+      name: name,
+      type: type,
+    );
+    if (acct == null) return false;
+    await refreshAccounts();
+    for (final a in _accounts) {
+      if (a.accountId == acct.id) {
+        await setCurrentAccount(a);
+        break;
+      }
+    }
+    return true;
   }
 
   /// The unified-list entry corresponding to the active backend, so
@@ -243,7 +267,6 @@ class WalletService extends ChangeNotifier {
     _currentAccount = acct;
     if (isConnected) {
       refreshBalances();
-      _authenticateWithServer();
     }
     notifyListeners();
     return true;
@@ -590,43 +613,13 @@ class WalletService extends ChangeNotifier {
     }
   }
 
-  // tryRestore / connectMwa / useLibwallet all fire-and-forget this and the
-  // bare `_auth.isAuthenticated` guard only blocks calls that arrive *after*
-  // a prior login has finished. Two concurrent callers both saw false,
-  // both did a full getTicket → sign → solLogin. Coalesce onto one future.
-  Future<void>? _authFuture;
-
   // Address the current server session was authenticated for. Switching
   // wallets/accounts changes the address, so the session must be re-minted
-  // for the new one (safe after the libwallet 0.4.47 FROST-sign fix).
+  // for the new one. Server-login is LAZY under the lockless model — driven by
+  // `ensureServerAuthenticated(ctx)` (begin/completeServerLogin) when a
+  // server-backed feature (ClawdWallet) is opened — never eagerly on
+  // connect/restore/switch (eager MWA login would re-launch the wallet app).
   String? _authedAddress;
-
-  Future<void> _authenticateWithServer() {
-    if (_auth.isAuthenticated && _authedAddress == publicKey) {
-      return Future.value();
-    }
-    return _authFuture ??= _runAuthenticate();
-  }
-
-  Future<void> _runAuthenticate() async {
-    try {
-      final login = await beginServerLogin();
-      if (login == null) return;
-      // Legacy/eager path: sign with the cached session. Under lockless there
-      // are no cached keys, so this returns null and login is skipped silently
-      // (no sheet on launch) — the lazy `ensureServerAuthenticated(ctx)` path
-      // signs it via the sheet when a server-backed feature is opened.
-      final signature = await signMessage(
-        Uint8List.fromList(utf8.encode(login.message)),
-      );
-      if (signature == null) return;
-      await completeServerLogin(login.ticket, signature);
-    } catch (e) {
-      debugPrint('authenticateWithServer failed: $e');
-    } finally {
-      _authFuture = null;
-    }
-  }
 
   /// Whether the atonline server session is authenticated for the CURRENT
   /// account address (a stale session for another address doesn't count).
