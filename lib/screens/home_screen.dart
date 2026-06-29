@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/uk_compliance_service.dart';
+import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/cat_logo.dart';
 import '../widgets/tibane_card.dart';
@@ -121,20 +122,13 @@ class _ToolsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUk = context.watch<UkComplianceService>().isUk;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              'TOOLS',
-              style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
-            ),
-            const SizedBox(width: 8),
-            Expanded(child: Container(height: 1, color: TibaneColors.border)),
-          ],
-        ),
-        const SizedBox(height: 20),
+    // Staking + Incinerator are Solana-only (ChiefStaker program / SPL burns),
+    // so hide them when the current account isn't Solana (Atonline-parity §4.5
+    // chain gating). Swap + Token info are chain-neutral and stay.
+    final solana = context.watch<WalletService>().solanaFeaturesEnabled;
+
+    final cards = <Widget>[
+      if (solana)
         FeatureCard(
           icon: Icons.local_fire_department,
           title: 'Incinerator',
@@ -152,50 +146,66 @@ class _ToolsSection extends StatelessWidget {
             ),
           ),
         ),
-        // Staking and Swap are regulated activities in the UK — hide
-        // their entry points for UK users. They remain reachable via
-        // third-party sites in the Browse tab if the user wants them.
-        if (!isUk) ...[
-          const SizedBox(height: 12),
-          FeatureCard(
-            icon: Icons.account_balance,
-            title: 'Staking',
-            description:
-                'Time-weighted staking pools with exponential decay rewards.',
-            badge: 'LIVE',
-            badgeColor: TibaneColors.cyan,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => Scaffold(
-                  backgroundColor: TibaneColors.black,
-                  appBar: AppBar(title: const Text('Staking pools')),
-                  body: const SafeArea(child: StakingPoolsScreen()),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          FeatureCard(
-            icon: Icons.swap_horiz,
-            title: 'Swap',
-            description: 'Swap tokens directly via Jupiter with minimal fees.',
-            badge: 'LIVE',
-            badgeColor: TibaneColors.cyan,
-            onTap: () => onNavigate(1),
-          ),
-        ],
-        const SizedBox(height: 12),
+      // Staking and Swap are regulated activities in the UK — hide their entry
+      // points for UK users (still reachable via third-party sites in Browse).
+      if (!isUk && solana)
         FeatureCard(
-          icon: Icons.analytics_outlined,
-          title: 'Token info & Favorites',
+          icon: Icons.account_balance,
+          title: 'Staking',
           description:
-              'Real-time token analytics, holder distribution, and transaction history.',
+              'Time-weighted staking pools with exponential decay rewards.',
           badge: 'LIVE',
           badgeColor: TibaneColors.cyan,
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const TokenFavoritesScreen()),
+            MaterialPageRoute(
+              builder: (_) => Scaffold(
+                backgroundColor: TibaneColors.black,
+                appBar: AppBar(title: const Text('Staking pools')),
+                body: const SafeArea(child: StakingPoolsScreen()),
+              ),
+            ),
           ),
         ),
+      if (!isUk)
+        FeatureCard(
+          icon: Icons.swap_horiz,
+          title: 'Swap',
+          description: 'Swap tokens directly via Jupiter with minimal fees.',
+          badge: 'LIVE',
+          badgeColor: TibaneColors.cyan,
+          onTap: () => onNavigate(1),
+        ),
+      FeatureCard(
+        icon: Icons.analytics_outlined,
+        title: 'Token info & Favorites',
+        description:
+            'Real-time token analytics, holder distribution, and transaction history.',
+        badge: 'LIVE',
+        badgeColor: TibaneColors.cyan,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const TokenFavoritesScreen()),
+        ),
+      ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'TOOLS',
+              style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Container(height: 1, color: TibaneColors.border)),
+          ],
+        ),
+        const SizedBox(height: 20),
+        for (var i = 0; i < cards.length; i++) ...[
+          if (i > 0) const SizedBox(height: 12),
+          cards[i],
+        ],
       ],
     );
   }
