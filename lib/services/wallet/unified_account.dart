@@ -128,3 +128,50 @@ UnifiedAccount? resolvePersistedAccount({
   }
   return accounts.first;
 }
+
+/// Account `type`s that can be derived for a wallet of the given [curve].
+/// libwallet derives the key from the curve, so a new account's type must match
+/// it (ed25519 → solana; secp256k1 → ethereum/bitcoin) or the TSS layer derives
+/// the wrong key type and crashes. Empty for an unknown/absent curve.
+List<String> allowedAccountTypesForCurve(String? curve) {
+  switch (curve) {
+    case 'ed25519':
+      return const ['solana'];
+    case 'secp256k1':
+      return const ['ethereum', 'bitcoin'];
+    default:
+      return const [];
+  }
+}
+
+/// The in-app account whose wallet a new account should be added to: the
+/// current account when it's in-app, else the first in-app account, else null
+/// (e.g. only an MWA account is present — MWA can't derive new accounts).
+UnifiedAccount? addAccountTarget(
+  List<UnifiedAccount> accounts,
+  UnifiedAccount? current,
+) {
+  if (current != null && current.isInApp) return current;
+  for (final a in accounts) {
+    if (a.isInApp) return a;
+  }
+  return null;
+}
+
+/// Default name for the next account on a wallet: "Account N" (1-based on the
+/// number of accounts the wallet already has).
+String suggestAccountName(int existingCount) => 'Account ${existingCount + 1}';
+
+/// Human label for a chain `type`.
+String chainLabel(String chain) {
+  switch (chain) {
+    case 'solana':
+      return 'Solana';
+    case 'ethereum':
+      return 'Ethereum';
+    case 'bitcoin':
+      return 'Bitcoin';
+    default:
+      return chain.isEmpty ? '' : chain[0].toUpperCase() + chain.substring(1);
+  }
+}

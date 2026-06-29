@@ -200,4 +200,53 @@ void main() {
       expect(resolvePersistedAccount(accounts: const [], savedId: 'x'), isNull);
     });
   });
+
+  group('allowedAccountTypesForCurve', () {
+    test('ed25519 → solana only', () {
+      expect(allowedAccountTypesForCurve('ed25519'), ['solana']);
+    });
+    test('secp256k1 → ethereum + bitcoin', () {
+      expect(allowedAccountTypesForCurve('secp256k1'), ['ethereum', 'bitcoin']);
+    });
+    test('unknown / null → empty', () {
+      expect(allowedAccountTypesForCurve('bogus'), isEmpty);
+      expect(allowedAccountTypesForCurve(null), isEmpty);
+    });
+  });
+
+  group('addAccountTarget', () {
+    final inappSol = buildUnifiedAccounts(
+      inappAccounts: [_acct(id: 'a1', wallet: 'w1')],
+      walletsById: {'w1': _wallet(id: 'w1')},
+    ).single;
+    final mwa = buildUnifiedAccounts(
+      inappAccounts: const [],
+      walletsById: const {},
+      mwaAddress: 'M',
+    ).single;
+
+    test('current is in-app → returns current', () {
+      expect(addAccountTarget([inappSol, mwa], inappSol), inappSol);
+    });
+    test('current is MWA → falls back to first in-app', () {
+      expect(addAccountTarget([inappSol, mwa], mwa), inappSol);
+    });
+    test('no in-app account → null (MWA cannot add accounts)', () {
+      expect(addAccountTarget([mwa], mwa), isNull);
+    });
+  });
+
+  group('suggestAccountName / chainLabel', () {
+    test('suggestAccountName is 1-based on existing count', () {
+      expect(suggestAccountName(0), 'Account 1');
+      expect(suggestAccountName(3), 'Account 4');
+    });
+    test('chainLabel maps known chains, title-cases the rest', () {
+      expect(chainLabel('solana'), 'Solana');
+      expect(chainLabel('ethereum'), 'Ethereum');
+      expect(chainLabel('bitcoin'), 'Bitcoin');
+      expect(chainLabel('polygon'), 'Polygon');
+      expect(chainLabel(''), '');
+    });
+  });
 }

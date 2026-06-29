@@ -1314,6 +1314,37 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
   }
 
+  /// Derive a new account on [walletId] (D10 add-account). [type] must be
+  /// compatible with the wallet's curve (see [allowedAccountTypesForCurve]).
+  /// The derivation index is the next free one for the wallet. Returns the new
+  /// account, or null on failure (sets [error]).
+  Future<Account?> createAccount({
+    required String walletId,
+    required String name,
+    required String type,
+  }) async {
+    try {
+      final client = await _getClient();
+      final existing = await client.accounts.list(wallet: walletId);
+      final nextIndex = existing.isEmpty
+          ? 0
+          : existing.map((a) => a.index).reduce((a, b) => a > b ? a : b) + 1;
+      final acct = await client.accounts.create(
+        name: name,
+        wallet: walletId,
+        type: type,
+        index: nextIndex,
+      );
+      notifyListeners();
+      return acct;
+    } catch (e) {
+      _error = 'Create account failed: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return null;
+    }
+  }
+
   /// Pure routing decision for tapping an account. Used by the accounts UI
   /// and unit-tested directly. Picks: no-op, same-wallet `setCurrent`, or
   /// switch-the-parent-wallet-first then `setCurrent`.
