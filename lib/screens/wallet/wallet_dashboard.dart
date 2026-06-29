@@ -27,7 +27,8 @@ class WalletDashboard extends StatefulWidget {
 }
 
 class _WalletDashboardState extends State<WalletDashboard> {
-  List<Asset> _assets = [];
+  // Assets/balances live on WalletService now (read via `wallet.assets`); the
+  // dashboard owns only the tx list + the Jupiter SPL list.
   List<TokenHolding> _holdings = [];
   List<Transaction> _transactions = [];
   bool _loadingTxs = true;
@@ -35,7 +36,6 @@ class _WalletDashboardState extends State<WalletDashboard> {
   StreamSubscription<TxHistoryUpdatedEvent>? _txHistorySub;
   WalletService? _walletRef;
   final JupiterService _jupiter = JupiterService();
-  Timer? _balanceDebounce;
   int _selectedTab = 0; // 0 = Tokens, 1 = Activity
 
   @override
@@ -51,15 +51,11 @@ class _WalletDashboardState extends State<WalletDashboard> {
     }
     _loadData();
     _subscribeHistory();
-    // Reload on every "tx just committed" event from the swap/send flows.
+    // Reload tx/holdings on every "tx just committed" event (swap/send). Balance
+    // freshness comes from WalletService (it listens to libwallet's balanceTick
+    // and updates `wallet.assets`); the dashboard watches WalletService in build
+    // and re-renders automatically — no balanceTick listener here.
     _walletRef!.swapCommittedTick.addListener(_onTxCommitted);
-    // Reload when libwallet's balance snapshot lands. getAssets() at mount can
-    // run before the snapshot (and before the network resolves on cold start),
-    // returning stale/zero amounts; the balanceTick fires when the real
-    // balances arrive, so reload then instead of waiting for a manual refresh.
-    // Debounced because the snapshot can emit a short burst; libwallet stops
-    // ticking once balances stabilize, so this self-terminates.
-    _walletRef!.libwallet.balanceTick.addListener(_onBalanceChanged);
     // Register any on-chain tokens libwallet's auto-discovery missed so
     // they appear in the TOKENS section. Runs concurrently with the
     // initial _loadData; if any new mints land, it bumps
@@ -70,14 +66,6 @@ class _WalletDashboardState extends State<WalletDashboard> {
   void _onTxCommitted() {
     if (!mounted) return;
     _loadData();
-  }
-
-  void _onBalanceChanged() {
-    if (!mounted) return;
-    _balanceDebounce?.cancel();
-    _balanceDebounce = Timer(const Duration(milliseconds: 400), () {
-      if (mounted) _loadData();
-    });
   }
 
   /// Listen for libwallet's tx-history backfill events. Fires whenever the
@@ -105,9 +93,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
   @override
   void dispose() {
     _txHistorySub?.cancel();
-    _balanceDebounce?.cancel();
     _walletRef?.swapCommittedTick.removeListener(_onTxCommitted);
-    _walletRef?.libwallet.balanceTick.removeListener(_onBalanceChanged);
     _jupiter.dispose();
     super.dispose();
   }
@@ -116,13 +102,11 @@ class _WalletDashboardState extends State<WalletDashboard> {
     final wallet = context.read<WalletService>();
     final lw = wallet.libwallet;
     final addr = wallet.publicKey;
-    // libwallet supplies SOL's fiat conversion and the transaction history;
-    // the SPL-token list comes straight from on-chain RPC so any non-zero
-    // balance shows up regardless of whether libwallet has tracked the
-    // mint yet.
+    // Assets/balances now come from WalletService (the single libwallet
+    // listener; read via `wallet.assets` in build). Here we only load the
+    // transaction history and the Jupiter SPL list (untracked-mint discovery).
     try {
       final results = await Future.wait([
-        lw.getAssets(),
         lw.getTransactions(limit: 50, forAddress: addr),
         if (addr != null)
           _jupiter.fetchHoldings(addr, excludeMint: wsolMint)
@@ -130,18 +114,16 @@ class _WalletDashboardState extends State<WalletDashboard> {
           Future.value(const <TokenHolding>[]),
       ]);
       if (!mounted) return;
-      final assets = results[0] as List<Asset>;
-      final txs = results[1] as List<Transaction>;
-      final holdings = results[2] as List<TokenHolding>;
+      final txs = results[0] as List<Transaction>;
+      final holdings = results[1] as List<TokenHolding>;
       debugPrint(
         '[dashboard] _loadData: addr=$addr account=${lw.accountId} '
         'network=${lw.currentNetwork?.id} '
-        'assets=${assets.length} holdings=${holdings.length} '
+        'assets=${wallet.assets.length} holdings=${holdings.length} '
         'txs=${txs.length}',
       );
       if (addr != null) wallet.cacheTxsFor(addr, txs);
       setState(() {
-        _assets = assets;
         _transactions = txs;
         _holdings = holdings;
         _loadingTxs = false;
@@ -197,7 +179,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
           Center(
             child: Builder(
               builder: (context) {
-                final solFiat = _assets
+                final solFiat = wallet.assets
                     .where((a) => a.isNative)
                     .fold<double>(
                       0,
@@ -461,7 +443,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
     // is whichever entry has the .NATIVE suffix on its key and matches
     // the active network. There is at most one per (account, network).
     Asset? nativeAsset;
-    for (final a in _assets) {
+    for (final a in wallet.assets) {
       if (a.isNative && a.network == net.id) {
         nativeAsset = a;
         break;
@@ -548,7 +530,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
     // since libwallet doesn't carry a logo URL for native assets.
     final isNativeSol = isNative && assetKey.startsWith('solana.');
 
-    for (final a in _assets) {
+    for (final a in wallet.assets) {
       if (a.key == assetKey) {
         return _TxTokenInfo(
           symbol: a.symbol,

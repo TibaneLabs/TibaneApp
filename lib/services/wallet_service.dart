@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
-import 'package:libwallet/libwallet.dart' show NetworkType, Transaction;
+import 'package:libwallet/libwallet.dart' show Asset, NetworkType, Transaction;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/solana_constants.dart';
@@ -60,12 +60,32 @@ class WalletService extends ChangeNotifier {
   BigInt _solBalance = BigInt.zero;
   BigInt _chiefPussyBalance = BigInt.zero;
 
+  // The current account's asset list (Ellipx AssetCubit equivalent, §4.4).
+  // WalletService is the SINGLE listener to libwallet's balance stream and the
+  // source of truth — screens read [assets] (and watch this notifier) instead
+  // of each subscribing to libwallet themselves. Loaded by refreshBalances on
+  // balanceTick / swap / account change.
+  List<Asset> _assets = const [];
+  List<Asset> get assets => _assets;
+
+  // True once the first balance/asset snapshot has loaded since launch, or
+  // there's genuinely no wallet. The startup splash (D16) gates on this;
+  // WalletService owns it because it's the one listening to libwallet.
+  bool _dataReady = false;
+  bool get dataReady => _dataReady;
+
   // Account-centric model (Ellipx-parity Phase 4b). Additive in this phase:
   // the active backend is still driven by [_kind]; [_currentAccount] reflects
   // it as a UnifiedAccount so the upcoming account switcher (4b-2) has data.
   static const _prefsCurrentAccountId = 'current_account_id';
   List<UnifiedAccount> _accounts = const [];
   UnifiedAccount? _currentAccount;
+
+  // True once tryRestore() has finished. Lets the startup splash (D16) tell
+  // "no wallet yet, restore pending" apart from "restored, genuinely no
+  // wallet" — the latter can reveal the app immediately.
+  bool _restored = false;
+  bool get hasRestored => _restored;
 
   // --- public API kept compatible with previous WalletService ---
 
@@ -155,8 +175,12 @@ class WalletService extends ChangeNotifier {
     _reconcileKind();
     if (isConnected) {
       refreshBalances();
+    } else {
+      // No wallet to load — nothing for the startup splash to wait on.
+      _dataReady = true;
     }
     unawaited(refreshAccounts());
+    _restored = true;
     notifyListeners();
   }
 
@@ -549,10 +573,12 @@ class WalletService extends ChangeNotifier {
             cpFiat = a.fiatAmount?.toDouble() ?? 0;
           }
         }
+        _assets = assets;
         _solBalance = sol;
         _chiefPussyBalance = cp;
         _solFiatUsd = solFiat;
         _chiefPussyFiatUsd = cpFiat;
+        _dataReady = true;
         notifyListeners();
         return;
       } catch (e) {
@@ -572,6 +598,7 @@ class WalletService extends ChangeNotifier {
       _chiefPussyBalance = cp;
       _solFiatUsd = 0;
       _chiefPussyFiatUsd = 0;
+      _dataReady = true;
       notifyListeners();
     } catch (e) {
       debugPrint('refreshBalances error: $e');
