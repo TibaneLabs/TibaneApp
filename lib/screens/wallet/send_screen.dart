@@ -3,11 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart'
-    show Amount, SigningKey, TransactionSimulation;
+    show Amount, Asset, Network, NetworkType, SigningKey, TransactionSimulation;
 import 'package:provider/provider.dart';
 
 import '../../constants/solana_constants.dart';
 import '../../services/jupiter_service.dart';
+import '../../services/wallet/send_asset.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
@@ -58,17 +59,32 @@ class _SendScreenState extends State<SendScreen> {
   int _decimals = 9;
   String? _imageUrl;
 
-  // Tokens to offer in the picker. Loaded once on mount; empty list
-  // until the fetch resolves (in which case the picker still shows the
-  // native SOL row built from [WalletService.solBalance]).
+  // The current account's network — drives the native asset's symbol/decimals
+  // and the per-chain asset key so send is correct on every chain (Phase 5a).
+  // Resolved authoritatively in _loadHoldings (the cached value can be stale).
+  Network? _net;
+  String _nativeSymbol = 'SOL';
+  int _nativeDecimals = 9;
+
+  // Tokens to offer in the picker. Loaded once on mount. Solana holdings come
+  // from Jupiter (broad SPL discovery); non-Solana from libwallet getAssets
+  // (chain-aware) — kept in [_assets] for the native balance too.
   final JupiterService _jupiter = JupiterService();
   List<TokenHolding> _holdings = [];
+  List<Asset> _assets = const [];
   bool _loadingHoldings = true;
+
+  bool get _isSolana => (_net?.type ?? NetworkType.solana) == NetworkType.solana;
 
   @override
   void initState() {
     super.initState();
+    _net = context.read<WalletService>().libwallet.currentNetwork;
     _mint = widget.mint;
+    // Safe Solana-first defaults. _loadHoldings resolves the real network and
+    // corrects native symbol/decimals per chain before the user can send — the
+    // cached network here can be a stale default (Ethereum/18) and must NOT be
+    // trusted for amount scaling.
     _symbol = widget.symbol ?? 'SOL';
     _decimals = widget.decimals ?? 9;
     _addrCtrl.addListener(_onAddrChanged);
@@ -92,34 +108,120 @@ class _SendScreenState extends State<SendScreen> {
       if (mounted) setState(() => _loadingHoldings = false);
       return;
     }
-    try {
-      // wsolMint is excluded so it doesn't duplicate the native SOL row
-      // the picker always renders from wallet.solBalance.
-      final holdings = await _jupiter.fetchHoldings(
-        addr,
-        excludeMint: wsolMint,
-      );
-      if (!mounted) return;
+    // Resolve the REAL active network before deriving native decimals/symbol or
+    // the asset key — the cached value can be a stale default and mis-scale the
+    // amount (a SOL send scaled by 18 instead of 9).
+    final net =
+        await wallet.libwallet.refreshCurrentNetwork() ??
+        wallet.libwallet.currentNetwork;
+    if (!mounted) return;
+    final type = net?.type.name ?? 'solana';
+    final isSolana = type == 'solana';
+    // Per-family fallback used until/unless the native asset's own decimals are
+    // available. The authoritative source is the native Asset's Amount.exp
+    // (resolved from getAssets below for non-Solana); Network.currencyDecimals
+    // is deliberately NOT used (it can report 18 for Solana on a stale net).
+    final fallbackDec = nativeDecimalsForType(type);
+    final fallbackSym = isSolana
+        ? 'SOL'
+        : (net != null && net.currencySymbol.isNotEmpty
+              ? net.currencySymbol
+              : 'ETH');
+    // Apply the resolved native metadata; update the live selection too when
+    // it's the native asset (not a caller-specified token).
+    void applyNative(int dec, String sym, VoidCallback rest) {
       setState(() {
-        _holdings = holdings;
-        _loadingHoldings = false;
-        // If we were opened for a specific SPL mint, pull its imageUrl
-        // from the freshly-loaded holdings so the selector chip shows a
-        // proper logo instead of the letter-placeholder.
-        if (_mint != null && _imageUrl == null) {
-          for (final h in holdings) {
-            if (h.mint == _mint) {
-              _imageUrl = h.imageUrl;
-              break;
+        _net = net;
+        _nativeSymbol = sym;
+        _nativeDecimals = dec;
+        if (widget.mint == null && _mint == null) {
+          _symbol = sym;
+          _decimals = dec;
+        }
+        rest();
+      });
+    }
+
+    try {
+      if (isSolana) {
+        // Solana: discover all SPL holdings via Jupiter (broader than the
+        // tracked-only getAssets). wsolMint is excluded so it doesn't
+        // duplicate the native SOL row the picker renders separately. Native
+        // SOL is 9 decimals (the fallback constant is authoritative here).
+        final holdings = await _jupiter.fetchHoldings(
+          addr,
+          excludeMint: wsolMint,
+        );
+        if (!mounted) return;
+        applyNative(fallbackDec, fallbackSym, () {
+          _holdings = holdings;
+          _loadingHoldings = false;
+          // If opened for a specific SPL mint, pull its imageUrl from the
+          // freshly-loaded holdings so the selector chip shows a proper logo.
+          if (_mint != null && _imageUrl == null) {
+            for (final h in holdings) {
+              if (h.mint == _mint) {
+                _imageUrl = h.imageUrl;
+                break;
+              }
             }
           }
+        });
+      } else {
+        // Non-Solana: libwallet getAssets is chain-aware. Its non-native
+        // entries are the token rows; the native one feeds the balance AND the
+        // authoritative native decimals (Amount.exp), with the constant as a
+        // fallback only if the native asset hasn't surfaced yet.
+        final assets = await wallet.libwallet.getAssets();
+        if (!mounted) return;
+        Asset? nativeAsset;
+        for (final a in assets) {
+          if (a.isNative && (net == null || a.network == net.id)) {
+            nativeAsset = a;
+            break;
+          }
         }
-      });
+        final dec = nativeAsset?.amount.exp ?? fallbackDec;
+        final sym = (nativeAsset != null && nativeAsset.symbol.isNotEmpty)
+            ? nativeAsset.symbol
+            : fallbackSym;
+        applyNative(dec, sym, () {
+          _assets = assets;
+          _holdings = [
+            for (final a in assets)
+              if (!a.isNative && (net == null || a.network == net.id))
+                TokenHolding(
+                  mint: mintFromAssetKey(a.key),
+                  symbol: a.symbol.isNotEmpty ? a.symbol : a.name,
+                  name: a.name,
+                  balance: a.amount.value,
+                  decimals: a.amount.exp,
+                  uiBalance: a.amount.toDouble(),
+                  valueUsd: a.fiatAmount?.toDouble(),
+                ),
+          ];
+          _loadingHoldings = false;
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _loadingHoldings = false);
       debugPrint('[send] holdings load failed: $e');
     }
+  }
+
+  /// UI balance of the current account's native asset, per chain. Solana uses
+  /// the cached SOL balance (populated before getAssets returns); other chains
+  /// read the native entry from getAssets.
+  double _nativeUiBalance(WalletService wallet) {
+    final net = _net;
+    if (net == null || net.type == NetworkType.solana) {
+      return wallet.solBalance.toDouble() / 1e9;
+    }
+    for (final a in _assets) {
+      if (a.isNative && a.network == net.id) return a.amount.toDouble();
+    }
+    return 0;
   }
 
   void _selectToken({
@@ -151,7 +253,11 @@ class _SendScreenState extends State<SendScreen> {
       builder: (ctx) => _SendTokenPicker(
         holdings: _holdings,
         loading: _loadingHoldings,
-        solBalance: wallet.solBalance,
+        nativeSymbol: _nativeSymbol,
+        nativeName: _isSolana ? 'Solana' : (_net?.name ?? _nativeSymbol),
+        nativeDecimals: _nativeDecimals,
+        nativeUiBalance: _nativeUiBalance(wallet),
+        nativeIconMint: _isSolana ? wsolMint : '',
         selectedMint: _mint,
         onSelect: (mint, symbol, decimals, imageUrl) {
           Navigator.pop(ctx);
@@ -245,13 +351,13 @@ class _SendScreenState extends State<SendScreen> {
     }
   }
 
-  /// Asset key passed to libwallet (`solana.mainnet.<mint>`) when an
-  /// SPL mint is selected, else null for the native-SOL path.
-  String? get _assetKey {
-    final mint = _mint;
-    if (mint == null) return null;
-    return 'solana.mainnet.$mint';
-  }
+  /// Asset key passed to libwallet for the selected token, derived per chain
+  /// (`<type>.<chainId>.<mint>`); null for the native path. See [sendAssetKey].
+  String? get _assetKey => sendAssetKey(
+    mint: _mint,
+    networkType: _net?.type.name ?? 'solana',
+    chainId: _net?.chainId ?? 'mainnet',
+  );
 
   Future<void> _send() async {
     final typed = _addrCtrl.text.trim();
@@ -260,7 +366,7 @@ class _SendScreenState extends State<SendScreen> {
         ? _resolvedAddress!
         : typed;
     if (addr.length < 32) {
-      setState(() => _error = 'Enter a valid Solana address');
+      setState(() => _error = 'Enter a valid recipient address');
       return;
     }
     final amountFloat = parseAmount(_amountCtrl.text);
@@ -452,7 +558,7 @@ class _SendScreenState extends State<SendScreen> {
   /// (reactive) wallet balance, an SPL token from the loaded holdings.
   /// Null while SPL holdings are still loading / not found.
   double? _selectedBalance(WalletService wallet) {
-    if (_mint == null) return wallet.solBalance.toDouble() / 1e9;
+    if (_mint == null) return _nativeUiBalance(wallet);
     for (final h in _holdings) {
       if (h.mint == _mint) return h.uiBalance;
     }
@@ -485,7 +591,7 @@ class _SendScreenState extends State<SendScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _TokenSelector(
-                  mint: _mint,
+                  iconMint: _mint ?? (_isSolana ? wsolMint : ''),
                   symbol: _symbol,
                   imageUrl: _imageUrl,
                   loading: _loadingHoldings,
@@ -786,14 +892,14 @@ class _SendReviewSheet extends StatelessWidget {
 /// Tap target at the top of the send screen showing which token is
 /// active. Acts like a dropdown — pressing it opens the picker sheet.
 class _TokenSelector extends StatelessWidget {
-  final String? mint;
+  final String iconMint;
   final String symbol;
   final String? imageUrl;
   final bool loading;
   final VoidCallback? onTap;
 
   const _TokenSelector({
-    required this.mint,
+    required this.iconMint,
     required this.symbol,
     required this.imageUrl,
     required this.loading,
@@ -802,10 +908,8 @@ class _TokenSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // TokenIcon's wsolMint branch picks up the bundled sol.png; for the
-    // null-mint native-SOL state we hand it wsolMint so the same logo
-    // wins, rather than the letter-S placeholder.
-    final iconMint = mint ?? wsolMint;
+    // Solana native uses wsolMint so the bundled sol.png logo wins; other
+    // chains pass '' and fall back to the symbol placeholder.
     return TibaneCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       onTap: onTap,
@@ -866,10 +970,14 @@ class _TokenSelector extends StatelessWidget {
 class _SendTokenPicker extends StatelessWidget {
   final List<TokenHolding> holdings;
   final bool loading;
-  final BigInt solBalance;
+  final String nativeSymbol;
+  final String nativeName;
+  final int nativeDecimals;
+  final double nativeUiBalance;
+  final String nativeIconMint;
   final String? selectedMint;
 
-  /// `mint` is null for the native SOL row, the SPL mint otherwise.
+  /// `mint` is null for the native row, the token mint/contract otherwise.
   final void Function(
     String? mint,
     String symbol,
@@ -881,7 +989,11 @@ class _SendTokenPicker extends StatelessWidget {
   const _SendTokenPicker({
     required this.holdings,
     required this.loading,
-    required this.solBalance,
+    required this.nativeSymbol,
+    required this.nativeName,
+    required this.nativeDecimals,
+    required this.nativeUiBalance,
+    required this.nativeIconMint,
     required this.selectedMint,
     required this.onSelect,
   });
@@ -920,12 +1032,12 @@ class _SendTokenPicker extends StatelessWidget {
                 if (index == 0) {
                   return _row(
                     mint: null,
-                    symbol: 'SOL',
-                    name: 'Solana',
+                    symbol: nativeSymbol,
+                    name: nativeName,
                     imageUrl: null,
-                    iconMint: wsolMint,
-                    decimals: 9,
-                    uiBalance: solBalance.toDouble() / 1e9,
+                    iconMint: nativeIconMint,
+                    decimals: nativeDecimals,
+                    uiBalance: nativeUiBalance,
                     valueUsd: null,
                     selected: selectedMint == null,
                   );
