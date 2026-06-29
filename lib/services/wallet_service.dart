@@ -25,6 +25,24 @@ WalletKind _parseKind(String? s) => switch (s) {
 
 String _kindToString(WalletKind k) => k == WalletKind.inapp ? 'inapp' : 'mwa';
 
+/// Resolve the effective backend kind. If MWA is selected but not connected
+/// while an in-app wallet is available, fall back to in-app — otherwise the
+/// app gets stuck showing "Connect" (active = the disconnected MWA backend)
+/// even though a usable in-app wallet is loaded. Happens when a cancelled
+/// "Connect external" left `wallet_backend=mwa` persisted, or an MWA session
+/// didn't restore. Otherwise [kind] is unchanged.
+@visibleForTesting
+WalletKind reconcileWalletKind({
+  required WalletKind kind,
+  required bool mwaConnected,
+  required bool inAppHasWallet,
+}) {
+  if (kind == WalletKind.mwa && !mwaConnected && inAppHasWallet) {
+    return WalletKind.inapp;
+  }
+  return kind;
+}
+
 /// Façade that routes every wallet call to the active [WalletBackend]. Screens
 /// and auth flows continue to use this class; only the backends change.
 class WalletService extends ChangeNotifier {
@@ -64,6 +82,11 @@ class WalletService extends ChangeNotifier {
   /// The account that signs right now, as a [UnifiedAccount]. Reflects the
   /// active backend; null when no account is resolved yet.
   UnifiedAccount? get currentAccount => _currentAccount;
+
+  /// Whether to show Solana-only features (Staking, Incinerator) for the
+  /// current account. False only when the current account is a known
+  /// non-Solana (e.g. an EVM in-app account); see [solanaOnlyFeaturesEnabled].
+  bool get solanaFeaturesEnabled => solanaOnlyFeaturesEnabled(_currentAccount);
 
   /// Direct access to specific backends for setup flows (create wallet, unlock).
   MwaWalletBackend get mwa => _mwa;
@@ -127,6 +150,9 @@ class WalletService extends ChangeNotifier {
     // cold start — ensureSolanaDefault no-ops once the user has
     // explicitly picked a network via NetworksScreen.
     unawaited(_libwallet.ensureSolanaDefault());
+    // A persisted `mwa` selection with no restored MWA session would leave the
+    // app stuck on "Connect" despite an in-app wallet being present — fall back.
+    _reconcileKind();
     if (isConnected) {
       refreshBalances();
     }
@@ -587,10 +613,31 @@ class WalletService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Fix a stale active-backend selection in place: see [reconcileWalletKind].
+  /// Persists the corrected kind. Does NOT notify (callers do).
+  void _reconcileKind() {
+    final resolved = reconcileWalletKind(
+      kind: _kind,
+      mwaConnected: _mwa.isConnected,
+      inAppHasWallet: _libwallet.publicKey != null,
+    );
+    if (resolved == _kind) return;
+    _kind = resolved;
+    unawaited(
+      SharedPreferences.getInstance().then(
+        (p) => p.setString('wallet_backend', _kindToString(resolved)),
+      ),
+    );
+  }
+
   // Last active address we reacted to — drives reset + re-auth on change.
   String? _lastAddress;
 
   void _onBackendChanged() {
+    // Recover from a stale `mwa` selection (e.g. MWA disconnected, or an
+    // in-app switch happened via a path that didn't update _kind) so the
+    // app-bar button + active backend track the usable wallet.
+    _reconcileKind();
     final addr = active.publicKey;
     if (addr != _lastAddress) {
       _lastAddress = addr;
