@@ -15,6 +15,7 @@ import 'creation.dart';
 import 'migration.dart';
 import 'secure_keystore.dart';
 import 'signing.dart';
+import 'unified_account.dart' show isUsableAccount;
 import 'wallet_backend.dart';
 
 /// Minimal token result shape returned by
@@ -215,6 +216,13 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// Set the current network by its libwallet id. Notifies listeners on
   /// success so dependent UI can refresh. Records that the user has made
   /// a deliberate choice so we don't auto-override it later.
+  /// All networks libwallet knows about (for the network picker, incl. the
+  /// compatible-network prompt on a cross-chain account switch).
+  Future<List<Network>> listNetworks() async {
+    final client = await _getClient();
+    return client.networks.list();
+  }
+
   Future<bool> setCurrentNetwork(String networkId) async {
     try {
       final client = await _getClient();
@@ -1523,7 +1531,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// otherwise → ethereum). Creating a mismatched account type makes
   /// libwallet's TSS layer derive the wrong key type and crash.
   Future<Account> _resolveAccount(LibwalletClient client, Wallet wallet) async {
-    final accounts = await client.accounts.list(wallet: wallet.id);
+    final all = await client.accounts.list(wallet: wallet.id);
+    // Ignore phantom accounts (curve/type mismatch, non-0x EVM address, or
+    // "N/A" — see [isUsableAccount]) so a wallet switch never lands on one;
+    // they'd resolve `_publicKey` to "N/A".
+    final accounts = all.where((a) => isUsableAccount(a, wallet)).toList();
     if (accounts.isNotEmpty) {
       for (final a in accounts) {
         if (a.type == 'solana') return a;

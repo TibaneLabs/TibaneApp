@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:libwallet/libwallet.dart';
 
 import '../../screens/walletconnect/wc_proposal_sheet.dart';
+import 'accounts_service.dart';
 import 'libwallet_backend.dart';
 
 /// Manages the libwallet WalletConnect v2 relay lifecycle and routes
@@ -15,11 +16,16 @@ class WalletConnectBridge extends ChangeNotifier {
   WalletConnectBridge({
     required this.client,
     required this.backend,
+    required this.accounts,
     required this.rootNavigatorKey,
   });
 
   final LibwalletClient client;
   final LibwalletBackend backend;
+
+  /// Single source of truth for the account list (already filtered of phantom
+  /// accounts) — never enumerate `client.accounts.list()` directly.
+  final AccountsService accounts;
   final GlobalKey<NavigatorState> rootNavigatorKey;
 
   StreamSubscription<WcSessionProposal>? _propSub;
@@ -153,9 +159,12 @@ class WalletConnectBridge extends ChangeNotifier {
   ) async {
     final out = <WcCandidateAccount>[];
     try {
-      final accounts = await client.accounts.list();
+      // Refresh the single source, then enumerate its filtered list (WC is
+      // in-app/libwallet only, so preferMwa: false).
+      await accounts.refresh(preferMwa: false);
+      final candidates = accounts.rawAccounts;
       final wanted = _requestedNamespaces(p);
-      for (final acct in accounts) {
+      for (final acct in candidates) {
         final ns = _accountNamespace(acct.type);
         if (ns == null) continue;
         final chains = wanted[ns];

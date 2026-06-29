@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:libwallet/libwallet.dart' show Network;
 import 'package:provider/provider.dart';
 
 import '../../../services/wallet/unified_account.dart';
@@ -28,6 +29,124 @@ Future<void> showAccountSwitcher(BuildContext context) {
 String _short(String addr) => addr.length > 12
     ? '${addr.substring(0, 4)}...${addr.substring(addr.length - 4)}'
     : addr;
+
+/// Switch the active account. When the target is on a different chain than the
+/// current network (its address only works on a matching network), first prompt
+/// for a compatible network to connect on. Closes the switcher on success.
+Future<void> _switchAccount(
+  BuildContext context,
+  WalletService wallet,
+  UnifiedAccount account,
+) async {
+  final nav = Navigator.of(context);
+  final messenger = ScaffoldMessenger.of(context);
+  final net = wallet.libwallet.currentNetwork;
+  String? networkId;
+  if (net == null || !accountMatchesNetwork(account, net.type)) {
+    List<Network> compatible;
+    try {
+      compatible = networksForAccount(
+        account,
+        await wallet.libwallet.listNetworks(),
+      );
+    } catch (_) {
+      compatible = const [];
+    }
+    if (!context.mounted) return;
+    if (compatible.isEmpty) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('No ${chainLabel(account.chain)} network available'),
+        ),
+      );
+      return;
+    }
+    final picked = await _showNetworkConnectSheet(context, account, compatible);
+    if (picked == null || !context.mounted) return; // cancelled
+    networkId = picked.id;
+  }
+  // setCurrentAccount switches the network (picked or auto) BEFORE resolving the
+  // account, so the address resolves on the matching chain.
+  final ok = await wallet.setCurrentAccount(account, networkId: networkId);
+  if (!context.mounted) return;
+  if (ok) {
+    nav.pop();
+  } else {
+    messenger.showSnackBar(
+      SnackBar(content: Text(wallet.libwallet.error ?? 'Could not switch account')),
+    );
+  }
+}
+
+/// Bottom sheet listing the networks compatible with [account]'s chain, so the
+/// user picks which to connect on (cross-chain account switch). Returns the
+/// chosen network, or null if dismissed.
+Future<Network?> _showNetworkConnectSheet(
+  BuildContext context,
+  UnifiedAccount account,
+  List<Network> networks,
+) {
+  return showModalBottomSheet<Network>(
+    context: context,
+    backgroundColor: TibaneColors.card,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: TibaneColors.textDim,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Select ${chainLabel(account.chain)} network',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'This account connects on a ${chainLabel(account.chain)} network — '
+              'pick one to continue.',
+              style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            for (final n in networks)
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                leading: const Icon(Icons.lan_outlined, color: TibaneColors.orange),
+                title: Text(
+                  n.name,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  n.testNet ? '${n.currencySymbol} · testnet' : n.currencySymbol,
+                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  color: TibaneColors.textDim,
+                  size: 18,
+                ),
+                onTap: () => Navigator.pop(ctx, n),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 
 class AccountSwitcherSheet extends StatelessWidget {
   const AccountSwitcherSheet({super.key});
@@ -251,13 +370,7 @@ class _AccountTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: isCurrent
-              ? null
-              : () async {
-                  final nav = Navigator.of(context);
-                  final ok = await wallet.setCurrentAccount(account);
-                  if (ok && nav.mounted) nav.pop();
-                },
+          onTap: isCurrent ? null : () => _switchAccount(context, wallet, account),
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Row(
@@ -291,11 +404,24 @@ class _AccountTile extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        '${chainLabel(account.chain)} · ${_short(account.address)}',
-                        style: monoStyle(
-                          fontSize: 11,
-                          color: TibaneColors.textMuted,
+                      Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: chainLabel(account.chain),
+                              style: monoStyle(
+                                fontSize: 11,
+                                color: chainColor(account.chain),
+                              ).copyWith(fontWeight: FontWeight.w600),
+                            ),
+                            TextSpan(
+                              text: ' · ${_short(account.address)}',
+                              style: monoStyle(
+                                fontSize: 11,
+                                color: TibaneColors.textMuted,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
