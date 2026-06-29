@@ -15,6 +15,8 @@ import '../services/rpc_service.dart';
 import '../services/tx_confirmation.dart';
 import '../services/uk_compliance_service.dart';
 import '../services/wallet/libwallet_backend.dart' show TokenSearchResult;
+import '../services/wallet/send_asset.dart' show mintFromAssetKey;
+import '../services/wallet/swap_asset.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/gradient_button.dart';
@@ -170,6 +172,16 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     if (wallet == null || !wallet.isConnected) return;
     _loadHoldings();
   }
+
+  /// Network family of the current account; Solana-first when unresolved.
+  lw.NetworkType get _netType =>
+      _wallet?.libwallet.currentNetwork?.type ?? lw.NetworkType.solana;
+
+  bool get _isSolana => _netType == lw.NetworkType.solana;
+
+  /// The mint the swap UI uses for this chain's native asset (Solana wSOL,
+  /// else the 'NATIVE' sentinel).
+  String get _nativeMint => nativeSwapMint(_netType);
 
   void _onWalletChanged() {
     final wallet = context.read<WalletService>();
@@ -372,16 +384,28 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
 
+    // The default output (ChiefPussy) is a Solana token — invalid on other
+    // chains. Clear it on non-Solana (unless the caller specified an output)
+    // so the user picks a token valid for this chain.
+    if (!_isSolana &&
+        widget.initialOutputMint == null &&
+        _selectedOutput?.mint == chiefPussyMint) {
+      _selectedOutput = null;
+      _outputImageUrl = null;
+    }
+
     setState(() {
       _loadingHoldings = true;
       _error = null;
     });
 
     try {
-      final holdings = await _jupiter.fetchHoldings(
-        wallet.publicKey!,
-        excludeMint: _selectedOutput?.mint,
-      );
+      final holdings = _isSolana
+          ? await _jupiter.fetchHoldings(
+              wallet.publicKey!,
+              excludeMint: _selectedOutput?.mint,
+            )
+          : await _holdingsFromLibwallet(wallet, excludeMint: _selectedOutput?.mint);
       if (!mounted) return;
       setState(() {
         _holdings = holdings;
@@ -418,6 +442,36 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         _loadingHoldings = false;
       });
     }
+  }
+
+  /// Non-Solana input holdings from libwallet `getAssets` (chain-aware): the
+  /// native asset (mint = the OKX `'NATIVE'` sentinel) + each token (mint = its
+  /// contract), with real on-chain decimals. Jupiter is Solana-only, so this is
+  /// the EVM/other-chain equivalent.
+  Future<List<TokenHolding>> _holdingsFromLibwallet(
+    WalletService wallet, {
+    String? excludeMint,
+  }) async {
+    final net = wallet.libwallet.currentNetwork;
+    final assets = await wallet.libwallet.getAssets();
+    final out = <TokenHolding>[];
+    for (final a in assets) {
+      if (net != null && a.network != net.id) continue;
+      final mint = a.isNative ? evmNativeSwapMint : mintFromAssetKey(a.key);
+      if (mint.isEmpty || mint == excludeMint) continue;
+      out.add(
+        TokenHolding(
+          mint: mint,
+          symbol: a.symbol.isNotEmpty ? a.symbol : a.name,
+          name: a.name,
+          balance: a.amount.value,
+          decimals: a.amount.exp,
+          uiBalance: a.amount.toDouble(),
+          valueUsd: a.fiatAmount?.toDouble(),
+        ),
+      );
+    }
+    return out;
   }
 
   Future<void> _fetchQuote() async {
@@ -499,11 +553,11 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     // succeed we surface the first error's message.
     final attempts = await client.swap.quotes(
       tokenIn: SwapTokenRef(
-        address: inputMint == wsolMint ? 'NATIVE' : inputMint,
+        address: swapTokenAddress(inputMint, nativeMint: _nativeMint),
         decimals: _selectedInput!.decimals,
       ),
       tokenOut: SwapTokenRef(
-        address: outputMint == wsolMint ? 'NATIVE' : outputMint,
+        address: swapTokenAddress(outputMint, nativeMint: _nativeMint),
         decimals: _outputDecimals,
       ),
       amountIn: rawAmount.toString(),
@@ -553,22 +607,22 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         final client = await wallet.libwallet.ensureClient();
         final quote = await client.swap.maxSpendable(
           tokenIn: SwapTokenRef(
-            address: _selectedInput!.mint == wsolMint
-                ? 'NATIVE'
-                : _selectedInput!.mint,
+            address: swapTokenAddress(
+              _selectedInput!.mint,
+              nativeMint: _nativeMint,
+            ),
             decimals: _selectedInput!.decimals,
             symbol: _selectedInput!.symbol,
           ),
           tokenOut: SwapTokenRef(
-            address: _selectedOutput!.mint == wsolMint
-                ? 'NATIVE'
-                : _selectedOutput!.mint,
-            // Output decimals aren't tracked on _SwapToken; the swap RPC
-            // only uses tokenOut.decimals for output-amount formatting,
-            // which we don't read out of the maxSpendable response — pass
-            // a reasonable default. SOL is 9; most SPL tokens we surface
-            // (USDC, USDT, pump.fun) are 6.
-            decimals: _selectedOutput!.mint == wsolMint ? 9 : 6,
+            // tokenOut.decimals is only used for output-amount formatting (we
+            // don't read it out of the maxSpendable response); _outputDecimals
+            // tracks the selected token's real decimals.
+            address: swapTokenAddress(
+              _selectedOutput!.mint,
+              nativeMint: _nativeMint,
+            ),
+            decimals: _outputDecimals,
             symbol: _selectedOutput!.symbol,
           ),
           from: wallet.publicKey,
@@ -626,6 +680,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     final outputAmount = _quoteOutUi ?? 0;
     final outputMint = _selectedOutput?.mint;
 
+    final viaOkx = _lwQuote != null;
     setState(() {
       _swapping = true;
       _error = null;
@@ -633,13 +688,31 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
     try {
       String signature;
-      if (_lwQuote != null) {
+      if (viaOkx) {
         signature = await _executeSwapLibwallet(wallet, auth);
       } else {
         signature = await _executeSwapJupiter(wallet, auth);
       }
-
       if (!mounted) return;
+
+      // Confirm the swap actually LANDED before declaring success. OKX can
+      // return a hash for an order it never lands on-chain ("phantom success"),
+      // which would otherwise show a success modal while no funds moved. On
+      // Solana we verify the signature confirms; if it doesn't, surface a
+      // failure and DON'T clear the input. (Jupiter is Solana too; EVM/OKX
+      // confirmation isn't wired yet, so non-Solana keeps the prior behavior.)
+      final isSolanaSwap = viaOkx ? _isSolana : true;
+      if (isSolanaSwap && !await _confirmLanded(signature)) {
+        if (!mounted) return;
+        setState(
+          () => _error =
+              'Swap was not confirmed on-chain — your funds were not '
+              'moved. Please try again.',
+        );
+        return;
+      }
+      if (!mounted) return;
+
       setState(() {
         _jupiterQuote = null;
         _lwQuote = null;
@@ -699,6 +772,26 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       if (mounted) {
         setState(() => _swapping = false);
       }
+    }
+  }
+
+  /// Confirm a Solana swap signature actually landed on-chain — the guard
+  /// against OKX "phantom successes" (a hash returned for an order that never
+  /// lands). Returns false on timeout/error so the caller reports a failure
+  /// rather than a fake success.
+  Future<bool> _confirmLanded(String signature) async {
+    if (signature.isEmpty) return false;
+    final rpc = RpcService();
+    try {
+      return await rpc.confirmTransaction(
+        signature,
+        timeout: const Duration(seconds: 25),
+      );
+    } catch (e) {
+      debugPrint('[swap.exec] confirm error: $e');
+      return false;
+    } finally {
+      rpc.dispose();
     }
   }
 
@@ -781,7 +874,16 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
               ),
             )
             .toList();
+    debugPrint(
+      '[swap.exec] execute quoteId=${q.quoteId} '
+      'provider=${q.provider} net=${wallet.libwallet.currentNetwork?.id} '
+      'in=${q.amountIn} out=${q.amountOut} keys=${keys.length}',
+    );
     final result = await client.swap.execute(quoteId: q.quoteId, keys: keys);
+    debugPrint(
+      '[swap.exec] RESULT hash=${result.hash} orderId=${result.orderId} '
+      'provider=${result.provider} chain=${result.chain} url=${result.url}',
+    );
     return result.hash;
   }
 
@@ -861,6 +963,8 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       ),
       isScrollControlled: true,
       builder: (context) => _OutputTokenPicker(
+        isSolana: _isSolana,
+        evmTokens: _isSolana ? const <TokenHolding>[] : _holdings,
         onSelect: (mint, symbol, name, imageUrl, decimals) {
           Navigator.pop(context);
           setState(() {
@@ -1603,7 +1707,17 @@ class _OutputTokenPicker extends StatefulWidget {
   )
   onSelect;
 
-  const _OutputTokenPicker({required this.onSelect});
+  /// Solana shows the curated `commonTokens` list + Helius mint-paste; other
+  /// chains show the account's [evmTokens] (from libwallet getAssets) and
+  /// resolve a pasted contract via libwallet (chain-aware).
+  final bool isSolana;
+  final List<TokenHolding> evmTokens;
+
+  const _OutputTokenPicker({
+    required this.onSelect,
+    required this.isSolana,
+    required this.evmTokens,
+  });
 
   @override
   State<_OutputTokenPicker> createState() => _OutputTokenPickerState();
@@ -1618,6 +1732,29 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
   /// [TokenSearch] awaits the returned future and drives its suffix
   /// spinner for the duration, so no local loading flag is needed.
   Future<void> _selectByMint(String mint) async {
+    // Non-Solana: resolve the pasted contract via libwallet (chain-aware) —
+    // the Helius RpcService path below is Solana-only.
+    if (!widget.isSolana) {
+      final meta = await context
+          .read<WalletService>()
+          .libwallet
+          .resolveTokenByAddress(mint);
+      if (!mounted) return;
+      if (meta == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Token not found on this network')),
+        );
+        return;
+      }
+      widget.onSelect(
+        mint,
+        meta.symbol.isNotEmpty ? meta.symbol : shortenAddress(mint),
+        meta.name.isNotEmpty ? meta.name : mint,
+        null,
+        meta.decimals,
+      );
+      return;
+    }
     final rpc = RpcService();
     try {
       final meta = await rpc.getAsset(mint);
@@ -1691,7 +1828,8 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
               scrollController: scrollController,
               onResultSelected: _selectResult,
               onMintSubmitted: _selectByMint,
-              emptyBody: ListView(
+              emptyBody: widget.isSolana
+                  ? ListView(
                 controller: scrollController,
                 children: [
                   Padding(
@@ -1779,11 +1917,53 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
                         ),
                   ],
                 ],
-              ),
+              )
+                  : _evmEmptyBody(scrollController),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// Empty-state body for non-Solana chains: the account's held tokens (from
+  /// libwallet getAssets, passed in) — there's no curated list for EVM, so a
+  /// pasted contract (resolved via libwallet) or a held token are the options.
+  Widget _evmEmptyBody(ScrollController scrollController) {
+    final tokens = widget.evmTokens;
+    return ListView(
+      controller: scrollController,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Text(
+            tokens.isEmpty ? 'PASTE A TOKEN ADDRESS ABOVE' : 'YOUR TOKENS',
+            style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+          ),
+        ),
+        for (final h in tokens)
+          ListTile(
+            leading: TokenIcon(
+              imageUrl: h.imageUrl,
+              mint: h.mint,
+              symbol: h.symbol,
+              size: 36,
+            ),
+            title: Text(
+              h.symbol,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              h.name,
+              style: const TextStyle(
+                color: TibaneColors.textMuted,
+                fontSize: 12,
+              ),
+            ),
+            onTap: () =>
+                widget.onSelect(h.mint, h.symbol, h.name, h.imageUrl, h.decimals),
+          ),
+      ],
     );
   }
 }

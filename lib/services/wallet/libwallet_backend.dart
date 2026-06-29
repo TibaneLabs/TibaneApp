@@ -1823,6 +1823,30 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     return client.assets.list(convert: convert);
   }
 
+  /// Resolve an arbitrary token's metadata by contract/mint on the CURRENT
+  /// network (chain-aware, via `tokens.discover`) — used by the swap output
+  /// picker to resolve a pasted address on non-Solana chains, where the
+  /// Solana Helius `RpcService.getAsset` path doesn't apply. Returns null if
+  /// it can't resolve (unknown contract, missing decimals, error).
+  Future<({String symbol, String name, int decimals})?> resolveTokenByAddress(
+    String address,
+  ) async {
+    try {
+      final client = await _getClient();
+      final net = _currentNetwork ?? await client.networks.getCurrent();
+      _currentNetwork = net;
+      final d = await client.tokens.discover(
+        network: '${net.type.name}.${net.chainId}',
+        address: address,
+      );
+      if (d.decimals < 0) return null;
+      return (symbol: d.symbol, name: d.name, decimals: d.decimals);
+    } catch (e) {
+      debugPrint('resolveTokenByAddress($address): $e');
+      return null;
+    }
+  }
+
   /// List recent transactions, newest first. When [forAddress] is
   /// provided, only rows where the address appears as sender OR
   /// recipient are returned — libwallet's local transaction table is
