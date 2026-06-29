@@ -35,6 +35,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
   StreamSubscription<TxHistoryUpdatedEvent>? _txHistorySub;
   WalletService? _walletRef;
   final JupiterService _jupiter = JupiterService();
+  Timer? _balanceDebounce;
   int _selectedTab = 0; // 0 = Tokens, 1 = Activity
 
   @override
@@ -52,6 +53,13 @@ class _WalletDashboardState extends State<WalletDashboard> {
     _subscribeHistory();
     // Reload on every "tx just committed" event from the swap/send flows.
     _walletRef!.swapCommittedTick.addListener(_onTxCommitted);
+    // Reload when libwallet's balance snapshot lands. getAssets() at mount can
+    // run before the snapshot (and before the network resolves on cold start),
+    // returning stale/zero amounts; the balanceTick fires when the real
+    // balances arrive, so reload then instead of waiting for a manual refresh.
+    // Debounced because the snapshot can emit a short burst; libwallet stops
+    // ticking once balances stabilize, so this self-terminates.
+    _walletRef!.libwallet.balanceTick.addListener(_onBalanceChanged);
     // Register any on-chain tokens libwallet's auto-discovery missed so
     // they appear in the TOKENS section. Runs concurrently with the
     // initial _loadData; if any new mints land, it bumps
@@ -62,6 +70,14 @@ class _WalletDashboardState extends State<WalletDashboard> {
   void _onTxCommitted() {
     if (!mounted) return;
     _loadData();
+  }
+
+  void _onBalanceChanged() {
+    if (!mounted) return;
+    _balanceDebounce?.cancel();
+    _balanceDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) _loadData();
+    });
   }
 
   /// Listen for libwallet's tx-history backfill events. Fires whenever the
@@ -89,7 +105,9 @@ class _WalletDashboardState extends State<WalletDashboard> {
   @override
   void dispose() {
     _txHistorySub?.cancel();
+    _balanceDebounce?.cancel();
     _walletRef?.swapCommittedTick.removeListener(_onTxCommitted);
+    _walletRef?.libwallet.balanceTick.removeListener(_onBalanceChanged);
     _jupiter.dispose();
     super.dispose();
   }
