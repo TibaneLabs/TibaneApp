@@ -162,6 +162,14 @@ UnifiedAccount? addAccountTarget(
 /// number of accounts the wallet already has).
 String suggestAccountName(int existingCount) => 'Account ${existingCount + 1}';
 
+/// Whether Solana-only features (Staking, Incinerator — both are Solana
+/// programs / SPL operations) should be offered for [current]. True when the
+/// current account is Solana, or when there's no current account yet (Tibane is
+/// Solana-first, so the tools stay visible until we know it's a non-Solana
+/// account — the disconnected UI prompts connect on use).
+bool solanaOnlyFeaturesEnabled(UnifiedAccount? current) =>
+    current == null || current.isSolana;
+
 /// Human label for a chain `type`.
 String chainLabel(String chain) {
   switch (chain) {

@@ -249,4 +249,33 @@ void main() {
       expect(chainLabel(''), '');
     });
   });
+
+  group('solanaOnlyFeaturesEnabled (chain gating)', () {
+    final solana = buildUnifiedAccounts(
+      inappAccounts: [_acct(id: 'a1', wallet: 'w1', type: 'solana')],
+      walletsById: {'w1': _wallet(id: 'w1')},
+    ).single;
+    final eth = buildUnifiedAccounts(
+      inappAccounts: [_acct(id: 'a2', wallet: 'w2', type: 'ethereum')],
+      walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+    ).single;
+    final mwa = buildUnifiedAccounts(
+      inappAccounts: const [],
+      walletsById: const {},
+      mwaAddress: 'M',
+    ).single;
+
+    test('enabled for a Solana account', () {
+      expect(solanaOnlyFeaturesEnabled(solana), isTrue);
+    });
+    test('enabled for the MWA account (Seed Vault is Solana)', () {
+      expect(solanaOnlyFeaturesEnabled(mwa), isTrue);
+    });
+    test('enabled when no account yet (Solana-first default)', () {
+      expect(solanaOnlyFeaturesEnabled(null), isTrue);
+    });
+    test('disabled for a known non-Solana (EVM) account', () {
+      expect(solanaOnlyFeaturesEnabled(eth), isFalse);
+    });
+  });
 }
