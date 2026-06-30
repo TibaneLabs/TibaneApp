@@ -9,21 +9,6 @@ import 'package:libwallet/libwallet.dart' show Wallet, WalletKey;
 /// the biometric/keystore reads, and the real libwallet signature are
 /// device-verified.
 
-/// Feature flag for the lockless, per-transaction signing path.
-///
-/// When `false` (the shipped default), signing keeps using the app-level
-/// `unlock()` session + cached `_signingKeys()`. When `true`, the wired flows
-/// collect shares per transaction via the sign sheet instead. Phase 1 ships
-/// this OFF (the new path is present but dormant, in parallel — §7).
-///
-/// Phase 4a: lockless signing is now the DEFAULT — switching is free and every
-/// signature is authorized per-transaction via the sign sheet. The legacy
-/// unlock/cached-session path is still reachable for fallback testing via
-/// `--dart-define=LOCKLESS_SIGNING=false`, and is deleted entirely in 4a-4.
-/// (Environment-based so the legacy branches aren't flagged as dead code.)
-const bool kLocklessSigning =
-    bool.fromEnvironment('LOCKLESS_SIGNING', defaultValue: true);
-
 /// Number of key shares libwallet needs to produce a signature: `threshold + 1`.
 ///
 /// S1 is resolved (§3.2): `Wallet.threshold` is the (t,n) "max shares that may
@@ -51,13 +36,7 @@ bool canAssembleThreshold(Wallet wallet) =>
 bool signSheetReady(int collectedCount, int threshold) =>
     collectedCount >= requiredSigningShares(threshold);
 
-/// Whether a sign should authorize per-transaction via the sheet (Phase 4a):
-/// only for in-app wallets, and only under lockless signing OR when the wallet
-/// has no StoreKey (a D5 committee the cached path can't sign). MWA always
-/// takes the legacy path (Seed Vault does its own auth).
-bool useSignSheetFor({
-  required bool isInApp,
-  required bool lockless,
-  required bool walletRequiresSheet,
-}) =>
-    isInApp && (lockless || walletRequiresSheet);
+/// Whether a sign should authorize per-transaction via the sign sheet: every
+/// in-app wallet does (signing is always lockless / per-transaction now). MWA
+/// signs through Seed Vault's own auth, never the sheet.
+bool useSignSheetFor({required bool isInApp}) => isInApp;

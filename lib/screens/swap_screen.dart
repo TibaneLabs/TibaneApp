@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' as lw;
-import 'package:libwallet/libwallet.dart' show SwapTokenRef, SigningKey;
+import 'package:libwallet/libwallet.dart' show SwapTokenRef;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -110,6 +110,25 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
   bool _walletWasConnected = false;
 
+  // Slippage tolerance (basis points) passed to swap.quotes(). Default 1%.
+  // A too-tight tolerance reverts thin-route Solana swaps on-chain with
+  // `custom program error: 0xb` (min-output check) — see libwallet 0.4.72.
+  // The user can raise it for illiquid pairs via the slippage selector.
+  int _slippageBps = 100;
+  static const _slippagePresets = <int>[50, 100, 300];
+
+  static const _swapNotConfirmedMsg =
+      'Swap was not confirmed on-chain — your funds were not moved. '
+      'Please try again.';
+
+  // Cached `maxSpendable` (UI units) for the current native-SOL input + the
+  // mint it was computed for. The displayed SOL holding is over-reserved (a
+  // flat 0.01 SOL via Jupiter's fetchHoldings) vs libwallet's precise
+  // `maxSpendable`, so validating native-SOL amounts against the raw balance
+  // falsely rejects the Max value. We validate against this instead.
+  double? _maxSpendableUi;
+  String? _maxSpendableForMint;
+
   // Swap availability on the active network (per libwallet's policy).
   lw.SwapAvailability? _swapAvailability;
   bool _checkingAvailability = false;
@@ -123,34 +142,39 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     super.initState();
     _amountController.addListener(_onAmountChanged);
 
-    // Default output: ChiefPussy unless caller overrode it. Callers that
-    // know the token's metadata (staking detail, token-row tap, etc.)
-    // should pass it in so the picker displays the right name/icon
-    // immediately. The libwallet quote will replace decimals with the
-    // authoritative value once it lands.
-    //
-    // When the caller passes an output mint without its symbol / name
-    // (e.g. the wallet dashboard's tap-to-swap-to-SOL shortcut), fall
-    // back to the curated commonTokens entry for that mint so the TO
-    // field doesn't render with the icon-only / empty-text glitch.
-    // The flip button copies these fields into the new INPUT row, so a
-    // blank symbol here would also leak into FROM after a flip.
-    final initOutMint = widget.initialOutputMint ?? chiefPussyMint;
-    final fallback = commonTokens.firstWhere(
-      (t) => t.mint == initOutMint,
-      orElse: () => const CommonToken(mint: '', symbol: '', name: ''),
-    );
-    _selectedOutput = _SwapToken(
-      mint: initOutMint,
-      symbol: widget.initialOutputSymbol ?? fallback.symbol,
-      name: widget.initialOutputName ?? fallback.name,
-      imageUrl: widget.initialOutputImageUrl ?? fallback.imageUrl,
-    );
-    _outputDecimals =
-        widget.initialOutputDecimals ?? (initOutMint == wsolMint ? 9 : 6);
-    _outputImageUrl = widget.initialOutputImageUrl ?? fallback.imageUrl;
-
     final wallet = context.read<WalletService>();
+    final isSolanaNet =
+        (wallet.libwallet.currentNetwork?.type ?? lw.NetworkType.solana) ==
+            lw.NetworkType.solana;
+
+    // Default output: ChiefPussy on Solana (Tibane's featured token, and only
+    // valid there — it's an SPL token). On other chains leave the output unset
+    // so the user picks from that chain's discovered tokens; a Solana mint
+    // default would be invalid off-Solana. A caller-provided initialOutputMint
+    // always wins (it carries the right chain's token + metadata).
+    //
+    // When a caller passes a mint without its symbol / name (e.g. the dashboard
+    // tap-to-swap shortcut), fall back to the curated commonTokens entry so the
+    // TO field doesn't render icon-only / blank (which the flip button would
+    // then leak into the FROM row).
+    final initOutMint =
+        widget.initialOutputMint ?? (isSolanaNet ? chiefPussyMint : null);
+    if (initOutMint != null) {
+      final fallback = commonTokens.firstWhere(
+        (t) => t.mint == initOutMint,
+        orElse: () => const CommonToken(mint: '', symbol: '', name: ''),
+      );
+      _selectedOutput = _SwapToken(
+        mint: initOutMint,
+        symbol: widget.initialOutputSymbol ?? fallback.symbol,
+        name: widget.initialOutputName ?? fallback.name,
+        imageUrl: widget.initialOutputImageUrl ?? fallback.imageUrl,
+      );
+      _outputDecimals =
+          widget.initialOutputDecimals ?? (initOutMint == wsolMint ? 9 : 6);
+      _outputImageUrl = widget.initialOutputImageUrl ?? fallback.imageUrl;
+    }
+
     _wallet = wallet;
     wallet.addListener(_onWalletChanged);
     // Reload holdings whenever the chain state changes — covers swaps
@@ -484,8 +508,26 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
     final amountFloat = double.tryParse(amountStr);
     if (amountFloat == null || amountFloat <= 0) return;
-    if (amountFloat > _selectedInput!.uiBalance) {
-      setState(() => _quoteError = 'Amount exceeds balance');
+    // Ceiling for native SOL is libwallet's `maxSpendable` (reserves the wSOL
+    // wrap + output-ATA rent precisely) when we have it — the displayed SOL
+    // balance is over-reserved by a flat 0.01 SOL, which would falsely reject
+    // the Max value (and let a manual near-max amount revert on-chain as 0xb).
+    final isNativeSol = _selectedInput!.mint == wsolMint;
+    final ceiling =
+        (isNativeSol && _maxSpendableUi != null &&
+                _maxSpendableForMint == _selectedInput!.mint)
+            ? _maxSpendableUi!
+            : _selectedInput!.uiBalance;
+    if (amountFloat > ceiling) {
+      debugPrint(
+        '[swap.validate] EXCEEDS amount=$amountFloat ceiling=$ceiling '
+        'uiBalance=${_selectedInput!.uiBalance} '
+        'maxSpendableUi=$_maxSpendableUi '
+        'symbol=${_selectedInput!.symbol} dec=${_selectedInput!.decimals}',
+      );
+      setState(() => _quoteError = isNativeSol && _maxSpendableUi != null
+          ? 'Amount exceeds spendable max (keep some SOL for fees)'
+          : 'Amount exceeds balance');
       return;
     }
 
@@ -503,8 +545,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     });
 
     try {
-      if (wallet.kind == WalletKind.inapp &&
-          (wallet.libwallet.isUnlocked || useSignSheet(wallet))) {
+      if (wallet.kind == WalletKind.inapp) {
         await _fetchQuoteLibwallet(wallet, rawAmount);
       } else {
         await _fetchQuoteJupiter(wallet, rawAmount);
@@ -547,20 +588,23 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     final inputMint = _selectedInput!.mint;
     final outputMint = _selectedOutput!.mint;
     final client = await wallet.libwallet.ensureClient();
+    final inTokenAddr = swapTokenAddress(inputMint, nativeMint: _nativeMint);
+    final outTokenAddr = swapTokenAddress(outputMint, nativeMint: _nativeMint);
     // libwallet 0.4.31 dropped the silent Jupiter→dFlow fallback from
     // swap.quote(). Use swap.quotes() so we get an attempt from every
     // provider and pick the one with the highest output. If none
     // succeed we surface the first error's message.
     final attempts = await client.swap.quotes(
       tokenIn: SwapTokenRef(
-        address: swapTokenAddress(inputMint, nativeMint: _nativeMint),
+        address: inTokenAddr,
         decimals: _selectedInput!.decimals,
       ),
       tokenOut: SwapTokenRef(
-        address: swapTokenAddress(outputMint, nativeMint: _nativeMint),
+        address: outTokenAddr,
         decimals: _outputDecimals,
       ),
       amountIn: rawAmount.toString(),
+      slippageBps: _slippageBps,
     );
     if (!mounted) return;
     lw.QuoteAttempt? best;
@@ -648,8 +692,23 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         final raw = quote.amountIn.value;
         final divisor = BigInt.from(10).pow(_selectedInput!.decimals);
         amount = raw / divisor;
+        // Cache the authoritative spendable max so the amount validation
+        // (and a manual near-max entry) checks against it, not the
+        // over-reserved displayed balance.
+        _maxSpendableUi = amount;
+        _maxSpendableForMint = _selectedInput!.mint;
+        // Safety buffer for native SOL: don't park the user at the exact
+        // spendable edge — to-the-penny max reverts on-chain as 0xb when the
+        // wSOL wrap/ATA rent + fee variance tips it over. Cap the Max *button*
+        // at the already-buffered displayed balance (Tibane reserves ~0.01 SOL
+        // there), matching how every Solana wallet keeps a SOL reserve on Max.
+        // `maxSpendable` stays the hard validation ceiling.
+        if (_selectedInput!.mint == wsolMint &&
+            _selectedInput!.uiBalance < amount) {
+          amount = _selectedInput!.uiBalance;
+        }
       } catch (e) {
-        debugPrint('swap.maxSpendable fallback: $e');
+        debugPrint('swap.maxSpendable fallback (amount=uiBalance): $e');
         amount = _selectedInput!.uiBalance;
       }
     } else {
@@ -687,29 +746,47 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     });
 
     try {
+      // Confirm the swap actually LANDED before declaring success. OKX's
+      // `execute` returns as soon as it *accepts* the broadcast — before the tx
+      // is even validated — so the returned hash is NOT proof it landed
+      // ("phantom success", seen on both Solana and EVM). Verify before showing
+      // the success sheet; otherwise surface a failure and DON'T clear input.
       String signature;
       if (viaOkx) {
-        signature = await _executeSwapLibwallet(wallet, auth);
+        final result = await _executeSwapLibwallet(wallet, auth);
+        if (!mounted) return;
+        signature = result.hash;
+        if (_isSolana) {
+          // Solana: authoritative on-chain signature check (Helius RPC).
+          if (!await _confirmLanded(signature)) {
+            if (!mounted) return;
+            setState(() => _error = _swapNotConfirmedMsg);
+            return;
+          }
+        } else {
+          // EVM: no in-app RPC client — confirm via OKX orderStatus.
+          final st = await _confirmOkxOrder(wallet, result.orderId);
+          if (!mounted) return;
+          if (st == null || !st.success) {
+            setState(() => _error = st != null && st.failed
+                ? 'Swap failed${st.reason.isNotEmpty ? ': ${st.reason}' : ''} '
+                    '— your funds were not moved.'
+                : st != null && st.pending
+                    ? 'Swap is still pending after 40s — check the explorer '
+                        'before retrying so you don’t double-spend.'
+                    : _swapNotConfirmedMsg);
+            return;
+          }
+          if (st.txHash.isNotEmpty) signature = st.txHash;
+        }
       } else {
         signature = await _executeSwapJupiter(wallet, auth);
-      }
-      if (!mounted) return;
-
-      // Confirm the swap actually LANDED before declaring success. OKX can
-      // return a hash for an order it never lands on-chain ("phantom success"),
-      // which would otherwise show a success modal while no funds moved. On
-      // Solana we verify the signature confirms; if it doesn't, surface a
-      // failure and DON'T clear the input. (Jupiter is Solana too; EVM/OKX
-      // confirmation isn't wired yet, so non-Solana keeps the prior behavior.)
-      final isSolanaSwap = viaOkx ? _isSolana : true;
-      if (isSolanaSwap && !await _confirmLanded(signature)) {
         if (!mounted) return;
-        setState(
-          () => _error =
-              'Swap was not confirmed on-chain — your funds were not '
-              'moved. Please try again.',
-        );
-        return;
+        if (!await _confirmLanded(signature)) {
+          if (!mounted) return;
+          setState(() => _error = _swapNotConfirmedMsg);
+          return;
+        }
       }
       if (!mounted) return;
 
@@ -859,21 +936,15 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     );
   }
 
-  Future<String> _executeSwapLibwallet(WalletService wallet, BatchAuth auth) async {
+  Future<lw.SwapResult> _executeSwapLibwallet(
+    WalletService wallet,
+    BatchAuth auth,
+  ) async {
     final q = _lwQuote!;
     final client = await wallet.libwallet.ensureClient();
-    // Lockless: keys collected once via the sheet (auth.keys). Legacy: the
-    // cached session (currentSigningKeys).
-    final keys = auth.keys ??
-        wallet.libwallet.currentSigningKeys
-            .map(
-              (k) => SigningKey(
-                id: k['Id'] as String,
-                key: k['Key'] as String,
-                type: k['Type'] as String?,
-              ),
-            )
-            .toList();
+    // In-app swaps always authorize via the sign sheet, so the batch keys are
+    // collected up front by authorizeBatch.
+    final keys = auth.keys!;
     debugPrint(
       '[swap.exec] execute quoteId=${q.quoteId} '
       'provider=${q.provider} net=${wallet.libwallet.currentNetwork?.id} '
@@ -884,7 +955,42 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       '[swap.exec] RESULT hash=${result.hash} orderId=${result.orderId} '
       'provider=${result.provider} chain=${result.chain} url=${result.url}',
     );
-    return result.hash;
+    return result;
+  }
+
+  /// Poll OKX `orderStatus` until the swap settles (or times out). `execute`
+  /// returns as soon as OKX *accepts* the broadcast — before the tx is even
+  /// validated — so this is how we confirm an EVM swap actually landed (there's
+  /// no EVM RPC client in-app to check the receipt directly). Returns a record
+  /// of the final state, or null on error / empty orderId. (libwallet 0.4.73
+  /// doesn't export the `SwapOrderStatus` type, so we map it to a record.)
+  Future<({bool success, bool pending, bool failed, String txHash, String reason})?>
+      _confirmOkxOrder(WalletService wallet, String orderId) async {
+    if (orderId.isEmpty) return null;
+    try {
+      final client = await wallet.libwallet.ensureClient();
+      var st = await client.swap.orderStatus(orderId);
+      var attempts = 0;
+      while (st.isPending && attempts < 20) {
+        await Future.delayed(const Duration(seconds: 2));
+        st = await client.swap.orderStatus(orderId);
+        attempts++;
+      }
+      debugPrint(
+        '[swap.confirm] orderStatus=${st.status} txHash=${st.txHash} '
+        'failReason=${st.failReason}',
+      );
+      return (
+        success: st.isSuccess,
+        pending: st.isPending,
+        failed: st.isFailed,
+        txHash: st.txHash,
+        reason: st.failReason,
+      );
+    } catch (e) {
+      debugPrint('[swap.confirm] orderStatus error: $e');
+      return null;
+    }
   }
 
   void _selectInput(TokenHolding holding) {
@@ -1164,6 +1270,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                   ),
                 ),
 
+              // Slippage selector — only the in-app (OKX) path honors it.
+              if (wallet.kind == WalletKind.inapp) _buildSlippageSelector(),
+
               // Swap button
               GradientButton(
                 label: _swapping ? 'Swapping...' : 'Swap',
@@ -1399,6 +1508,124 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     if (_lwQuote != null) return _buildLwQuoteDetails(_lwQuote!);
     if (_jupiterQuote != null) return _buildJupiterQuoteDetails(_jupiterQuote!);
     return const SizedBox.shrink();
+  }
+
+  /// Percent label for a basis-points value: 50 → "0.5%", 100 → "1%".
+  static String _formatBps(int bps) {
+    final pct = bps / 100;
+    final s = pct.toStringAsFixed(2);
+    return '${s.replaceFirst(RegExp(r'\.?0+$'), '')}%';
+  }
+
+  /// Slippage tolerance selector. Changing it re-quotes (slippage is baked into
+  /// the quote). Raising it fixes thin-route 0xb (min-output) reverts.
+  Widget _buildSlippageSelector() {
+    final isCustom = !_slippagePresets.contains(_slippageBps);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Text(
+            'Max slippage',
+            style: TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+          ),
+          const Spacer(),
+          for (final bps in _slippagePresets)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: _slippageChip(
+                _formatBps(bps),
+                _slippageBps == bps,
+                () => _setSlippage(bps),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: _slippageChip(
+              isCustom ? _formatBps(_slippageBps) : 'Custom',
+              isCustom,
+              _promptCustomSlippage,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _slippageChip(String label, bool selected, VoidCallback onTap) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? TibaneColors.orange.withValues(alpha: 0.15)
+              : TibaneColors.darker,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? TibaneColors.orange : TibaneColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? TibaneColors.orange : TibaneColors.textMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _setSlippage(int bps) {
+    if (bps == _slippageBps) return;
+    setState(() => _slippageBps = bps);
+    // Re-quote so the new tolerance is reflected (and baked into the quoteId).
+    if (_amountController.text.trim().isNotEmpty) _fetchQuote();
+  }
+
+  Future<void> _promptCustomSlippage() async {
+    final ctrl = TextEditingController(
+      text: (_slippageBps / 100).toString(),
+    );
+    final bps = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: TibaneColors.card,
+        title: const Text('Custom slippage'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'Slippage %',
+            hintText: 'e.g. 1.5',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final pct = double.tryParse(ctrl.text.trim());
+              if (pct == null || pct <= 0) {
+                Navigator.pop(ctx);
+                return;
+              }
+              // Clamp to 0.01%–50% (1–5000 bps).
+              final clamped = (pct * 100).round().clamp(1, 5000);
+              Navigator.pop(ctx, clamped);
+            },
+            child: const Text('Set'),
+          ),
+        ],
+      ),
+    );
+    if (bps != null) _setSlippage(bps);
   }
 
   Widget _buildJupiterQuoteDetails(SwapQuote q) {

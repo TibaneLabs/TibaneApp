@@ -5,7 +5,6 @@ import 'package:libwallet/libwallet.dart';
 import 'package:provider/provider.dart';
 
 import '../../screens/browser/approval_sheets.dart';
-import '../../screens/wallet/inapp_unlock_screen.dart';
 import '../../screens/wallet/widgets/authorize_and_sign.dart';
 import '../wallet_service.dart';
 import 'libwallet_backend.dart';
@@ -202,67 +201,25 @@ class LibwalletRequestBridge {
     }
   }
 
-  /// Just-in-time unlock for handlers that need signing material. The
-  /// browser tab itself is ungated — locking the wallet should not
-  /// prevent browsing — so the prompt only fires when a destination
-  /// actually requests a signature.
-  ///
-  /// Returns true when the wallet is unlocked and the caller can
-  /// proceed; returns false (and rejects the request) when there is
-  /// no wallet to sign with, or the user cancelled the unlock.
-  Future<bool> _requireUnlocked(BuildContext ctx, String reqId) async {
-    if (!backend.hasWallet) {
-      await _reject(reqId);
-      return false;
-    }
-    if (backend.isUnlocked) return true;
-    if (!ctx.mounted) {
-      await _reject(reqId);
-      return false;
-    }
-    final ok = await InAppUnlockScreen.ensureUnlocked(ctx);
-    if (!ok || !backend.isUnlocked) {
-      await _reject(reqId);
-      return false;
-    }
-    return true;
-  }
-
-  List<SigningKey> _signingKeys() {
-    return backend.currentSigningKeys
-        .map(
-          (k) => SigningKey(
-            id: k['Id'] as String,
-            key: k['Key'] as String,
-            type: k['Type'] as String?,
-          ),
-        )
-        .toList();
-  }
-
   /// Collect the signing keys to approve a request, AFTER the dApp approval
-  /// preview. Lockless: per-transaction via the sign sheet. Legacy: the cached
-  /// session (after [_requireUnlocked]). Rejects [reqId] and returns null on
-  /// cancel / no signable keys.
+  /// preview — per-transaction via the sign sheet. The browser tab itself is
+  /// ungated; the sheet only fires when a destination requests a signature.
+  /// Rejects [reqId] and returns null on cancel, no wallet, or a current
+  /// account that can't sign here (MWA — the web3 bridge is in-app only).
   Future<List<SigningKey>?> _collectApprovalKeys(
     BuildContext ctx,
     String reqId,
   ) async {
-    if (useSignSheet(ctx.read<WalletService>())) {
-      final collected = await collectSigningKeys(ctx);
-      if (collected == null) {
-        await _reject(reqId);
-        return null;
-      }
-      return collected;
-    }
-    if (!await _requireUnlocked(ctx, reqId)) return null;
-    final keys = _signingKeys();
-    if (keys.isEmpty) {
+    if (!backend.hasWallet || !useSignSheet(ctx.read<WalletService>())) {
       await _reject(reqId);
       return null;
     }
-    return keys;
+    final collected = await collectSigningKeys(ctx);
+    if (collected == null) {
+      await _reject(reqId);
+      return null;
+    }
+    return collected;
   }
 
   Future<void> _reject(String reqId) async {

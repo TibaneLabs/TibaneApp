@@ -213,9 +213,22 @@ class AccountSwitcherSheet extends StatelessWidget {
                   _ActionTile(
                     icon: Icons.usb,
                     label: 'Connect external (Seed Vault)',
-                    onTap: () {
+                    onTap: () async {
+                      // Capture before the sheet closes so the error can still
+                      // be shown on the parent screen.
+                      final messenger = ScaffoldMessenger.of(context);
                       Navigator.pop(context);
-                      wallet.connectMwa();
+                      final ok = await wallet.connectMwa();
+                      if (!ok) {
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              wallet.mwa.error ??
+                                  'No compatible wallet app is installed.',
+                            ),
+                          ),
+                        );
+                      }
                     },
                   ),
                 if (current != null) ...[

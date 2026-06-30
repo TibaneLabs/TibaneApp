@@ -71,32 +71,12 @@ void main() {
   });
 
   group('useSignSheetFor', () {
-    test('MWA always takes the legacy path', () {
-      expect(
-        useSignSheetFor(isInApp: false, lockless: true, walletRequiresSheet: true),
-        isFalse,
-      );
+    test('in-app -> sheet (signing is always per-transaction now)', () {
+      expect(useSignSheetFor(isInApp: true), isTrue);
     });
 
-    test('in-app + lockless on -> sheet', () {
-      expect(
-        useSignSheetFor(isInApp: true, lockless: true, walletRequiresSheet: false),
-        isTrue,
-      );
-    });
-
-    test('in-app + no StoreKey (D5) -> sheet even with lockless off', () {
-      expect(
-        useSignSheetFor(isInApp: true, lockless: false, walletRequiresSheet: true),
-        isTrue,
-      );
-    });
-
-    test('in-app + lockless off + has StoreKey -> legacy path', () {
-      expect(
-        useSignSheetFor(isInApp: true, lockless: false, walletRequiresSheet: false),
-        isFalse,
-      );
+    test('MWA -> no sheet (Seed Vault signs via its own auth)', () {
+      expect(useSignSheetFor(isInApp: false), isFalse);
     });
   });
 }

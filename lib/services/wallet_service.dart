@@ -68,8 +68,14 @@ class WalletService extends ChangeNotifier {
   final _auth = AuthService();
 
   WalletKind _kind = WalletKind.mwa;
-  BigInt _solBalance = BigInt.zero;
-  BigInt _chiefPussyBalance = BigInt.zero;
+
+  // Fallback SOL / ChiefPussy balances for MWA mode, where libwallet has no
+  // account context and [_assets] isn't populated (filled by the RPC scan in
+  // _refreshBalancesOnce). For in-app wallets the balances are derived from
+  // [_assets] (the single source) — see the [solBalance]/[chiefPussyBalance]
+  // getters; these fields are NOT read there.
+  BigInt _solBalanceFallback = BigInt.zero;
+  BigInt _chiefPussyFallback = BigInt.zero;
 
   // The current account's asset list (Ellipx AssetCubit equivalent, §4.4).
   // WalletService is the SINGLE listener to libwallet's balance stream and the
@@ -146,9 +152,38 @@ class WalletService extends ChangeNotifier {
 
   String? get walletName => active.walletName;
 
-  BigInt get solBalance => _solBalance;
+  /// Native SOL balance for the current account. Single source of truth is the
+  /// libwallet asset list ([assets]); falls back to the cached RPC value for
+  /// MWA, where [assets] isn't populated.
+  BigInt get solBalance =>
+      _nativeSolAsset()?.amount.value ?? _solBalanceFallback;
 
-  BigInt get chiefPussyBalance => _chiefPussyBalance;
+  /// ChiefPussy is a Solana-only SPL token — report a balance only while a
+  /// Solana network is active (or MWA, which is Solana). Off-Solana it's
+  /// hidden so a stale value never lingers on an EVM/BTC account.
+  BigInt get chiefPussyBalance => _solanaNetworkActive
+      ? (_chiefPussyAsset()?.amount.value ?? _chiefPussyFallback)
+      : BigInt.zero;
+
+  /// Whether the active context is Solana — the in-app current network is
+  /// Solana, or MWA (Seed Vault is Solana-only).
+  bool get _solanaNetworkActive =>
+      _kind == WalletKind.mwa ||
+      _libwallet.currentNetwork?.type == NetworkType.solana;
+
+  Asset? _nativeSolAsset() {
+    for (final a in _assets) {
+      if (a.isNative && a.symbol.toUpperCase() == 'SOL') return a;
+    }
+    return null;
+  }
+
+  Asset? _chiefPussyAsset() {
+    for (final a in _assets) {
+      if (a.symbol == 'ChiefPussy' || a.key.contains(chiefPussyMint)) return a;
+    }
+    return null;
+  }
 
   bool get isConnected => active.isConnected;
 
@@ -190,8 +225,10 @@ class WalletService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Connect via the Seed Vault / external MWA flow.
-  Future<void> connectMwa() async {
+  /// Connect via the Seed Vault / external MWA flow. Returns true on success;
+  /// false when the user cancelled or no MWA wallet app is installed (the
+  /// reason is on [mwa].error so the caller can surface it).
+  Future<bool> connectMwa() async {
     // Connect FIRST, then switch the active backend — so a cancelled/declined
     // authorize leaves the current (e.g. in-app) wallet active instead of
     // stranding the app on a half-connected MWA backend. NO eager atonline
@@ -200,10 +237,11 @@ class WalletService extends ChangeNotifier {
     // the wallet right after authorize — the "stuck on the other wallet" +
     // background-kill loop. ClawdWallet pulls auth on demand.
     final ok = await _mwa.connect();
-    if (!ok) return;
+    if (!ok) return false;
     await _setKind(WalletKind.mwa);
     refreshBalances();
     unawaited(refreshAccounts());
+    return true;
   }
 
   /// Switch to the in-app libwallet backend. Assumes the wallet has already
@@ -288,8 +326,8 @@ class WalletService extends ChangeNotifier {
   }
 
   void updateBalances({BigInt? sol, BigInt? chiefPussy}) {
-    if (sol != null) _solBalance = sol;
-    if (chiefPussy != null) _chiefPussyBalance = chiefPussy;
+    if (sol != null) _solBalanceFallback = sol;
+    if (chiefPussy != null) _chiefPussyFallback = chiefPussy;
     notifyListeners();
   }
 
@@ -299,21 +337,23 @@ class WalletService extends ChangeNotifier {
   /// (it's keyed by address), so it's left intact.
   @visibleForTesting
   void resetSessionState() {
-    _solBalance = BigInt.zero;
-    _chiefPussyBalance = BigInt.zero;
-    _solFiatUsd = 0;
-    _chiefPussyFiatUsd = 0;
+    _solBalanceFallback = BigInt.zero;
+    _chiefPussyFallback = BigInt.zero;
+    _solFiatFallback = 0;
+    _chiefPussyFiatFallback = 0;
   }
 
-  /// Convenience for code that wants per-asset fiat values without
-  /// fetching the asset list a second time. Updated alongside
-  /// [_solBalance] / [_chiefPussyBalance] on every successful refresh.
-  double _solFiatUsd = 0;
-  double _chiefPussyFiatUsd = 0;
+  // Fallback per-asset fiat values for MWA mode (see the balance fallbacks
+  // above). For in-app wallets these are derived from [assets].
+  double _solFiatFallback = 0;
+  double _chiefPussyFiatFallback = 0;
 
-  double get solFiatUsd => _solFiatUsd;
+  double get solFiatUsd =>
+      _nativeSolAsset()?.fiatAmount?.toDouble() ?? _solFiatFallback;
 
-  double get chiefPussyFiatUsd => _chiefPussyFiatUsd;
+  double get chiefPussyFiatUsd => _solanaNetworkActive
+      ? (_chiefPussyAsset()?.fiatAmount?.toDouble() ?? _chiefPussyFiatFallback)
+      : 0;
 
   /// Bumped by the swap screen after every successful swap. Listened to by
   /// the wallet dashboard so it reloads assets + tx history without waiting
@@ -510,25 +550,9 @@ class WalletService extends ChangeNotifier {
             assets = await _libwallet.getAssets();
           }
         }
-        BigInt sol = BigInt.zero;
-        BigInt cp = BigInt.zero;
-        double solFiat = 0;
-        double cpFiat = 0;
-        for (final a in assets) {
-          if (a.isNative && a.symbol.toUpperCase() == 'SOL') {
-            sol = a.amount.value;
-            solFiat = a.fiatAmount?.toDouble() ?? 0;
-          } else if (a.symbol == 'ChiefPussy' ||
-              a.key.contains(chiefPussyMint)) {
-            cp = a.amount.value;
-            cpFiat = a.fiatAmount?.toDouble() ?? 0;
-          }
-        }
+        // [assets] is the single source — SOL / ChiefPussy balances + fiat are
+        // derived from it via the getters; no separate extraction needed.
         _assets = assets;
-        _solBalance = sol;
-        _chiefPussyBalance = cp;
-        _solFiatUsd = solFiat;
-        _chiefPussyFiatUsd = cpFiat;
         _dataReady = true;
         notifyListeners();
         return;
@@ -538,7 +562,9 @@ class WalletService extends ChangeNotifier {
     }
     final rpc = RpcService();
     try {
-      _solBalance = await rpc.getBalance(addr);
+      // MWA / fallback path: libwallet has no account context, so [_assets]
+      // stays empty and the getters read these cached values instead.
+      _solBalanceFallback = await rpc.getBalance(addr);
       final splAccounts = await rpc.getTokenAccountsByOwner(addr);
       var cp = BigInt.zero;
       for (final account in splAccounts) {
@@ -546,9 +572,9 @@ class WalletService extends ChangeNotifier {
           cp += account.amount;
         }
       }
-      _chiefPussyBalance = cp;
-      _solFiatUsd = 0;
-      _chiefPussyFiatUsd = 0;
+      _chiefPussyFallback = cp;
+      _solFiatFallback = 0;
+      _chiefPussyFiatFallback = 0;
       _dataReady = true;
       notifyListeners();
     } catch (e) {

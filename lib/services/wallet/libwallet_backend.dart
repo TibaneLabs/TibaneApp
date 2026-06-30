@@ -14,7 +14,6 @@ import 'biometric.dart';
 import 'creation.dart';
 import 'migration.dart';
 import 'secure_keystore.dart';
-import 'signing.dart';
 import 'unified_account.dart' show isUsableAccount;
 import 'wallet_backend.dart';
 
@@ -296,7 +295,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     String? name,
     String? symbol,
     int? decimals,
-    String type = 'spl-token',
+    String? type,
   }) async {
     try {
       final client = await _getClient();
@@ -307,11 +306,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       }
       final net = _currentNetwork ?? await client.networks.getCurrent();
       _currentNetwork = net;
-      if (net.type != NetworkType.solana || net.testNet) {
-        debugPrint(
-          '[track] $mint: skip, network=${net.id} type=${net.type} '
-          'testNet=${net.testNet}',
-        );
+      // Track on any mainnet (Solana SPL + EVM ERC-20). EVM token-add needs
+      // libwallet 0.4.74+ (earlier versions 500'd with "invalid UUID length").
+      if (net.testNet) {
+        debugPrint('[track] $mint: skip, testnet network=${net.id}');
         return false;
       }
       final chainKey = '${net.type.name}.${net.chainId}';
@@ -319,12 +317,17 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       var resolvedName = name ?? '';
       var resolvedSymbol = symbol ?? '';
       var resolvedDecimals = decimals ?? -1;
-      var resolvedType = type;
+      var resolvedType =
+          type ?? (net.type == NetworkType.evm ? 'erc20' : 'spl-token');
       debugPrint(
         '[track] $mint: incoming name="$resolvedName" symbol="$resolvedSymbol" '
-        'decimals=$resolvedDecimals type=$resolvedType',
+        'decimals=$resolvedDecimals type=$resolvedType net=${net.type.name}',
       );
-      if (resolvedSymbol.isEmpty || resolvedDecimals < 0) {
+      // Always discover on non-Solana so we get the authoritative token type
+      // (erc20/…) + verify metadata; on Solana only when something's missing.
+      if (resolvedSymbol.isEmpty ||
+          resolvedDecimals < 0 ||
+          net.type != NetworkType.solana) {
         try {
           final d = await client.tokens.discover(
             network: chainKey,
@@ -447,10 +450,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// String identifier of the current account (stable across launches);
   /// null before a wallet is created.
   String? get accountId => _accountId;
-
-  /// Signing keys ready to submit with `Request:approve` for the active
-  /// session. Empty while the wallet is locked.
-  List<Map<String, dynamic>> get currentSigningKeys => _signingKeys();
 
   @override
   Future<void> tryRestore() async {
@@ -1391,13 +1390,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// unchanged (StoreKey + Password). Returns a typed [SwitchResult] so the
   /// UI can prompt for a password or route to 2FA recovery.
   Future<SwitchResult> switchWallet(String walletId, {String? password}) async {
-    // Already active: a StoreKey wallet that's unlocked, a D5 wallet (no
-    // StoreKey), or any wallet under lockless signing (nothing to unlock).
-    // Avoids a needless wallet fetch.
-    if (_walletId == walletId &&
-        (isUnlocked || _storeKeyId == null || kLocklessSigning)) {
-      return SwitchResult.ok;
-    }
+    // Already active — signing is per-transaction (lockless), so an active
+    // wallet is always ready; nothing to unlock. Avoids a needless fetch.
+    if (_walletId == walletId) return SwitchResult.ok;
 
     try {
       final client = await _getClient();
@@ -1406,100 +1401,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       final storeKeyId = keyIds['StoreKey'];
       final passwordKeyId = keyIds['Password'];
 
-      // Free, password-free activation: a D5 (password-only) wallet always, or
-      // ANY wallet under lockless signing. No device-share load, no password —
-      // signing authorizes per-transaction via the sheet. StoreKey metadata is
-      // kept; only the session secrets (_storeKeyPriv/_password) stay null.
-      if (storeKeyId == null || kLocklessSigning) {
-        final account = await _resolveAccount(client, w);
-        await client.accounts.setCurrent(account.id);
-        _walletId = walletId;
-        _accountId = account.id;
-        _publicKey = account.address;
-        _walletName = w.name.isNotEmpty ? w.name : 'In-app wallet';
-        _storeKeyId = storeKeyId;
-        _remoteKeyId = keyIds['RemoteKey'];
-        _passwordKeyId = passwordKeyId;
-        _storeKeyPriv = null;
-        _password = null;
-        final storeKeyPub = storeKeyId == null
-            ? null
-            : w.keys.firstWhere((k) => k.type == 'StoreKey').key;
-        await _persist(storeKeyPublic: storeKeyPub);
-        notifyListeners();
-        if (w.curve == 'ed25519') unawaited(ensureSolanaDefault());
-        return SwitchResult.ok;
-      }
-
-      // StoreKey wallet: needs the device share + password.
-      final hasShare = await _keystore.hasDeviceShare(walletId);
-      final plan = planWalletSwitch(
-        targetIsActiveAndUnlocked: _walletId == walletId && isUnlocked,
-        hasLocalDeviceShare: hasShare,
-        passwordProvided: password != null && password.isNotEmpty,
-      );
-      switch (plan) {
-        case SwitchPlan.alreadyActive:
-          return SwitchResult.ok;
-        case SwitchPlan.needsRecovery:
-          _error =
-              'This wallet has no device share on this device. '
-              'Recover it via 2FA, then try again.';
-          notifyListeners();
-          return SwitchResult.needsRecovery;
-        case SwitchPlan.needsPassword:
-          return SwitchResult.needsPassword;
-        case SwitchPlan.proceed:
-          break;
-      }
-
-      if (passwordKeyId == null) {
-        _error = 'Wallet is missing required key shares';
-        notifyListeners();
-        return SwitchResult.error;
-      }
-
-      // Read THIS wallet's device share (keystore only — no libwallet FFI).
-      // OS keystore needs no password; the fallback blob throws
-      // WrongPasswordException on a bad password.
-      String? priv;
-      try {
-        priv = await _keystore.readDeviceShare(
-          walletId: walletId,
-          password: password,
-        );
-      } on WrongPasswordException {
-        _error = 'Wrong password for this wallet';
-        notifyListeners();
-        return SwitchResult.wrongPassword;
-      }
-      if (priv == null) {
-        _error = "Could not read this wallet's device share";
-        notifyListeners();
-        return SwitchResult.error;
-      }
-
-      // Make this wallet's account current before deriving against it (so
-      // libwallet's session points at the right wallet), and resolve a
-      // curve-correct account — a mismatched account type would make the TSS
-      // layer derive the wrong key type.
+      // Free, password-free activation (lockless signing): no device-share
+      // load, no password — signing authorizes per-transaction via the sheet.
+      // StoreKey metadata is kept; the session secrets stay null.
       final account = await _resolveAccount(client, w);
       await client.accounts.setCurrent(account.id);
-
-      // Validate the password against the Password share without signing.
-      try {
-        await client.storeKeys.derivePassword(
-          password: password!,
-          walletKeyId: passwordKeyId,
-        );
-      } on LibwalletException {
-        _error = 'Wrong password for this wallet';
-        notifyListeners();
-        return SwitchResult.wrongPassword;
-      }
-
-      // Swap the active in-memory set. Overwriting these fields locks the
-      // previously-active wallet (its password + device share leave memory).
       _walletId = walletId;
       _accountId = account.id;
       _publicKey = account.address;
@@ -1507,14 +1413,13 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _storeKeyId = storeKeyId;
       _remoteKeyId = keyIds['RemoteKey'];
       _passwordKeyId = passwordKeyId;
-      _storeKeyPriv = priv;
-      _password = password;
-
-      final storeKeyPub = w.keys.firstWhere((k) => k.type == 'StoreKey').key;
+      _storeKeyPriv = null;
+      _password = null;
+      final storeKeyPub = storeKeyId == null
+          ? null
+          : w.keys.firstWhere((k) => k.type == 'StoreKey').key;
       await _persist(storeKeyPublic: storeKeyPub);
       notifyListeners();
-      // Only normalize to Solana for ed25519 wallets — forcing it for a
-      // secp256k1 wallet mismatches the account's curve.
       if (w.curve == 'ed25519') unawaited(ensureSolanaDefault());
       return SwitchResult.ok;
     } catch (e) {
