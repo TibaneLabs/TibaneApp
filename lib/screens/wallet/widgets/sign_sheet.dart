@@ -26,6 +26,9 @@ Future<List<SigningKey>?> showSignSheet(
   required Wallet wallet,
   required Future<String?> Function(WalletKey storeKey, String? password)
       readStoreKey,
+  String title = 'Authorize transaction',
+  String? subtitlePurpose, // e.g. 'sign this transaction' (default) / 'change your password'
+  String actionLabel = 'Sign',
 }) {
   return showModalBottomSheet<List<SigningKey>>(
     context: context,
@@ -34,16 +37,31 @@ Future<List<SigningKey>?> showSignSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (_) => _SignSheet(wallet: wallet, readStoreKey: readStoreKey),
+    builder: (_) => _SignSheet(
+      wallet: wallet,
+      readStoreKey: readStoreKey,
+      title: title,
+      subtitlePurpose: subtitlePurpose ?? 'sign this transaction',
+      actionLabel: actionLabel,
+    ),
   );
 }
 
 class _SignSheet extends StatefulWidget {
-  const _SignSheet({required this.wallet, required this.readStoreKey});
+  const _SignSheet({
+    required this.wallet,
+    required this.readStoreKey,
+    required this.title,
+    required this.subtitlePurpose,
+    required this.actionLabel,
+  });
 
   final Wallet wallet;
   final Future<String?> Function(WalletKey storeKey, String? password)
       readStoreKey;
+  final String title;
+  final String subtitlePurpose;
+  final String actionLabel;
 
   @override
   State<_SignSheet> createState() => _SignSheetState();
@@ -159,12 +177,13 @@ class _SignSheetState extends State<_SignSheet> {
             ),
             const SizedBox(height: 20),
             Text(
-              'Authorize transaction',
+              widget.title,
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 6),
             Text(
-              'Unlock $_required of your wallet keys to sign this transaction.',
+              'Unlock $_required of your wallet keys to '
+              '${widget.subtitlePurpose}.',
               style: const TextStyle(color: TibaneColors.textMuted),
             ),
             const SizedBox(height: 16),
@@ -195,7 +214,7 @@ class _SignSheetState extends State<_SignSheet> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: GradientButton(
-                    label: 'Sign',
+                    label: widget.actionLabel,
                     onPressed: _ready && !_busy
                         ? () => Navigator.pop(context, _collected)
                         : null,

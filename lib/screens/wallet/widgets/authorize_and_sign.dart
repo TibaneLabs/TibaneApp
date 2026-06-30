@@ -54,6 +54,50 @@ Future<List<SigningKey>?> collectSigningKeys(BuildContext context) async {
   );
 }
 
+/// Collect the raw credentials for a key-management op (change password, rotate
+/// device share, reshare, …) via the same sign sheet — biometric StoreKey +
+/// typed Password — with op-specific wording. Returns `{password, storeKeyPriv}`
+/// (storeKeyPriv null for a no-StoreKey D5 wallet), or null on cancel / a wallet
+/// that can't be unlocked on this device.
+///
+/// Phase 6D: this replaces the legacy `InAppUnlockScreen.ensureUnlocked` +
+/// cached `_password`/`_storeKeyPriv` session for management ops. [purpose] is
+/// the sheet's verb phrase, e.g. `'change your password'`.
+Future<({String password, String? storeKeyPriv})?> collectManagementKeys(
+  BuildContext context, {
+  required String title,
+  required String purpose,
+}) async {
+  final lw = context.read<WalletService>().libwallet;
+  final wallet = await lw.currentWallet();
+  if (!context.mounted) return null;
+  if (wallet == null) {
+    _toast(context, 'No in-app wallet to authorize.');
+    return null;
+  }
+  if (!canAssembleThreshold(wallet)) {
+    _toast(
+      context,
+      'This wallet can’t be unlocked on this device. Recover the device key '
+      'via 2FA in wallet settings.',
+    );
+    return null;
+  }
+  final keys = await showSignSheet(
+    context,
+    wallet: wallet,
+    readStoreKey: (storeKey, password) =>
+        lw.readStoreKeyPrivate(storeKey, password: password),
+    title: title,
+    subtitlePurpose: purpose,
+    actionLabel: 'Authorize',
+  );
+  if (keys == null) return null;
+  final creds = managementCredsFrom(keys);
+  if (creds.password == null) return null;
+  return (password: creds.password!, storeKeyPriv: creds.storeKeyPriv);
+}
+
 /// Authorize + sign-and-broadcast [txs]. In-app: collect keys once via the
 /// sheet, then `signAndSendTransactionsWithKeys`. MWA: route to the backend
 /// (Seed Vault auth). Returns the per-tx signatures, or null if cancelled.

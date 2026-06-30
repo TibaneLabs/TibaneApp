@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:libwallet/libwallet.dart' show Wallet, WalletKey;
+import 'package:libwallet/libwallet.dart' show SigningKey, Wallet, WalletKey;
 import 'package:tibaneapp/services/wallet/signing.dart';
 
 /// Phase 1 (Atonline-parity) — pure share-counting rules for per-transaction
@@ -77,6 +77,45 @@ void main() {
 
     test('MWA -> no sheet (Seed Vault signs via its own auth)', () {
       expect(useSignSheetFor(isInApp: false), isFalse);
+    });
+  });
+
+  group('managementCredsFrom (6D-1)', () {
+    SigningKey sk(String type, String key) =>
+        SigningKey(id: 'id-$type', key: key, type: type);
+
+    test('standard 2-of-3: extracts StoreKey priv + Password', () {
+      final creds = managementCredsFrom([
+        sk('StoreKey', 'store-priv'),
+        sk('Password', 'hunter2'),
+      ]);
+      expect(creds.password, 'hunter2');
+      expect(creds.storeKeyPriv, 'store-priv');
+    });
+
+    test('D5 (password-only) committee: password set, storeKeyPriv null', () {
+      final creds = managementCredsFrom([
+        sk('Password', 'pw'),
+        sk('Password', 'pw'),
+      ]);
+      expect(creds.password, 'pw');
+      expect(creds.storeKeyPriv, isNull);
+    });
+
+    test('empty / no password collected -> password null', () {
+      expect(managementCredsFrom(const []).password, isNull);
+      expect(managementCredsFrom([sk('StoreKey', 'p')]).password, isNull);
+    });
+
+    test('takes the first of each type', () {
+      final creds = managementCredsFrom([
+        sk('Password', 'first'),
+        sk('Password', 'second'),
+        sk('StoreKey', 'sk1'),
+        sk('StoreKey', 'sk2'),
+      ]);
+      expect(creds.password, 'first');
+      expect(creds.storeKeyPriv, 'sk1');
     });
   });
 }
