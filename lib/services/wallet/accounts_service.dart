@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:libwallet/libwallet.dart'
-    show Account, LibwalletException, Wallet;
+    show Account, Wallet;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'libwallet_backend.dart';
@@ -70,43 +70,23 @@ class AccountsService extends ChangeNotifier {
       final wallets = {
         for (final w in await client.wallets.list()) w.id: w,
       };
-      // Filter 1 — phantom accounts (curve/type mismatch, non-0x EVM address,
-      // or "N/A"): they appear nowhere.
-      final usable =
-          rawList.where((a) => isUsableAccount(a, wallets[a.wallet])).toList();
-
-      // Filter 2 — unloadable wallets: libwallet can return wallets from
-      // list() whose backing file is missing (e.g. a duplicate/phantom wallet
-      // from a messy restore). Switching to one fails inside switchWallet with
-      // `wallets.get()` → 404 "file does not exist" — the cause of EVM-account
-      // switches failing while Solana works. Probe each wallet that has usable
-      // accounts and drop those whose file is gone so the user never sees an
-      // account they can't switch to. Only 404 / "does not exist" counts as
-      // broken — transient errors must not hide otherwise-good accounts.
-      final walletIds = usable.map((a) => a.wallet).toSet();
-      final broken = <String>{};
-      await Future.wait(walletIds.map((id) async {
-        try {
-          await client.wallets.get(id);
-        } on LibwalletException catch (e) {
-          if (e.code == '404' ||
-              e.message.toLowerCase().contains('does not exist')) {
-            broken.add(id);
-            debugPrint('[accounts] wallet $id unloadable: ${e.message}');
-          }
-        } catch (_) {
-          // Non-libwallet/transient error: leave the wallet visible.
-        }
-      }));
+      // Filter phantom accounts only (curve/type mismatch, non-0x EVM address,
+      // or "N/A") — determined purely from the list() data, so this never hides
+      // a real wallet.
+      //
+      // We deliberately do NOT probe `wallets.get()` to hide "unloadable"
+      // wallets: libwallet's get() can flakily return 404 "file does not exist"
+      // for VALID wallets, which would HIDE a real, working wallet (looks
+      // deleted). Letting a switch to a genuinely-broken wallet fail with an
+      // error is far safer than hiding a real one. (Removed the
+      // unloadable-wallet probe that was dropping real wallets — see git
+      // history / the BTL7hA incident.)
       final filtered =
-          usable.where((a) => !broken.contains(a.wallet)).toList();
+          rawList.where((a) => isUsableAccount(a, wallets[a.wallet])).toList();
 
       final dropped = rawList.length - filtered.length;
       if (dropped > 0) {
-        debugPrint(
-          '[accounts] dropped $dropped account(s) '
-          '(phantom or under ${broken.length} unloadable wallet(s))',
-        );
+        debugPrint('[accounts] dropped $dropped phantom account(s)');
       }
       _rawAccounts = filtered;
       _walletsById = wallets;
