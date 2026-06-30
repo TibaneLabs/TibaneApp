@@ -109,26 +109,19 @@ class AccountsService extends ChangeNotifier {
     }
   }
 
-  /// Resolve which unified account is current: first the one matching the
-  /// active backend (preserves the old `_matchActiveAccount` semantics), then
-  /// the persisted/first-in-app fallback.
+  /// Resolve which unified account is current — the persisted [savedId] is
+  /// authoritative (encodes in-app vs MWA); see [resolveCurrentAccount].
   UnifiedAccount? _resolveCurrent(
     List<UnifiedAccount> accounts,
     String? savedId, {
     required bool preferMwa,
-  }) {
-    if (preferMwa) {
-      for (final a in accounts) {
-        if (a.isMwa) return a;
-      }
-    } else {
-      final aid = _libwallet.accountId;
-      for (final a in accounts) {
-        if (a.isInApp && a.accountId == aid) return a;
-      }
-    }
-    return resolvePersistedAccount(accounts: accounts, savedId: savedId);
-  }
+  }) =>
+      resolveCurrentAccount(
+        accounts: accounts,
+        savedId: savedId,
+        preferMwa: preferMwa,
+        activeInAppAccountId: _libwallet.accountId,
+      );
 
   /// Make [acct] the current account: for an in-app account, switch the
   /// network to one matching its chain (caller-picked [networkId], else the

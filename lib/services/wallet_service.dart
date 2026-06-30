@@ -214,13 +214,23 @@ class WalletService extends ChangeNotifier {
     // A persisted `mwa` selection with no restored MWA session would leave the
     // app stuck on "Connect" despite an in-app wallet being present — fall back.
     _reconcileKind();
+    // Account-centric startup: build the unified account list, then derive the
+    // active backend from the RESTORED current account (the persisted
+    // current_account_id is authoritative — it encodes in-app vs MWA). This
+    // makes the app reopen on whatever account you were last on, instead of a
+    // stale restored Seed Vault pubkey overriding your in-app wallet.
+    await refreshAccounts();
+    final cur = _accountsService.current;
+    if (cur != null) {
+      final desired = cur.isMwa ? WalletKind.mwa : WalletKind.inapp;
+      if (desired != _kind) await _setKind(desired);
+    }
     if (isConnected) {
       refreshBalances();
     } else {
       // No wallet to load — nothing for the startup splash to wait on.
       _dataReady = true;
     }
-    unawaited(refreshAccounts());
     _restored = true;
     notifyListeners();
   }
