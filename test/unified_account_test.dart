@@ -325,6 +325,70 @@ void main() {
     });
   });
 
+  group('resolveCurrentAccount (account-centric startup)', () {
+    // in-app account a1 (wallet w1) + a connected MWA account.
+    final list = buildUnifiedAccounts(
+      inappAccounts: [_acct(id: 'a1', wallet: 'w1', name: 'A1')],
+      walletsById: {'w1': _wallet(id: 'w1')},
+      mwaAddress: 'M',
+    );
+
+    test('saved in-app id wins even when preferMwa (stale Seed Vault pubkey)',
+        () {
+      // The bug: a restored MWA pubkey set preferMwa=true and stole the current
+      // account. The saved id must win.
+      final r = resolveCurrentAccount(
+        accounts: list,
+        savedId: 'a1',
+        preferMwa: true,
+        activeInAppAccountId: null,
+      );
+      expect(r!.id, 'a1');
+      expect(r.isInApp, isTrue);
+    });
+
+    test('saved MWA id wins even when not preferMwa', () {
+      final r = resolveCurrentAccount(
+        accounts: list,
+        savedId: 'mwa:M',
+        preferMwa: false,
+        activeInAppAccountId: 'a1',
+      );
+      expect(r!.id, 'mwa:M');
+      expect(r.isMwa, isTrue);
+    });
+
+    test('no saved id + preferMwa → the MWA account', () {
+      final r = resolveCurrentAccount(
+        accounts: list,
+        savedId: null,
+        preferMwa: true,
+        activeInAppAccountId: null,
+      );
+      expect(r!.isMwa, isTrue);
+    });
+
+    test('no saved id + !preferMwa → the live active in-app account', () {
+      final r = resolveCurrentAccount(
+        accounts: list,
+        savedId: null,
+        preferMwa: false,
+        activeInAppAccountId: 'a1',
+      );
+      expect(r!.id, 'a1');
+    });
+
+    test('saved id gone (account removed) → falls back to first in-app', () {
+      final r = resolveCurrentAccount(
+        accounts: list,
+        savedId: 'acct-deleted',
+        preferMwa: false,
+        activeInAppAccountId: null,
+      );
+      expect(r!.id, 'a1'); // first in-app fallback
+    });
+  });
+
   group('allowedAccountTypesForCurve', () {
     test('ed25519 → solana only', () {
       expect(allowedAccountTypesForCurve('ed25519'), ['solana']);

@@ -172,6 +172,39 @@ UnifiedAccount? resolvePersistedAccount({
   return accounts.first;
 }
 
+/// Resolve the current account on startup (account-centric model). The
+/// persisted [savedId] is **authoritative** — it encodes the user's last-active
+/// account (in-app OR MWA), so it wins over the live backend signals. This is
+/// what lets the app reopen on the right account even when a stale Seed Vault
+/// pubkey is restored alongside an in-app wallet.
+///
+/// Order: (1) the account matching [savedId]; (2) when there's no saved id, the
+/// account matching the live active backend — the MWA account if [preferMwa],
+/// else the in-app account whose id is [activeInAppAccountId]; (3) the
+/// persisted/first-in-app fallback ([resolvePersistedAccount]).
+UnifiedAccount? resolveCurrentAccount({
+  required List<UnifiedAccount> accounts,
+  required String? savedId,
+  required bool preferMwa,
+  required String? activeInAppAccountId,
+}) {
+  if (savedId != null) {
+    for (final a in accounts) {
+      if (a.id == savedId) return a;
+    }
+  }
+  if (preferMwa) {
+    for (final a in accounts) {
+      if (a.isMwa) return a;
+    }
+  } else {
+    for (final a in accounts) {
+      if (a.isInApp && a.accountId == activeInAppAccountId) return a;
+    }
+  }
+  return resolvePersistedAccount(accounts: accounts, savedId: savedId);
+}
+
 /// Account `type`s that can be derived for a wallet of the given [curve].
 /// libwallet derives the key from the curve, so a new account's type must match
 /// it (ed25519 → solana; secp256k1 → ethereum/bitcoin) or the TSS layer derives

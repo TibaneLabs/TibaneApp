@@ -17,7 +17,6 @@ import 'screens/wallet/biometric_migration_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
 import 'services/browser_preferences.dart';
 import 'services/favorites_service.dart';
-import 'services/mwa_detector.dart';
 import 'services/uk_compliance_service.dart';
 import 'services/wallet_service.dart';
 import 'theme/tibane_theme.dart';
@@ -113,7 +112,6 @@ class TibaneShell extends StatefulWidget {
 class TibaneShellState extends State<TibaneShell>
     with WidgetsBindingObserver {
   late int _currentIndex = widget.initialIndex;
-  late bool _isSeekerDevice = widget.forceSeeker ?? false;
 
   /// Null while checking; true shows the mandatory biometric-migration screen
   /// (Phase 3 / D7); false renders the normal home.
@@ -134,11 +132,6 @@ class TibaneShellState extends State<TibaneShell>
     _splashTimeout = Timer(const Duration(seconds: 8), () {
       if (mounted) setState(() => _splashTimedOut = true);
     });
-    if (widget.forceSeeker == null) {
-      hasMwaWallet().then((v) {
-        if (mounted) setState(() => _isSeekerDevice = v);
-      });
-    }
     _initDeepLinks();
     _checkBiometricMigration();
   }
@@ -227,6 +220,14 @@ class TibaneShellState extends State<TibaneShell>
         onDone: () => setState(() => _needsMigration = false),
       );
     }
+    // The app's mode follows the CURRENT ACCOUNT's backend: an MWA / Seed Vault
+    // account shows the swap-first (external) layout; an in-app MPC account (or
+    // no account yet) shows the Wallet dashboard. So switching accounts switches
+    // the whole mode. forceSeeker overrides for the screenshot harness; UK users
+    // never get the Swap tab.
+    final isUk = context.watch<UkComplianceService>().isUk;
+    final showSwap =
+        (widget.forceSeeker ?? (wallet.currentAccount?.isMwa ?? false)) && !isUk;
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
@@ -254,9 +255,9 @@ class TibaneShellState extends State<TibaneShell>
         index: _currentIndex,
         children: [
           HomeScreen(onNavigate: _navigateTo),
-          // UK users never see a Swap tab — they get the wallet view in
-          // its place. Non-UK users on Seeker keep the Swap default.
-          (_isSeekerDevice && !context.watch<UkComplianceService>().isUk)
+          // Tab 2 follows the current account's mode: Swap for an MWA account,
+          // the Wallet dashboard for an in-app MPC account (or no account).
+          showSwap
               ? const SwapScreen(initialInputMint: wsolMint)
               : const WalletScreen(),
           const DAppBrowserScreen(),
@@ -269,8 +270,6 @@ class TibaneShellState extends State<TibaneShell>
         ),
         child: Builder(
           builder: (context) {
-            final isUk = context.watch<UkComplianceService>().isUk;
-            final showSwap = _isSeekerDevice && !isUk;
             return BottomNavigationBar(
               currentIndex: _currentIndex,
               onTap: _navigateTo,
