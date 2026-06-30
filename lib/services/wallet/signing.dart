@@ -1,4 +1,4 @@
-import 'package:libwallet/libwallet.dart' show Wallet, WalletKey;
+import 'package:libwallet/libwallet.dart' show SigningKey, Wallet, WalletKey;
 
 /// Per-transaction (lockless) signing — pure helpers + feature flag.
 ///
@@ -40,3 +40,24 @@ bool signSheetReady(int collectedCount, int threshold) =>
 /// in-app wallet does (signing is always lockless / per-transaction now). MWA
 /// signs through Seed Vault's own auth, never the sheet.
 bool useSignSheetFor({required bool isInApp}) => isInApp;
+
+/// Extract the raw credentials a key-management op needs (change password,
+/// rotate device share, reshare, …) from the shares the sign sheet collected:
+/// the typed **Password** and (when present) the **StoreKey** private key.
+///
+/// Pure so it's unit-testable without a sheet. Phase 6D replaces the legacy
+/// `unlock()` cached `_password`/`_storeKeyPriv` session with per-op collection,
+/// and this maps the collected `List<SigningKey>` back to those two secrets.
+/// `password` is null only if no Password share was collected (every committee
+/// includes one, so callers can treat null as "cancelled / unusable").
+({String? password, String? storeKeyPriv}) managementCredsFrom(
+  List<SigningKey> keys,
+) {
+  String? password;
+  String? storeKeyPriv;
+  for (final k in keys) {
+    if (k.type == 'Password') password ??= k.key;
+    if (k.type == 'StoreKey') storeKeyPriv ??= k.key;
+  }
+  return (password: password, storeKeyPriv: storeKeyPriv);
+}
