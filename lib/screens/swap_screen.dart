@@ -457,6 +457,17 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
           );
           if (match != null) _selectedInput = match;
         }
+        // Default the "from" to this chain's native token (SOL / POL / ETH /
+        // …) when nothing else selected one — every network opens with its
+        // native asset. (The launch sites pass the Solana wSOL mint, which
+        // doesn't match a holding off-Solana, leaving the field empty.)
+        if (_selectedInput == null) {
+          final native = holdings.cast<TokenHolding?>().firstWhere(
+            (h) => h!.mint == _nativeMint,
+            orElse: () => null,
+          );
+          if (native != null) _selectedInput = native;
+        }
       });
     } catch (e) {
       logError('[swap._loadHoldings] error: $e');
