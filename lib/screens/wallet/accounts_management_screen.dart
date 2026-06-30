@@ -4,12 +4,11 @@ import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
 
 import '../../services/wallet/libwallet_backend.dart'
-    show AccountSwitchRoute, LibwalletBackend;
+    show AccountSwitchRoute, LibwalletBackend, SwitchResult;
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import 'inapp_create_screen.dart';
-import 'inapp_unlock_screen.dart';
 import '../../utils/log.dart';
 
 /// Lists every chain account derived from libwallet wallets on this
@@ -83,14 +82,17 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
       case AccountSwitchRoute.sameWallet:
         break;
       case AccountSwitchRoute.crossWallet:
-        // The account lives on a different wallet — switch (and unlock) that
-        // wallet first, then select the specific account below.
-        final switched = await InAppUnlockScreen.ensureUnlocked(
-          context,
-          walletId: account.wallet,
-        );
+        // The account lives on a different wallet — free lockless switch (no
+        // password), then select the specific account below.
+        final r = await backend.switchWallet(account.wallet);
         if (!mounted) return;
-        if (!switched) return; // user cancelled / failed
+        if (r != SwitchResult.ok) {
+          logError('[AccountsManagement._setActive] switch wallet failed: $r');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(backend.error ?? 'Could not switch wallet')),
+          );
+          return;
+        }
         break;
     }
     final ok = await backend.switchAccount(account.id);

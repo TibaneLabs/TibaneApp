@@ -291,7 +291,7 @@ class _StubWalletService extends WalletService {
   Future<void> refreshBalances() async {}
 
   @override
-  Future<void> connectMwa() async {}
+  Future<bool> connectMwa() async => false;
 
   @override
   Future<void> useLibwallet() async {}
