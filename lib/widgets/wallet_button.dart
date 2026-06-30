@@ -103,6 +103,24 @@ class _ConnectButton extends StatelessWidget {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
+  /// Connect an external MWA/Seed Vault wallet and surface a clear error when
+  /// it fails — most importantly when no compatible wallet app is installed
+  /// (native `NO_WALLET`). Captures the messenger before the sheet closes.
+  Future<void> _connectExternal(BuildContext sheetContext) async {
+    final messenger = ScaffoldMessenger.of(sheetContext);
+    Navigator.pop(sheetContext);
+    final ok = await wallet.connectMwa();
+    if (!ok) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            wallet.mwa.error ?? 'No compatible wallet app is installed.',
+          ),
+        ),
+      );
+    }
+  }
+
   void _showConnectDialog(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -142,20 +160,14 @@ class _ConnectButton extends StatelessWidget {
                 name: 'Seed Vault',
                 subtitle: 'Seeker native wallet',
                 icon: Icons.security,
-                onTap: () {
-                  Navigator.pop(context);
-                  wallet.connectMwa();
-                },
+                onTap: () => _connectExternal(context),
               ),
               const SizedBox(height: 12),
               _WalletOption(
                 name: 'Other Wallet',
                 subtitle: 'Phantom, Solflare, etc.',
                 icon: Icons.wallet,
-                onTap: () {
-                  Navigator.pop(context);
-                  wallet.connectMwa();
-                },
+                onTap: () => _connectExternal(context),
               ),
               const SizedBox(height: 12),
             ],

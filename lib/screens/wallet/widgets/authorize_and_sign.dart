@@ -7,29 +7,19 @@ import 'package:provider/provider.dart';
 
 import '../../../services/wallet/signing.dart';
 import '../../../services/wallet_service.dart';
-import '../inapp_unlock_screen.dart';
 import 'sign_sheet.dart';
 
-/// Per-transaction authorize-and-sign helpers (Atonline-parity Phase 4a, §4.3).
+/// Per-transaction authorize-and-sign helpers (Atonline-parity §4.3).
 ///
-/// These centralize the `send_screen` pattern so every in-app sign site can
-/// authorize per transaction via the sign sheet. With `kLocklessSigning` on
-/// (or for a D5 wallet with no StoreKey), signing collects shares via the sheet
-/// and uses the backend's `*WithKeys` methods; otherwise it falls back to the
-/// legacy `ensureUnlocked` + cached session. MWA wallets always take the legacy
-/// path (Seed Vault does its own auth).
-///
-/// Phase 4a-1 ships these dormant (the flag defaults off); Phase 4a-2 flips the
-/// flag and converts the remaining sign sites to call them.
+/// These centralize the sign pattern so every in-app sign site authorizes per
+/// transaction via the sign sheet (collect shares → the backend's `*WithKeys`
+/// methods). MWA wallets sign through Seed Vault's own auth — the façade routes
+/// to the MWA backend directly, no app sheet.
 
-/// Whether the current sign should authorize per-transaction via the sheet.
-/// Only in-app wallets, and only when lockless signing is on OR the wallet has
-/// no StoreKey (a D5 committee that can't use the cached path).
-bool useSignSheet(WalletService wallet) => useSignSheetFor(
-      isInApp: wallet.kind == WalletKind.inapp,
-      lockless: kLocklessSigning,
-      walletRequiresSheet: wallet.libwallet.requiresSignSheet,
-    );
+/// Whether the current sign authorizes per-transaction via the sheet: every
+/// in-app wallet does. MWA signs via Seed Vault (no sheet).
+bool useSignSheet(WalletService wallet) =>
+    useSignSheetFor(isInApp: wallet.kind == WalletKind.inapp);
 
 void _toast(BuildContext context, String message) {
   debugPrint('[authorizeAndSign] $message');
@@ -64,10 +54,9 @@ Future<List<SigningKey>?> collectSigningKeys(BuildContext context) async {
   );
 }
 
-/// Authorize + sign-and-broadcast [txs]. Lockless: collect keys once via the
-/// sheet, then `signAndSendTransactionsWithKeys`. Legacy: `ensureUnlocked` +
-/// the cached session. Returns the per-tx signatures, or null if cancelled /
-/// not authorized.
+/// Authorize + sign-and-broadcast [txs]. In-app: collect keys once via the
+/// sheet, then `signAndSendTransactionsWithKeys`. MWA: route to the backend
+/// (Seed Vault auth). Returns the per-tx signatures, or null if cancelled.
 Future<List<String?>?> authorizeAndSignAndSend(
   BuildContext context,
   List<Uint8List> txs,
@@ -78,13 +67,11 @@ Future<List<String?>?> authorizeAndSignAndSend(
     if (keys == null || !context.mounted) return null;
     return wallet.libwallet.signAndSendTransactionsWithKeys(txs, keys);
   }
-  if (!await InAppUnlockScreen.ensureUnlocked(context)) return null;
-  if (!context.mounted) return null;
   return wallet.signAndSendTransactions(txs);
 }
 
 /// Authorize + sign-only [txs] (the relayer/co-signer broadcasts). Returns the
-/// signed bytes per tx, or null if cancelled / not authorized.
+/// signed bytes per tx, or null if cancelled.
 Future<List<Uint8List?>?> authorizeAndSignTransactions(
   BuildContext context,
   List<Uint8List> txs,
@@ -95,8 +82,6 @@ Future<List<Uint8List?>?> authorizeAndSignTransactions(
     if (keys == null || !context.mounted) return null;
     return wallet.libwallet.signTransactionsWithKeys(txs, keys);
   }
-  if (!await InAppUnlockScreen.ensureUnlocked(context)) return null;
-  if (!context.mounted) return null;
   return wallet.signTransactions(txs);
 }
 
@@ -129,11 +114,10 @@ Future<Uint8List?> signOne(
   return out.isEmpty ? null : out.first;
 }
 
-/// Authorize ONCE for a batch: collect sheet keys (lockless) or `ensureUnlocked`
-/// (legacy). Returns a [BatchAuth] whose `.keys` is non-null for the sheet path
-/// and null for the legacy/cached path; returns null if the user cancelled or
-/// the wallet can't be signed. Pass `.keys` to [signAndSendOne] / [signOne] for
-/// each tx in the batch.
+/// Authorize ONCE for a batch: collect sheet keys (in-app). Returns a
+/// [BatchAuth] whose `.keys` is non-null for the sheet path and null for the
+/// MWA path; returns null if the user cancelled or the wallet can't be signed.
+/// Pass `.keys` to [signAndSendOne] / [signOne] for each tx in the batch.
 Future<BatchAuth?> authorizeBatch(BuildContext context) async {
   final wallet = context.read<WalletService>();
   if (useSignSheet(wallet)) {
@@ -141,12 +125,11 @@ Future<BatchAuth?> authorizeBatch(BuildContext context) async {
     if (keys == null) return null;
     return BatchAuth(keys);
   }
-  if (!await InAppUnlockScreen.ensureUnlocked(context)) return null;
   return const BatchAuth(null);
 }
 
-/// Result of [authorizeBatch]: the sheet-collected keys (lockless) or null
-/// (legacy cached session).
+/// Result of [authorizeBatch]: the sheet-collected keys (in-app), or null for
+/// the MWA path (Seed Vault signs each tx itself).
 class BatchAuth {
   const BatchAuth(this.keys);
   final List<SigningKey>? keys;
@@ -164,8 +147,6 @@ Future<Uint8List?> authorizeAndSignMessage(
     if (keys == null || !context.mounted) return null;
     return wallet.libwallet.signMessageWithKeys(message, keys);
   }
-  if (!await InAppUnlockScreen.ensureUnlocked(context)) return null;
-  if (!context.mounted) return null;
   return wallet.signMessage(message);
 }
 
