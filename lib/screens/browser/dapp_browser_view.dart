@@ -21,7 +21,13 @@ const _kBridge = 'libwalletBridge';
 const _kHomeUk = 'https://duckduckgo.com';
 
 class DAppBrowserView extends StatefulWidget {
-  const DAppBrowserView({super.key});
+  /// Whether the Browse tab is currently active. When false the [WebViewWidget]
+  /// is swapped for a placeholder so the platform view is detached and the
+  /// webview's RenderThread stops compositing off-screen. The controller and
+  /// the loaded page live in State, so they survive the detach.
+  final bool active;
+
+  const DAppBrowserView({super.key, this.active = true});
 
   @override
   State<DAppBrowserView> createState() => _DAppBrowserViewState();
@@ -372,9 +378,14 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
         ),
         if (_loading) const LinearProgressIndicator(minHeight: 2),
         Expanded(
-          child: _ready
-              ? WebViewWidget(controller: _webview)
-              : const Center(child: CircularProgressIndicator()),
+          child: !_ready
+              ? const Center(child: CircularProgressIndicator())
+              : widget.active
+                  ? WebViewWidget(controller: _webview)
+                  // Off-screen: drop the platform view so the native webview's
+                  // RenderThread stops compositing. The controller + page state
+                  // are retained, so switching back re-attaches the live page.
+                  : const ColoredBox(color: TibaneColors.black),
         ),
       ],
     );
