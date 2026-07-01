@@ -301,15 +301,12 @@ class _StubWalletService extends WalletService {
 }
 
 // ---------------------------------------------------------------------------
-// Stub LibwalletBackend — exposes hasWallet/isUnlocked + canned getAssets/Txs
+// Stub LibwalletBackend — exposes hasWallet + canned getAssets/Txs
 // ---------------------------------------------------------------------------
 
 class _StubLibwallet extends LibwalletBackend {
   @override
   bool get hasWallet => true;
-
-  @override
-  bool get isUnlocked => true;
 
   @override
   bool get isConnected => true;

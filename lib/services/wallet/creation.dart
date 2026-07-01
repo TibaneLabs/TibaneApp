@@ -44,7 +44,6 @@ List<String> creationKeyTypes(CreationMode mode) => switch (mode) {
     };
 
 /// Whether a created wallet of this mode carries a StoreKey share. A wallet
-/// WITHOUT one (D5) can only be signed via the per-transaction sign sheet —
-/// the legacy `_signingKeys()` path expects a StoreKey — so it must route
-/// through the sheet regardless of the lockless flag.
+/// WITHOUT one (D5) is signed the same lockless way — the sign sheet collects
+/// its two Password shares per transaction.
 bool modeHasStoreKey(CreationMode mode) => mode == CreationMode.biometric;
