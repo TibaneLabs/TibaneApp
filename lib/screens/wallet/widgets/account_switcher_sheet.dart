@@ -265,15 +265,23 @@ class AccountSwitcherSheet extends StatelessWidget {
                         );
                       },
                     ),
-                  _ActionTile(
-                    icon: Icons.logout,
-                    label: 'Disconnect',
-                    destructive: true,
-                    onTap: () {
-                      Navigator.pop(context);
-                      wallet.disconnect();
-                    },
-                  ),
+                  // Disconnect is ONLY for an external (MWA / Seed Vault)
+                  // account — it just ends that session; the Seed Vault wallet
+                  // stays in its own app. An in-app MPC wallet is lockless and
+                  // lives on the device: "disconnecting" it means deleting it
+                  // (wallets.delete), which must never be a casual switcher tap.
+                  // To remove an in-app wallet, use Wallet details → Remove
+                  // (explicit, confirmed).
+                  if (current.isMwa)
+                    _ActionTile(
+                      icon: Icons.logout,
+                      label: 'Disconnect external',
+                      destructive: true,
+                      onTap: () {
+                        Navigator.pop(context);
+                        wallet.disconnect();
+                      },
+                    ),
                 ],
               ],
             ),

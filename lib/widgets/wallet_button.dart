@@ -5,8 +5,8 @@ import 'package:provider/provider.dart';
 
 import '../constants/solana_constants.dart';
 import '../screens/wallet/inapp_create_screen.dart';
-import '../screens/wallet/inapp_unlock_screen.dart';
 import '../screens/wallet/widgets/account_switcher_sheet.dart';
+import '../services/wallet/unified_account.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 
@@ -97,10 +97,23 @@ class _ConnectButton extends StatelessWidget {
   }
 
   void _openInAppFlow(BuildContext context, WalletService wallet) {
-    final screen = wallet.libwallet.hasWallet
-        ? const InAppUnlockScreen()
-        : const InAppCreateScreen();
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+    if (!wallet.libwallet.hasWallet) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const InAppCreateScreen()),
+      );
+      return;
+    }
+    // Lockless: an in-app wallet already exists on this device — just make it
+    // the current account (no unlock screen). tryRestore already loaded it, so
+    // switching the active account reconnects it; the button rebuilds to the
+    // connected state via notifyListeners. Fire-and-forget (no Navigator, so no
+    // context-after-pop concern).
+    final target = firstInAppAccount(wallet.accounts);
+    if (target != null) {
+      wallet.setCurrentAccount(target);
+    } else {
+      wallet.useLibwallet();
+    }
   }
 
   /// Connect an external MWA/Seed Vault wallet and surface a clear error when

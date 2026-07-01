@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
 
+import '../../services/wallet/unified_account.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import 'device_transfer_send_screen.dart';
 import 'inapp_export_screen.dart';
-import 'inapp_unlock_screen.dart';
 import 'reset_password_screen.dart';
 import 'share_labels.dart';
 import '../../utils/log.dart';
@@ -147,26 +147,39 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     if (mounted) _load();
   }
 
-  /// Make this (non-active) wallet the in-use one. Routes through the unlock
-  /// screen targeting this wallet, which switches to it (or runs 2FA recovery
-  /// when it has no local device share).
+  /// Make this (non-active) wallet the in-use one via a lockless, account-centric
+  /// switch — no password. Signing authorizes per-transaction via the sheet; a
+  /// wallet with no local device share prompts 2FA recovery at sign time (the
+  /// "needs 2FA" hint is already shown). `setCurrentAccount` switches libwallet
+  /// to the wallet, picks a compatible network, and PERSISTS the choice (so it
+  /// survives a relaunch — a bare switchWallet wouldn't).
   Future<void> _use() async {
     final wallet = _wallet;
     if (wallet == null) return;
+    final ws = context.read<WalletService>();
     final name = wallet.name.isEmpty ? 'wallet' : wallet.name;
-    final ok = await InAppUnlockScreen.ensureUnlocked(
-      context,
-      walletId: wallet.id,
-    );
+    final messenger = ScaffoldMessenger.of(context);
+    final target = accountForWallet(ws.accounts, wallet.id);
+    if (target == null) {
+      logError('[WalletDetails._use] no account found for ${wallet.id}');
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not switch to "$name"')),
+      );
+      return;
+    }
+    final ok = await ws.setCurrentAccount(target);
     if (!mounted) return;
     if (ok) {
-      setState(() {
-        _isActive = true;
-        _hasShareHere = true;
-      });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('"$name" is now in use')));
+      await _load(); // refresh _isActive / _hasShareHere from the new state
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('"$name" is now in use')));
+    } else {
+      logError('[WalletDetails._use] switch failed: ${ws.libwallet.error}');
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(ws.libwallet.error ?? 'Could not switch to "$name"'),
+        ),
+      );
     }
   }
 

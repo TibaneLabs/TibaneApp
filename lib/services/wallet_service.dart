@@ -264,7 +264,15 @@ class WalletService extends ChangeNotifier {
     unawaited(refreshAccounts());
   }
 
+  /// Tear down an EXTERNAL (MWA / Seed Vault) session. This is a no-op for an
+  /// in-app wallet on purpose: an in-app MPC wallet is lockless and lives on the
+  /// device, and `LibwalletBackend.disconnect()` would DELETE it
+  /// (`wallets.delete`). Deleting an in-app wallet is an explicit, confirmed
+  /// action only (Wallet details → Remove → `removeWallet`), never a
+  /// "disconnect". Guards against the historical footgun where the account
+  /// switcher's Disconnect erased the active wallet.
   Future<void> disconnect() async {
+    if (_kind != WalletKind.mwa) return;
     await active.disconnect();
     resetSessionState();
     _authedAddress = null;
