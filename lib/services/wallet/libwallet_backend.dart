@@ -141,18 +141,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   @override
   String? get error => _error;
 
-  /// True when we have key material in memory ready to sign.
-  bool get isUnlocked => _password != null && _storeKeyPriv != null;
-
-  /// True when a wallet exists on this device (but may be locked).
+  /// True when a wallet exists on this device.
   bool get hasWallet => _walletId != null;
-
-  /// True when the current wallet has no StoreKey share — a D5 password-only
-  /// committee `[Password, Password, RemoteKey]`. The legacy `_signingKeys()`
-  /// path expects a StoreKey, so such wallets can only be signed via the
-  /// per-transaction sign sheet — callers must route them there regardless of
-  /// `kLocklessSigning`.
-  bool get requiresSignSheet => hasWallet && _storeKeyId == null;
 
   /// True while a device-transfer has been received but not yet activated
   /// (awaiting the wallet password). Unique to the post-import/pre-activate
@@ -1069,8 +1059,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// so this device has its own StoreKey going forward. Caller has
   /// already collected the password (validated upstream via
   /// [startRemoteKeyReshare] succeeding) and the verification code.
-  /// On success, the wallet ends up fully unlocked (`isUnlocked` true)
-  /// — no second call to [unlock] needed.
+  /// On success the fresh device share is persisted and the wallet is
+  /// signable on this device (per-transaction via the sign sheet).
   Future<bool> recoverDeviceShareVia2fa({
     required String sessionToken,
     required String code,
@@ -1729,73 +1719,34 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     notifyListeners();
   }
 
+  // In-app signing is lockless: callers collect shares via the sign sheet and
+  // use the key-explicit variants (signMessageWithKeys /
+  // signTransactionsWithKeys / signAndSendTransactionsWithKeys). The generic
+  // WalletBackend methods below are only ever dispatched to the MWA backend
+  // (Seed Vault signs itself); on the in-app backend they're unreachable, so
+  // they fail loudly rather than silently signing with an empty key set (the
+  // old cached-session path is gone).
   @override
-  Future<Uint8List?> signMessage(Uint8List message) async {
-    if (!_ensureReady()) return null;
-    try {
-      final client = await _getClient();
-      final result = await client.accounts.signMessage(
-        _accountId!,
-        message: message,
-        keys: _signingKeys(),
-        mode: 'solana',
+  Future<Uint8List?> signMessage(Uint8List message) async =>
+      throw UnsupportedError(
+        'In-app signing is lockless — use signMessageWithKeys.',
       );
-      return base58Decode(result.signature);
-    } catch (e) {
-      _error = 'Message signing failed: $e';
-      debugPrint(_error);
-      notifyListeners();
-      return null;
-    }
-  }
 
   @override
   Future<List<Uint8List?>> signTransactions(
     List<Uint8List> transactions,
-  ) async {
-    if (!_ensureReady()) return List.filled(transactions.length, null);
-    final client = await _getClient();
-    final keys = _signingKeys();
-    final out = <Uint8List?>[];
-    for (final tx in transactions) {
-      try {
-        final signed = await client.accounts.signTransaction(
-          _accountId!,
-          transaction: tx,
-          keys: keys,
-        );
-        out.add(signed);
-      } catch (e) {
-        debugPrint('signTransactions error: $e');
-        out.add(null);
-      }
-    }
-    return out;
-  }
+  ) async =>
+      throw UnsupportedError(
+        'In-app signing is lockless — use signTransactionsWithKeys.',
+      );
 
   @override
   Future<List<String?>> signAndSendTransactions(
     List<Uint8List> transactions,
-  ) async {
-    if (!_ensureReady()) return List.filled(transactions.length, null);
-    final client = await _getClient();
-    final keys = _signingKeys();
-    final out = <String?>[];
-    for (final tx in transactions) {
-      try {
-        final sig = await client.accounts.signAndSendTransaction(
-          _accountId!,
-          transaction: tx,
-          keys: keys,
-        );
-        out.add(sig);
-      } catch (e) {
-        debugPrint('signAndSendTransactions error: $e');
-        out.add(null);
-      }
-    }
-    return out;
-  }
+  ) async =>
+      throw UnsupportedError(
+        'In-app signing is lockless — use signAndSendTransactionsWithKeys.',
+      );
 
   @override
   void clearError() {
@@ -2288,44 +2239,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
   }
 
-  /// Send SOL or an SPL token. Returns the broadcast transaction.
-  Future<Transaction> send({
-    required String to,
-    required Amount amount,
-    String? asset,
-  }) async {
-    final client = await _getClient();
-    final keys = _signingKeys()
-        .map(
-          (k) => SigningKey(
-            id: k['Id'] as String,
-            key: k['Key'] as String,
-            type: k['Type'] as String?,
-          ),
-        )
-        .toList();
-    final resolvedAsset = await _resolveAssetKey(client, asset);
-    final tx = UnsignedTransaction(
-      type: 'transfer',
-      to: to,
-      from: _accountId,
-      amount: amount,
-      asset: resolvedAsset,
-      priorityLevel: 'medium',
-    );
-    // `validate` requires an explicit asset and surfaces any build/funding
-    // problem before we pull signing keys; signAndSend then builds, signs,
-    // and broadcasts.
-    await client.transactions.validate(tx);
-    return client.transactions.signAndSendSimple(tx, keys: keys);
-  }
-
   // ------------------------------------------------------------------
-  // Per-transaction (lockless) signing — Phase 1 (ATONLINE_PARITY §4.3 / §3.2).
-  // These run IN PARALLEL with unlock()/lock()/_signingKeys()/send(): they
-  // collect shares per call instead of from the cached session, never touch
-  // the _storeKeyPriv/_password caches, and skip _ensureReady()'s unlock gate.
-  // Reached only via the sign sheet when kLocklessSigning is on.
+  // Per-transaction (lockless) signing (ATONLINE_PARITY §4.3 / §3.2). Every in-app
+  // send/sign collects shares per call via the sign sheet (the *WithKeys
+  // methods) — it never touches a cached session.
   // ------------------------------------------------------------------
 
   /// Fetch the current wallet record (its key shares + threshold) for the
@@ -2812,33 +2729,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   }
 
   // --- internals ---
-
-  bool _ensureReady() {
-    if (!hasWallet) {
-      _error = 'No in-app wallet';
-      notifyListeners();
-      return false;
-    }
-    if (!isUnlocked) {
-      _error = 'Wallet is locked — enter password';
-      notifyListeners();
-      return false;
-    }
-    return true;
-  }
-
-  List<Map<String, dynamic>> _signingKeys() {
-    // 2-of-3: device StoreKey + Password. Server share is held in reserve
-    // for recovery on a new device and is not required for day-to-day signing.
-    final keys = <Map<String, dynamic>>[];
-    if (_storeKeyId != null && _storeKeyPriv != null) {
-      keys.add({'Id': _storeKeyId, 'Key': _storeKeyPriv, 'Type': 'StoreKey'});
-    }
-    if (_passwordKeyId != null && _password != null) {
-      keys.add({'Id': _passwordKeyId, 'Key': _password, 'Type': 'Password'});
-    }
-    return keys;
-  }
 
   /// Build the `oldKeys` list for a device-share reshare ceremony.
   ///
