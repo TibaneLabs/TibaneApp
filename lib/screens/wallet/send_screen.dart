@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart'
-    show Amount, Asset, Network, NetworkType, SigningKey, TransactionSimulation;
+    show Amount, Asset, Network, NetworkType, TransactionSimulation;
 import 'package:provider/provider.dart';
 
 import '../../constants/solana_constants.dart';
@@ -14,7 +14,6 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
-import 'inapp_unlock_screen.dart';
 import 'widgets/authorize_and_sign.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
@@ -408,18 +407,11 @@ class _SendScreenState extends State<SendScreen> {
     if (approved != true) return;
     if (!mounted) return;
 
-    // Authorize the spend. Use the per-transaction sign sheet when lockless
-    // signing is on OR when the wallet has no StoreKey (a D5 password-only
-    // committee the legacy unlock path can't sign); otherwise unlock the
-    // app-level session (ATONLINE_PARITY §7 / D5).
-    final useSheet = useSignSheet(context.read<WalletService>());
-    List<SigningKey>? keys;
-    if (useSheet) {
-      keys = await collectSigningKeys(context);
-      if (keys == null) return; // cancelled / unsignable
-    } else {
-      if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
-    }
+    // Authorize the spend via the per-transaction sign sheet. In-app wallets
+    // sign losslessly (no app-level unlock); MWA uses the swap-first layout and
+    // never reaches this screen.
+    final keys = await collectSigningKeys(context);
+    if (keys == null) return; // cancelled / unsignable
     if (!mounted) return;
 
     setState(() {
@@ -429,18 +421,12 @@ class _SendScreenState extends State<SendScreen> {
 
     final wallet = context.read<WalletService>();
     try {
-      final tx = useSheet
-          ? await wallet.libwallet.sendWithKeys(
-              to: addr,
-              amount: amount,
-              asset: _assetKey,
-              keys: keys!,
-            )
-          : await wallet.libwallet.send(
-              to: addr,
-              amount: amount,
-              asset: _assetKey,
-            );
+      final tx = await wallet.libwallet.sendWithKeys(
+        to: addr,
+        amount: amount,
+        asset: _assetKey,
+        keys: keys,
+      );
       if (!mounted) return;
       _amountCtrl.clear();
       // notifyTxCommitted (not just refreshBalances) so the dashboard reloads

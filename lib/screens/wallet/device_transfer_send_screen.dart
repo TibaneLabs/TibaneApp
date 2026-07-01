@@ -8,8 +8,6 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../services/wallet/libwallet_backend.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
-import 'inapp_unlock_screen.dart';
-import 'widgets/authorize_and_sign.dart';
 
 enum _Phase { starting, showing, expired, confirming, done, declined, error }
 
@@ -82,68 +80,41 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
   Future<void> _start() async {
     final wallet = _wallet ?? context.read<WalletService>();
     final backend = wallet.libwallet;
-    if (useSignSheet(wallet)) {
-      // Lockless: switch to the target (free), confirm intent, then read its
-      // StoreKey share on-demand (biometric). Releasing the device share is a
-      // deliberate export action, so authenticate here rather than at every tx.
-      final proceed = await _confirmPrepareDialog(
-        DeviceTransferSendRoute.unlockFirst,
-      );
+    // Lockless: switch to the target (free), confirm intent, then read its
+    // StoreKey share on-demand (biometric). Releasing the device share is a
+    // deliberate export action, so authenticate here rather than at every tx.
+    final proceed = await _confirmPrepareDialog(
+      DeviceTransferSendRoute.unlockFirst,
+    );
+    if (!mounted) return;
+    if (!proceed) {
+      Navigator.of(context).pop(false);
+      return;
+    }
+    if (backend.walletId != widget.walletId) {
+      final r = await backend.switchWallet(widget.walletId);
       if (!mounted) return;
-      if (!proceed) {
-        Navigator.of(context).pop(false);
-        return;
-      }
-      if (backend.walletId != widget.walletId) {
-        final r = await backend.switchWallet(widget.walletId);
-        if (!mounted) return;
-        if (r != SwitchResult.ok) {
-          debugPrint('[device-transfer] switch to ${widget.walletId} failed: '
-              '$r (${backend.error})');
-          setState(() {
-            _phase = _Phase.error;
-            _message = 'Could not open the wallet to transfer it.';
-          });
-          return;
-        }
-      }
-      _exportPriv = await backend.readActiveStoreKeyPrivate();
-      if (!mounted) return;
-      if (_exportPriv == null) {
-        debugPrint('[device-transfer] StoreKey unreadable for '
-            '${widget.walletId} — needs 2FA recovery');
+      if (r != SwitchResult.ok) {
+        debugPrint('[device-transfer] switch to ${widget.walletId} failed: '
+            '$r (${backend.error})');
         setState(() {
           _phase = _Phase.error;
-          _message = "Could not read this wallet's device key. Recover it via "
-              '2FA, then try again.';
+          _message = 'Could not open the wallet to transfer it.';
         });
         return;
       }
-    } else {
-      // Legacy: releasing the StoreKey share needs the target wallet active +
-      // unlocked. ensureUnlocked switches and/or unlocks it first.
-      final route = LibwalletBackend.deviceTransferSendRoute(
-        activeWalletId: backend.walletId,
-        targetWalletId: widget.walletId,
-        isUnlocked: backend.isUnlocked,
-      );
-      if (route != DeviceTransferSendRoute.exportDirectly) {
-        final proceed = await _confirmPrepareDialog(route);
-        if (!mounted) return;
-        if (!proceed) {
-          Navigator.of(context).pop(false);
-          return;
-        }
-        final ready = await InAppUnlockScreen.ensureUnlocked(
-          context,
-          walletId: widget.walletId,
-        );
-        if (!mounted) return;
-        if (!ready) {
-          Navigator.of(context).pop(false);
-          return;
-        }
-      }
+    }
+    _exportPriv = await backend.readActiveStoreKeyPrivate();
+    if (!mounted) return;
+    if (_exportPriv == null) {
+      debugPrint('[device-transfer] StoreKey unreadable for '
+          '${widget.walletId} — needs 2FA recovery');
+      setState(() {
+        _phase = _Phase.error;
+        _message = "Could not read this wallet's device key. Recover it via "
+            '2FA, then try again.';
+      });
+      return;
     }
     try {
       final client = await backend.ensureClient();

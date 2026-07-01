@@ -52,37 +52,6 @@ class InAppUnlockScreen extends StatefulWidget {
   @visibleForTesting
   static UnlockRoute unlockRoute({required bool hasLocalShare}) =>
       hasLocalShare ? UnlockRoute.password : UnlockRoute.recovery;
-
-  /// Make sure [walletId] (or the active wallet when null) is unlocked before
-  /// a signing action. Non-inapp backends are a no-op (returns true). Pushes
-  /// the unlock screen targeting [walletId] when a password is needed and
-  /// reports whether it ended up active + unlocked.
-  static Future<bool> ensureUnlocked(
-    BuildContext context, {
-    String? walletId,
-  }) async {
-    final wallet = context.read<WalletService>();
-    final backend = wallet.libwallet;
-    if (walletId == null && wallet.kind != WalletKind.inapp) return true;
-    final target = walletId ?? backend.walletId;
-    if (backend.walletId == target && backend.isUnlocked) return true;
-    // A D5 (password-only) wallet has no unlock. If it's already active it's
-    // ready (signing happens per-transaction via the sheet).
-    if (backend.walletId == target && backend.requiresSignSheet) return true;
-    // Cross-wallet: a password-free switch ACTIVATES a D5 wallet; a StoreKey
-    // wallet returns needsPassword/needsRecovery without side effects, so we
-    // fall through to the unlock screen below.
-    if (target != null && backend.walletId != target) {
-      if (await backend.switchWallet(target) == SwitchResult.ok) return true;
-      if (!context.mounted) return false;
-    }
-    if (!context.mounted) return false;
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => InAppUnlockScreen(walletId: walletId)),
-    );
-    if (!context.mounted) return false;
-    return backend.walletId == target && backend.isUnlocked;
-  }
 }
 
 enum _Mode { probing, password, recovery }
