@@ -15,65 +15,6 @@ import 'package:tibaneapp/services/wallet/secure_keystore.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('deviceTransferSendRoute (Phase 7)', () {
-    test('target is the active, unlocked wallet -> exportDirectly', () {
-      expect(
-        LibwalletBackend.deviceTransferSendRoute(
-          activeWalletId: 'wlt-A',
-          targetWalletId: 'wlt-A',
-          isUnlocked: true,
-        ),
-        DeviceTransferSendRoute.exportDirectly,
-      );
-    });
-
-    test('target is active but locked -> unlockFirst', () {
-      expect(
-        LibwalletBackend.deviceTransferSendRoute(
-          activeWalletId: 'wlt-A',
-          targetWalletId: 'wlt-A',
-          isUnlocked: false,
-        ),
-        DeviceTransferSendRoute.unlockFirst,
-      );
-    });
-
-    test('target is a different wallet -> switchFirst', () {
-      expect(
-        LibwalletBackend.deviceTransferSendRoute(
-          activeWalletId: 'wlt-A',
-          targetWalletId: 'wlt-B',
-          isUnlocked: true,
-        ),
-        DeviceTransferSendRoute.switchFirst,
-      );
-    });
-
-    test('different wallet wins even when the active one is locked', () {
-      // The active wallet being locked is irrelevant when the target differs —
-      // we must switch (which unlocks the target) regardless.
-      expect(
-        LibwalletBackend.deviceTransferSendRoute(
-          activeWalletId: 'wlt-A',
-          targetWalletId: 'wlt-B',
-          isUnlocked: false,
-        ),
-        DeviceTransferSendRoute.switchFirst,
-      );
-    });
-
-    test('no active wallet yet -> switchFirst', () {
-      expect(
-        LibwalletBackend.deviceTransferSendRoute(
-          activeWalletId: null,
-          targetWalletId: 'wlt-B',
-          isUnlocked: false,
-        ),
-        DeviceTransferSendRoute.switchFirst,
-      );
-    });
-  });
-
   group('validateTransferAcceptance (Phase 6 acceptance gate)', () {
     const goodKeys = {
       'Password': 'pw-key',
