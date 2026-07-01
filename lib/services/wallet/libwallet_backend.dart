@@ -14,6 +14,8 @@ import 'biometric.dart';
 import 'creation.dart';
 import 'migration.dart';
 import 'secure_keystore.dart';
+import 'signing.dart'
+    show buildManagementReshareCommittee, effectiveManagementCreds;
 import 'unified_account.dart' show isUsableAccount;
 import 'wallet_backend.dart';
 
@@ -900,15 +902,33 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
   }
 
-  /// Reshare the active wallet replacing the Password share with a new
-  /// secret. Verifies [oldPassword] against the on-device pubkey first;
-  /// runs libwallet's TSS reshare; on success, refreshes in-memory
-  /// `_password`, re-persists the device share under the new password,
-  /// and clears any biometric cache (so the user re-stages it under the
-  /// new password). Stage 1: ed25519 wallets only.
+  /// Reshare the active wallet replacing the Password share with a new secret.
+  /// Verifies [oldPassword] first, then reshares authorizing with the two
+  /// shares this device holds — StoreKey (device-share secret) + Password (T+1
+  /// for a 1-of-3 wallet). The device-share SECRET is unchanged; only the
+  /// Password share (and the blob it's encrypted under) rotates. On success,
+  /// re-persists the device share under the new password and re-reads the
+  /// (regenerated) share ids.
+  ///
+  /// **2FA is required.** A reshare re-splits the wallet secret, so the
+  /// RemoteKey share must be re-pushed to the fleet under a *fresh, active*
+  /// RemoteKey session. The caller runs [startRemoteKeyReshare] first (which
+  /// sends the SMS/email code), then passes that [sessionToken] + the user's
+  /// [code] here; we validate them into the fresh RemoteKey resource used for
+  /// the NEW committee.
+  ///
+  /// [storeKeyPriv] (6D): an optional per-op device-share secret (from the
+  /// management-auth sheet). When absent the secret is resolved from the cached
+  /// session, or read straight from the keystore using [oldPassword] (the D8
+  /// fallback blob; biometric / no-auth copies need no password) — so this is
+  /// self-sufficient without a prior unlock. Requires a StoreKey wallet
+  /// (guarded above); returns a recovery error if the device share is absent.
   Future<bool> changePassword({
+    required String sessionToken,
+    required String code,
     required String oldPassword,
     required String newPassword,
+    String? storeKeyPriv,
   }) async {
     if (!hasWallet) {
       _error = 'No in-app wallet';
@@ -922,58 +942,135 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
     try {
       final client = await _getClient();
-      // Validate the old password without signing.
       if (_passwordKeyId == null || _storeKeyId == null) {
         _error = 'Missing key metadata; cannot change password';
         notifyListeners();
         return false;
       }
+      // Validate the old password without signing (clean early error before we
+      // consume the 2FA code or mutate key material).
       await client.storeKeys.derivePassword(
         password: oldPassword,
         walletKeyId: _passwordKeyId!,
       );
-      // Compose old + new descriptors. Same shape, just new Password.
-      final old = <KeyDescription>[];
-      final fresh = <KeyDescription>[];
-      // StoreKey
+      // Reshare resolves each OLD descriptor by its WalletKey id, so read the
+      // current share ids.
+      final w = await client.wallets.get(_walletId!);
+      WalletKey? oldStore;
+      WalletKey? oldPass;
+      for (final k in w.keys) {
+        if (k.type == 'StoreKey') oldStore ??= k;
+        if (k.type == 'Password') oldPass ??= k;
+      }
+      if (oldStore == null || oldPass == null) {
+        _error = 'Wallet is missing the StoreKey or Password share';
+        notifyListeners();
+        return false;
+      }
+      // The reshare authorizes with the two shares this device holds — the
+      // StoreKey (device-share) secret + the Password (T+1 for a 1-of-3 wallet).
+      // The secret is unchanged by a password change; only the Password share
+      // (and the blob it's encrypted under) rotates. Prefer a per-op secret
+      // (6D sheet) or the cached session, else read it from the keystore — the
+      // old password decrypts the D8 fallback blob (biometric / no-auth copies
+      // need no password), so change-password is self-sufficient without a
+      // prior unlock.
+      final storeSecret = storeKeyPriv ??
+          _storeKeyPriv ??
+          await readStoreKeyPrivate(oldStore, password: oldPassword);
+      if (storeSecret == null) {
+        _error = "This device's wallet key isn't available. Recover the device "
+            'share via 2FA, then change the password.';
+        notifyListeners();
+        return false;
+      }
       final prefs = await SharedPreferences.getInstance();
-      final storePub = prefs.getString(_prefsStorePub);
-      if (storePub != null) {
-        old.add(KeyDescription.storeKey(storePub));
-        fresh.add(KeyDescription.storeKey(storePub));
+      // The New StoreKey keeps the CURRENT public (secret unchanged). Prefer the
+      // persisted pub; fall back to the wallet's StoreKey.key from the server.
+      final storePub = prefs.getString(_prefsStorePub) ?? oldStore.key;
+      if (storePub.isEmpty) {
+        _error = 'Missing StoreKey public; cannot change password';
+        notifyListeners();
+        return false;
       }
-      // RemoteKey
-      if (_remoteKeyId != null) {
-        old.add(KeyDescription.remoteKey(_remoteKeyId!));
-        fresh.add(KeyDescription.remoteKey(_remoteKeyId!));
+      // Validate the 2FA code → the FRESH RemoteKey session the reshare pushes
+      // the re-split RemoteKey share to (the stored one is a `done` session).
+      final validation =
+          await client.remoteKeys.validate(session: sessionToken, code: code);
+      if (validation.remoteKey.isEmpty) {
+        _error = '2FA validation returned no remote key';
+        notifyListeners();
+        return false;
       }
-      // Password — old / new
-      old.add(KeyDescription.password(oldPassword));
-      fresh.add(KeyDescription.password(newPassword));
+      // OLD = the two shares we hold (StoreKey secret + Password); NEW = the
+      // full committee with the UNCHANGED StoreKey public + fresh RemoteKey
+      // session + raw new password. See buildManagementReshareCommittee.
+      final committee = buildManagementReshareCommittee(
+        oldStoreKeyId: oldStore.id,
+        storeSecret: storeSecret,
+        oldPasswordKeyId: oldPass.id,
+        oldPassword: oldPassword,
+        newStorePublic: storePub,
+        newRemoteKey: validation.remoteKey,
+        newPassword: newPassword,
+      );
 
+      Wallet? after;
       await for (final ev in client.wallets.reshare(
         _walletId!,
-        oldKeys: old,
-        newKeys: fresh,
+        oldKeys: committee.oldKeys,
+        newKeys: committee.newKeys,
       )) {
-        if (ev is Complete<Wallet>) {
-          final w = ev.value;
-          _passwordKeyId = _extractKeyIdsByType(w)['Password'];
-        }
+        if (ev is Complete<Wallet>) after = ev.value;
+      }
+      if (after == null) {
+        throw StateError('Reshare did not return a wallet');
       }
 
-      // Re-persist the device share under the new password and refresh
-      // the biometric cache if it was enabled.
-      _password = newPassword;
-      if (_storeKeyPriv != null) {
-        await _keystore.writeDeviceShare(
-          walletId: _walletId!,
-          value: _storeKeyPriv!,
-          password: newPassword,
-        );
-      }
+      // Reshare bumps the generation and mints a fresh WalletKey id for every
+      // committee member (StoreKey, RemoteKey, Password) — re-extract and
+      // re-persist all three so later signs/reshares reference the live ids.
+      final ids = _extractKeyIdsByType(after);
+      _passwordKeyId = ids['Password'] ?? _passwordKeyId;
+      _storeKeyId = ids['StoreKey'] ?? _storeKeyId;
+      _remoteKeyId = ids['RemoteKey'] ?? _remoteKeyId;
       if (_passwordKeyId != null) {
         await prefs.setString(_prefsPasswordKeyId, _passwordKeyId!);
+      }
+      if (_storeKeyId != null) {
+        await prefs.setString(_prefsStoreKeyId, _storeKeyId!);
+      }
+      if (_remoteKeyId != null) {
+        await prefs.setString(_prefsRemoteKeyId, _remoteKeyId!);
+      }
+
+      // Re-encrypt the (unchanged) device share under the new password, then
+      // read it back to VERIFY it's recoverable before declaring success — a
+      // password change that left the device blob under the old password would
+      // silently lock the user out at next sign (zero-data-loss rule).
+      //
+      // osKeystoreCopy:false — the StoreKey SECRET didn't change, so the
+      // existing OS-keystore / biometric copies still hold the right value;
+      // we only refresh the password-encrypted blob. Writing a no-auth copy
+      // here would defeat a biometric-custody wallet's gate.
+      _password = newPassword;
+      _storeKeyPriv = storeSecret;
+      await _keystore.writeDeviceShare(
+        walletId: _walletId!,
+        value: storeSecret,
+        password: newPassword,
+        osKeystoreCopy: false,
+      );
+      final readBack = await _keystore.readDeviceShare(
+        walletId: _walletId!,
+        password: newPassword,
+      );
+      if (readBack != storeSecret) {
+        _error = 'Password changed, but re-saving the device share failed. '
+            'Unlock again with the new password to retry.';
+        debugPrint('[changePassword] device-share verify mismatch');
+        notifyListeners();
+        return false;
       }
       notifyListeners();
       unawaited(_maybeAutoBackup()); // keep iCloud/Google copy current
@@ -1228,36 +1325,83 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
   /// Reshare the active wallet replacing the StoreKey share with a
   /// freshly-generated one. Useful when the user suspects the device
-  /// share has been exposed and wants to invalidate it. Requires the
-  /// wallet to be unlocked.
-  Future<bool> rotateDeviceShare() async {
-    if (!isUnlocked) {
+  /// share has been exposed and wants to invalidate it.
+  ///
+  /// **2FA is required** (see [changePassword]): the caller runs
+  /// [startRemoteKeyReshare] first (sends the code), then passes [sessionToken]
+  /// + [code] here to mint the fresh RemoteKey session the re-split RemoteKey
+  /// share is pushed to.
+  ///
+  /// Credentials (6D): pass [password] + [storeKeyPriv] collected per-op via
+  /// the management-auth sheet; when null they fall back to the cached unlock
+  /// session ([_password]/[_storeKeyPriv]) so the legacy `unlock()` path keeps
+  /// working during the transition. Both must resolve (from either source) or
+  /// the op is refused. [storeKeyPriv] proves device-share possession; the new
+  /// share is re-persisted under [password].
+  Future<bool> rotateDeviceShare({
+    required String sessionToken,
+    required String code,
+    String? password,
+    String? storeKeyPriv,
+  }) async {
+    final creds = effectiveManagementCreds(
+      paramPassword: password,
+      paramStoreKeyPriv: storeKeyPriv,
+      cachedPassword: _password,
+      cachedStoreKeyPriv: _storeKeyPriv,
+    );
+    final pw = creds.password;
+    if (pw == null || creds.storeKeyPriv == null) {
       _error = 'Unlock the wallet first';
       notifyListeners();
       return false;
     }
+    final oldSecret = creds.storeKeyPriv!;
     try {
       final client = await _getClient();
+      // Mint the fresh device-share keypair the wallet will move to.
       final storePair = await client.storeKeys.create();
-
-      final old = <KeyDescription>[];
-      final fresh = <KeyDescription>[];
       final prefs = await SharedPreferences.getInstance();
-      final oldStorePub = prefs.getString(_prefsStorePub);
-      if (oldStorePub != null) old.add(KeyDescription.storeKey(oldStorePub));
-      fresh.add(KeyDescription.storeKey(storePair.publicKey));
-      if (_remoteKeyId != null) {
-        old.add(KeyDescription.remoteKey(_remoteKeyId!));
-        fresh.add(KeyDescription.remoteKey(_remoteKeyId!));
+
+      // Reshare resolves each OLD descriptor by its WalletKey id.
+      final w = await client.wallets.get(_walletId!);
+      WalletKey? oldStore;
+      WalletKey? oldPass;
+      for (final k in w.keys) {
+        if (k.type == 'StoreKey') oldStore ??= k;
+        if (k.type == 'Password') oldPass ??= k;
       }
-      old.add(KeyDescription.password(_password!));
-      fresh.add(KeyDescription.password(_password!));
+      if (oldStore == null || oldPass == null) {
+        _error = 'Wallet is missing the StoreKey or Password share';
+        notifyListeners();
+        return false;
+      }
+      // Validate the 2FA code → the fresh RemoteKey session for the NEW share.
+      final validation =
+          await client.remoteKeys.validate(session: sessionToken, code: code);
+      if (validation.remoteKey.isEmpty) {
+        _error = '2FA validation returned no remote key';
+        notifyListeners();
+        return false;
+      }
+      // OLD = the CURRENT StoreKey secret + Password (T+1); NEW = the full
+      // committee with the FRESH StoreKey public, fresh RemoteKey session, and
+      // the unchanged password. See buildManagementReshareCommittee.
+      final committee = buildManagementReshareCommittee(
+        oldStoreKeyId: oldStore.id,
+        storeSecret: oldSecret,
+        oldPasswordKeyId: oldPass.id,
+        oldPassword: pw,
+        newStorePublic: storePair.publicKey,
+        newRemoteKey: validation.remoteKey,
+        newPassword: pw,
+      );
 
       Wallet? after;
       await for (final ev in client.wallets.reshare(
         _walletId!,
-        oldKeys: old,
-        newKeys: fresh,
+        oldKeys: committee.oldKeys,
+        newKeys: committee.newKeys,
       )) {
         if (ev is Complete<Wallet>) after = ev.value;
       }
@@ -1265,18 +1409,45 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         throw StateError('Reshare did not return a wallet');
       }
 
-      // Swap the in-memory + persisted device share.
+      // The old device share is now useless (the server re-encrypted the new
+      // share to the FRESH StoreKey public). Persist the fresh secret and
+      // VERIFY it reads back before flipping the pointers — a lost fresh secret
+      // would strand this device on 2FA recovery (zero-data-loss rule).
+      await _keystore.writeDeviceShare(
+        walletId: _walletId!,
+        value: storePair.privateKey,
+        password: pw,
+      );
+      final readBack = await _keystore.readDeviceShare(
+        walletId: _walletId!,
+        password: pw,
+      );
+      if (readBack != storePair.privateKey) {
+        _error = 'Device share rotated, but re-saving it failed. Unlock again '
+            'with your password to retry.';
+        debugPrint('[rotateDeviceShare] device-share verify mismatch');
+        notifyListeners();
+        return false;
+      }
+
+      // Reshare bumps the generation and mints fresh WalletKey ids for every
+      // committee member — re-extract and re-persist all of them.
+      final ids = _extractKeyIdsByType(after);
       _storeKeyPriv = storePair.privateKey;
-      _storeKeyId = _extractKeyIdsByType(after)['StoreKey'];
+      _password = pw;
+      _storeKeyId = ids['StoreKey'] ?? _storeKeyId;
+      _passwordKeyId = ids['Password'] ?? _passwordKeyId;
+      _remoteKeyId = ids['RemoteKey'] ?? _remoteKeyId;
       await prefs.setString(_prefsStorePub, storePair.publicKey);
       if (_storeKeyId != null) {
         await prefs.setString(_prefsStoreKeyId, _storeKeyId!);
       }
-      await _keystore.writeDeviceShare(
-        walletId: _walletId!,
-        value: storePair.privateKey,
-        password: _password!,
-      );
+      if (_passwordKeyId != null) {
+        await prefs.setString(_prefsPasswordKeyId, _passwordKeyId!);
+      }
+      if (_remoteKeyId != null) {
+        await prefs.setString(_prefsRemoteKeyId, _remoteKeyId!);
+      }
       notifyListeners();
       unawaited(_maybeAutoBackup()); // device share changed — refresh backup
       return true;

@@ -118,4 +118,122 @@ void main() {
       expect(creds.storeKeyPriv, 'sk1');
     });
   });
+
+  group('effectiveManagementCreds (6D-2)', () {
+    test('per-op values win over the cache', () {
+      final creds = effectiveManagementCreds(
+        paramPassword: 'new-pw',
+        paramStoreKeyPriv: 'new-sk',
+        cachedPassword: 'cached-pw',
+        cachedStoreKeyPriv: 'cached-sk',
+      );
+      expect(creds.password, 'new-pw');
+      expect(creds.storeKeyPriv, 'new-sk');
+    });
+
+    test('falls back to the cached session when params are null (old path)', () {
+      final creds = effectiveManagementCreds(
+        cachedPassword: 'cached-pw',
+        cachedStoreKeyPriv: 'cached-sk',
+      );
+      expect(creds.password, 'cached-pw');
+      expect(creds.storeKeyPriv, 'cached-sk');
+    });
+
+    test('resolves each field independently', () {
+      // Password from the sheet, StoreKey from the cache (and vice versa).
+      final a = effectiveManagementCreds(
+        paramPassword: 'p',
+        cachedStoreKeyPriv: 'sk',
+      );
+      expect(a.password, 'p');
+      expect(a.storeKeyPriv, 'sk');
+
+      final b = effectiveManagementCreds(
+        paramStoreKeyPriv: 'sk2',
+        cachedPassword: 'p2',
+      );
+      expect(b.password, 'p2');
+      expect(b.storeKeyPriv, 'sk2');
+    });
+
+    test('all null when neither source has creds (op refused)', () {
+      final creds = effectiveManagementCreds();
+      expect(creds.password, isNull);
+      expect(creds.storeKeyPriv, isNull);
+    });
+
+    test('password-only wallet: password resolves, storeKeyPriv stays null', () {
+      final creds = effectiveManagementCreds(
+        paramPassword: 'pw',
+        // No StoreKey anywhere — D5 committee.
+      );
+      expect(creds.password, 'pw');
+      expect(creds.storeKeyPriv, isNull);
+    });
+  });
+
+  group('buildManagementReshareCommittee (6D-2 reshare recipe)', () {
+    // Regression guard for the `could not find key id=` bug: OLD descriptors
+    // must carry the WalletKey id, OLD must be exactly the 2 held shares (no
+    // RemoteKey), OLD StoreKey key must be the secret, NEW StoreKey key the
+    // public.
+    final c = buildManagementReshareCommittee(
+      oldStoreKeyId: 'wkey-store',
+      storeSecret: 'device-secret-64b',
+      oldPasswordKeyId: 'wkey-pass',
+      oldPassword: 'oldpw',
+      newStorePublic: 'store-pub',
+      newRemoteKey: 'crws-fresh:crwsv-new',
+      newPassword: 'newpw',
+    );
+
+    test('OLD is exactly the two held shares (StoreKey + Password, no RemoteKey)',
+        () {
+      expect(c.oldKeys.length, 2);
+      expect(c.oldKeys.map((k) => k.type), ['StoreKey', 'Password']);
+      expect(c.oldKeys.any((k) => k.type == 'RemoteKey'), isFalse);
+    });
+
+    test('OLD descriptors carry their WalletKey id (the missing-id bug)', () {
+      expect(c.oldKeys[0].id, 'wkey-store');
+      expect(c.oldKeys[1].id, 'wkey-pass');
+    });
+
+    test('OLD StoreKey key is the device SECRET, Password key is the raw pw', () {
+      expect(c.oldKeys[0].key, 'device-secret-64b');
+      expect(c.oldKeys[1].key, 'oldpw');
+    });
+
+    test('NEW is the full 3-share committee in order', () {
+      expect(c.newKeys.map((k) => k.type), ['StoreKey', 'RemoteKey', 'Password']);
+    });
+
+    test('NEW StoreKey key is the PUBLIC; RemoteKey is the FRESH session', () {
+      expect(c.newKeys[0].key, 'store-pub');
+      expect(c.newKeys[0].id, isNull);
+      // RemoteKey must be the fresh crws- session from RemoteKey:validate —
+      // not '' and not a wkey- id (that timed out on setGeneratedKey).
+      expect(c.newKeys[1].key, 'crws-fresh:crwsv-new');
+      expect(c.newKeys[2].key, 'newpw');
+    });
+
+    test('rotation shape: fresh public in NEW, unchanged password both sides',
+        () {
+      final r = buildManagementReshareCommittee(
+        oldStoreKeyId: 'wkey-store',
+        storeSecret: 'old-secret',
+        oldPasswordKeyId: 'wkey-pass',
+        oldPassword: 'pw',
+        newStorePublic: 'FRESH-pub',
+        newRemoteKey: 'crws-fresh',
+        newPassword: 'pw', // rotate keeps the password
+      );
+      expect(r.oldKeys[0].key, 'old-secret'); // authorize with current secret
+      expect(r.newKeys[0].key, 'FRESH-pub'); // move to the fresh keypair
+      expect(r.newKeys[1].key, 'crws-fresh'); // fresh remote session
+      expect(r.oldKeys[1].key, 'pw');
+      expect(r.newKeys[2].key, 'pw');
+    });
+  });
 }
