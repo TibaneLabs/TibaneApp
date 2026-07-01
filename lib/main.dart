@@ -113,6 +113,13 @@ class TibaneShellState extends State<TibaneShell>
     with WidgetsBindingObserver {
   late int _currentIndex = widget.initialIndex;
 
+  /// The Browse tab (dApp webview) is built lazily: its heavy platform-view /
+  /// RenderThread only spins up once the user first opens Browse, not at
+  /// startup. Once visited it stays alive in the IndexedStack, but is paused
+  /// (WebViewWidget detached) whenever another tab is active — see
+  /// [DAppBrowserScreen.active].
+  late bool _browserVisited = widget.initialIndex == 2;
+
   /// Null while checking; true shows the mandatory biometric-migration screen
   /// (Phase 3 / D7); false renders the normal home.
   bool? _needsMigration;
@@ -197,7 +204,10 @@ class TibaneShellState extends State<TibaneShell>
   void navigateTo(int index) => _navigateTo(index);
 
   void _navigateTo(int index) {
-    setState(() => _currentIndex = index);
+    setState(() {
+      _currentIndex = index;
+      if (index == 2) _browserVisited = true;
+    });
   }
 
   @override
@@ -260,7 +270,12 @@ class TibaneShellState extends State<TibaneShell>
           showSwap
               ? const SwapScreen(initialInputMint: wsolMint)
               : const WalletScreen(),
-          const DAppBrowserScreen(),
+          // Browse: constructed only after its first visit, and its webview is
+          // detached (paused) while another tab is active so the native
+          // RenderThread doesn't keep compositing off-screen.
+          _browserVisited
+              ? DAppBrowserScreen(active: _currentIndex == 2)
+              : const SizedBox.shrink(),
           const SettingsScreen(),
         ],
       ),
