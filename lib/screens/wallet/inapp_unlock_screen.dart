@@ -3,58 +3,30 @@ import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' show RemoteKeySession;
 import 'package:provider/provider.dart';
 
-import '../../services/wallet/libwallet_backend.dart' show SwitchResult;
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
 import '../../utils/log.dart';
 
-/// Preferred initial route for the unlock screen. Pure decision, extracted
-/// so it can be unit-tested without a platform.
-enum UnlockRoute { password, recovery }
-
-/// Prompt for the in-app wallet password so we can sign until the app is killed.
-///
-/// Two modes, chosen on init based on whether the device share is
-/// locally available (SecureKeystore / fallback blob):
-///
-/// - **Password mode** — normal path. Render the password field and
-///   the biometric shortcut. Calls `unlock(password)`.
-/// - **2FA recovery mode** — entered when the device share is missing
-///   locally (cross-device backup import, fresh install after data
-///   wipe, etc.). Asks for the password + sends an SMS/email
-///   verification code, then on validate runs the auto-reshare to
-///   mint a fresh device share locally. Subsequent unlocks fall back
-///   to password mode.
+/// 2FA device-share recovery screen (Atonline-parity §4.8). Signing is lockless
+/// (per-transaction via the sign sheet), so there is no "unlock" — this screen
+/// exists only for the case where a wallet's StoreKey (device share) isn't on
+/// this device (cross-device backup import, fresh install after a data wipe).
+/// It asks for the wallet password + a 2FA code, then runs the auto-reshare to
+/// mint a fresh device share locally.
 class InAppUnlockScreen extends StatefulWidget {
-  /// Wallet to unlock. Null = the active wallet (legacy callers). When set
-  /// and not the active wallet, unlocking SWITCHES to it via
-  /// `LibwalletBackend.switchWallet`.
+  /// Wallet to recover. Null = the active wallet. When set and not the active
+  /// wallet, its metadata is loaded into the active slot so the reshare targets
+  /// it (`LibwalletBackend.loadWalletForRecovery`).
   final String? walletId;
 
-  /// Skip the password path and go straight to 2FA device-share recovery (the
-  /// explicit "Recover device key" entry point — Atonline-parity §4.8). Used when
-  /// a wallet's StoreKey isn't on this device (cross-device) so signing can't
-  /// read it; re-mints a fresh share via 2FA.
-  final bool forceRecovery;
-
-  const InAppUnlockScreen({
-    super.key,
-    this.walletId,
-    this.forceRecovery = false,
-  });
+  const InAppUnlockScreen({super.key, this.walletId});
 
   @override
   State<InAppUnlockScreen> createState() => _InAppUnlockScreenState();
-
-  /// Pure routing decision (password vs 2FA recovery), extracted so it can be
-  /// unit-tested without a platform.
-  @visibleForTesting
-  static UnlockRoute unlockRoute({required bool hasLocalShare}) =>
-      hasLocalShare ? UnlockRoute.password : UnlockRoute.recovery;
 }
 
-enum _Mode { probing, password, recovery }
+enum _Mode { probing, recovery }
 
 class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
   final _pwCtrl = TextEditingController();
@@ -74,29 +46,13 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
     final backend = context.read<WalletService>().libwallet;
     final targetIsActive =
         widget.walletId == null || widget.walletId == backend.walletId;
-    if (widget.forceRecovery) {
-      // Explicit recovery entry — go straight to 2FA reshare, targeting the
-      // requested wallet (load its metadata into the active slot first).
-      if (widget.walletId != null && !targetIsActive) {
-        await backend.loadWalletForRecovery(widget.walletId!);
-        if (!mounted) return;
-      }
-      setState(() => _mode = _Mode.recovery);
-      return;
+    // Load the target (possibly non-active) wallet's metadata into the active
+    // slot first, so the 2FA reshare targets it.
+    if (widget.walletId != null && !targetIsActive) {
+      await backend.loadWalletForRecovery(widget.walletId!);
+      if (!mounted) return;
     }
-    final hasShare = await backend.hasLocalDeviceShare(widget.walletId);
-    if (!mounted) return;
-    if (!hasShare) {
-      // Make the recovery flow target the requested (possibly non-active)
-      // wallet by loading its metadata into the active slot first.
-      if (widget.walletId != null && !targetIsActive) {
-        await backend.loadWalletForRecovery(widget.walletId!);
-        if (!mounted) return;
-      }
-      setState(() => _mode = _Mode.recovery);
-      return;
-    }
-    setState(() => _mode = _Mode.password);
+    setState(() => _mode = _Mode.recovery);
   }
 
   @override
@@ -104,37 +60,6 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
     _pwCtrl.dispose();
     _codeCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _unlock() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    final wallet = context.read<WalletService>();
-    final backend = wallet.libwallet;
-    final target = widget.walletId;
-    final bool ok;
-    if (target != null && target != backend.walletId) {
-      // Unlocking a different wallet means switching to it.
-      ok =
-          await backend.switchWallet(target, password: _pwCtrl.text) ==
-          SwitchResult.ok;
-    } else {
-      ok = await backend.unlock(_pwCtrl.text);
-    }
-    if (!mounted) return;
-    if (ok) {
-      await wallet.useLibwallet();
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
-    } else {
-      logError('[InAppUnlock._unlock] unlock failed: ${backend.error}');
-      setState(() {
-        _busy = false;
-        _error = backend.error ?? 'Unlock failed';
-      });
-    }
   }
 
   Future<void> _sendRecoveryCode() async {
@@ -198,54 +123,15 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Unlock wallet')),
+      appBar: AppBar(title: const Text('Recover device key')),
       body: SafeArea(
         child: switch (_mode) {
           _Mode.probing => const Center(
             child: CircularProgressIndicator(color: TibaneColors.orange),
           ),
-          _Mode.password => KeyboardSafeForm(child: _buildPasswordBody()),
           _Mode.recovery => KeyboardSafeForm(child: _buildRecoveryBody()),
         },
       ),
-    );
-  }
-
-  Widget _buildPasswordBody() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text(
-          'Enter the password you set when creating this wallet.',
-          style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
-        ),
-        const SizedBox(height: 24),
-        TextField(
-          controller: _pwCtrl,
-          obscureText: true,
-          enabled: !_busy,
-          autofocus: true,
-          onSubmitted: (_) => _unlock(),
-          decoration: const InputDecoration(labelText: 'Password'),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 12),
-          Text(_error!, style: const TextStyle(color: TibaneColors.error)),
-        ],
-        const Spacer(),
-        FilledButton(
-          onPressed: _busy ? null : _unlock,
-          style: FilledButton.styleFrom(
-            backgroundColor: TibaneColors.orange,
-            foregroundColor: TibaneColors.black,
-            padding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-          child: Text(
-            _busy ? 'Unlocking…' : 'Unlock',
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ),
-      ],
     );
   }
 

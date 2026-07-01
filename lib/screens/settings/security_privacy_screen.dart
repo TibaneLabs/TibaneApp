@@ -284,10 +284,7 @@ class SecurityPrivacyScreen extends StatelessWidget {
     if (walletId == null) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => InAppUnlockScreen(
-          walletId: walletId,
-          forceRecovery: true,
-        ),
+        builder: (_) => InAppUnlockScreen(walletId: walletId),
       ),
     );
   }
