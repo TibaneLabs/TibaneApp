@@ -1370,9 +1370,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       final client = await _getClient();
       final acct = await client.accounts.get(accountId);
       if (acct.wallet != _walletId) {
-        // Cross-wallet switches must switch the active wallet first (which
-        // needs that wallet's password) — the UI drives that via
-        // ensureUnlocked(walletId:) before calling switchAccount again.
+        // Cross-wallet switches must activate the target wallet first — the UI
+        // drives that via AccountsService.setCurrent (lockless switchWallet)
+        // before this account switch.
         _error = 'Switch to that wallet first to use its accounts';
         notifyListeners();
         return false;
