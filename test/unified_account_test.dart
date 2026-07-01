@@ -424,6 +424,40 @@ void main() {
     });
   });
 
+  group('accountForWallet / firstInAppAccount (lockless switch targets)', () {
+    final w1a = buildUnifiedAccounts(
+      inappAccounts: [_acct(id: 'a1', wallet: 'w1', name: 'A1')],
+      walletsById: {'w1': _wallet(id: 'w1')},
+    ).single;
+    final w2a = buildUnifiedAccounts(
+      inappAccounts: [_acct(id: 'b1', wallet: 'w2', name: 'B1')],
+      walletsById: {'w2': _wallet(id: 'w2')},
+    ).single;
+    final mwa = buildUnifiedAccounts(
+      inappAccounts: const [],
+      walletsById: const {},
+      mwaAddress: 'M',
+    ).single;
+
+    test('accountForWallet returns the in-app account on that wallet', () {
+      expect(accountForWallet([w1a, w2a, mwa], 'w2'), w2a);
+    });
+    test('accountForWallet returns null for an unknown wallet', () {
+      expect(accountForWallet([w1a, mwa], 'w-missing'), isNull);
+    });
+    test('accountForWallet never returns the MWA account', () {
+      // MWA has no walletId, so it can never match a wallet-id query.
+      expect(accountForWallet([mwa], 'anything'), isNull);
+    });
+    test('firstInAppAccount returns the first in-app account', () {
+      expect(firstInAppAccount([mwa, w1a, w2a]), w1a);
+    });
+    test('firstInAppAccount is null when only MWA is present', () {
+      expect(firstInAppAccount([mwa]), isNull);
+      expect(firstInAppAccount(const []), isNull);
+    });
+  });
+
   group('suggestAccountName / chainLabel', () {
     test('suggestAccountName is 1-based on existing count', () {
       expect(suggestAccountName(0), 'Account 1');

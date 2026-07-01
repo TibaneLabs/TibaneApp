@@ -234,6 +234,27 @@ UnifiedAccount? addAccountTarget(
   return null;
 }
 
+/// The first in-app account on [walletId], or null when none is surfaced — the
+/// account a lockless "use this wallet" switch (wallet-details) targets.
+UnifiedAccount? accountForWallet(
+  List<UnifiedAccount> accounts,
+  String walletId,
+) {
+  for (final a in accounts) {
+    if (a.isInApp && a.walletId == walletId) return a;
+  }
+  return null;
+}
+
+/// The first in-app account in [accounts], or null (e.g. only an MWA account) —
+/// the account the wallet-button "activate my existing wallet" flow switches to.
+UnifiedAccount? firstInAppAccount(List<UnifiedAccount> accounts) {
+  for (final a in accounts) {
+    if (a.isInApp) return a;
+  }
+  return null;
+}
+
 /// Default name for the next account on a wallet: "Account N" (1-based on the
 /// number of accounts the wallet already has).
 String suggestAccountName(int existingCount) => 'Account ${existingCount + 1}';
