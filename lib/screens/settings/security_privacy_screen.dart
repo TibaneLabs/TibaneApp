@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +10,7 @@ import '../../widgets/tibane_card.dart';
 import '../settings_screen.dart' show SettingsTile;
 import '../wallet/cloud_backup_screen.dart';
 import '../wallet/inapp_unlock_screen.dart';
+import '../wallet/widgets/authorize_and_sign.dart' show collectManagementKeys;
 import '../../utils/log.dart';
 
 /// Sub-screen reached from Settings → "Security & Privacy". Hosts the
@@ -96,6 +99,53 @@ class SecurityPrivacyScreen extends StatelessWidget {
     );
   }
 
+  /// Run a slow key-management op behind a non-dismissible progress dialog, so
+  /// tapping "OK" gives immediate feedback instead of a silently-closed modal
+  /// (the reshare is a networked TSS ceremony that can take several seconds).
+  /// The dialog is torn down when [op] settles, whatever the outcome.
+  Future<T> _withProgress<T>(
+    BuildContext context,
+    String message,
+    Future<T> Function() op,
+  ) async {
+    unawaited(showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          backgroundColor: TibaneColors.card,
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: TibaneColors.orange,
+                ),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(color: TibaneColors.textMuted),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ));
+    try {
+      return await op();
+    } finally {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+  }
+
   Future<void> _changePassword(
     BuildContext context,
     WalletService wallet,
@@ -107,9 +157,38 @@ class SecurityPrivacyScreen extends StatelessWidget {
     if (result == null) return;
     if (!context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    final ok = await wallet.libwallet.changePassword(
-      oldPassword: result.oldPassword,
-      newPassword: result.newPassword,
+    // A reshare re-splits the wallet secret, so the RemoteKey share must be
+    // re-pushed under a fresh, active session — minting it sends a 2FA code.
+    final session = await _withProgress(
+      context,
+      'Sending verification code…',
+      () => wallet.libwallet.startRemoteKeyReshare(),
+    );
+    if (!context.mounted) return;
+    if (session == null) {
+      logError('[SecurityPrivacy._changePassword] reshare start failed: ${wallet.libwallet.error}');
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(wallet.libwallet.error ?? 'Could not send code'),
+        ),
+      );
+      return;
+    }
+    final code = await showDialog<String>(
+      context: context,
+      builder: (_) => _CodeEntryDialog(length: session.length),
+    );
+    if (code == null || code.isEmpty) return;
+    if (!context.mounted) return;
+    final ok = await _withProgress(
+      context,
+      'Changing password…',
+      () => wallet.libwallet.changePassword(
+        sessionToken: session.session,
+        code: code,
+        oldPassword: result.oldPassword,
+        newPassword: result.newPassword,
+      ),
     );
     if (!context.mounted) return;
     if (!ok) {
@@ -245,10 +324,47 @@ class SecurityPrivacyScreen extends StatelessWidget {
     );
     if (confirmed != true) return;
     if (!context.mounted) return;
-    if (!await InAppUnlockScreen.ensureUnlocked(context)) return;
-    if (!context.mounted) return;
+    // 6D: collect the wallet credentials (biometric StoreKey + password) via the
+    // management-auth sheet instead of the legacy full-screen unlock.
+    final creds = await collectManagementKeys(
+      context,
+      title: 'Rotate device share',
+      purpose: 'rotate this device’s key share',
+    );
+    if (creds == null || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    final ok = await wallet.libwallet.rotateDeviceShare();
+    // Rotation is a reshare → needs a fresh RemoteKey session (2FA code).
+    final session = await _withProgress(
+      context,
+      'Sending verification code…',
+      () => wallet.libwallet.startRemoteKeyReshare(),
+    );
+    if (!context.mounted) return;
+    if (session == null) {
+      logError('[SecurityPrivacy._rotateDeviceShare] reshare start failed: ${wallet.libwallet.error}');
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(wallet.libwallet.error ?? 'Could not send code'),
+        ),
+      );
+      return;
+    }
+    final code = await showDialog<String>(
+      context: context,
+      builder: (_) => _CodeEntryDialog(length: session.length),
+    );
+    if (code == null || code.isEmpty) return;
+    if (!context.mounted) return;
+    final ok = await _withProgress(
+      context,
+      'Rotating device share…',
+      () => wallet.libwallet.rotateDeviceShare(
+        sessionToken: session.session,
+        code: code,
+        password: creds.password,
+        storeKeyPriv: creds.storeKeyPriv,
+      ),
+    );
     if (!context.mounted) return;
     if (!ok) {
       logError('[SecurityPrivacy._rotateDeviceShare] rotate failed: ${wallet.libwallet.error}');

@@ -1,4 +1,5 @@
-import 'package:libwallet/libwallet.dart' show SigningKey, Wallet, WalletKey;
+import 'package:libwallet/libwallet.dart'
+    show KeyDescription, SigningKey, Wallet, WalletKey;
 
 /// Per-transaction (lockless) signing — pure helpers + feature flag.
 ///
@@ -61,3 +62,75 @@ bool useSignSheetFor({required bool isInApp}) => isInApp;
   }
   return (password: password, storeKeyPriv: storeKeyPriv);
 }
+
+/// Resolve the credentials a key-management op will actually use, given the
+/// per-op values the caller passed (from the management-auth sheet) and the
+/// legacy cached unlock session. **Per-op values win; the cache is the
+/// fallback** — this is the precedence rule that lets Phase 6D convert an op to
+/// param-based creds *additively*: new callers pass creds explicitly, old
+/// callers (still relying on `unlock()`) pass null and fall through to the
+/// cached `_password`/`_storeKeyPriv`, so both paths keep working until the
+/// cache is deleted in 6D-4.
+///
+/// Pure so the precedence is unit-tested without a device or libwallet client.
+({String? password, String? storeKeyPriv}) effectiveManagementCreds({
+  String? paramPassword,
+  String? paramStoreKeyPriv,
+  String? cachedPassword,
+  String? cachedStoreKeyPriv,
+}) =>
+    (
+      password: paramPassword ?? cachedPassword,
+      storeKeyPriv: paramStoreKeyPriv ?? cachedStoreKeyPriv,
+    );
+
+/// Build the OLD (authorizing) + NEW (target) committees for a management
+/// reshare — change-password and rotate-device-share — per the libwallet
+/// contract (see `lib/src/models/remote_key_session.dart`, the canonical
+/// reshare recipe, + the libwallet team's guidance).
+///
+/// - **OLD = exactly the two shares this device holds** — the StoreKey and the
+///   Password (T+1 for a 1-of-3 wallet) — each identified by its **current
+///   WalletKey id** ([oldStoreKeyId]/[oldPasswordKeyId], which the reshare
+///   resolves by). The StoreKey's `key` is the **64-byte device-share secret**
+///   ([storeSecret]) — the same material used to sign, NOT its public. The
+///   RemoteKey is deliberately excluded from OLD: it isn't an authorizer here,
+///   and DKLS rejects an OLD list longer than T+1.
+///
+/// - **NEW = the full 3-share target committee.** The StoreKey `key` is the
+///   **public** ([newStorePublic]) — the current one for a password change, a
+///   freshly-minted one for a rotation. The RemoteKey `key` is the **fresh
+///   RemoteKey session** ([newRemoteKey]) returned by `RemoteKey:validate` —
+///   NOT empty and NOT a `wkey-…` id. A reshare re-splits the secret, so the
+///   RemoteKey gets a brand-new share that must be pushed to the wdrone fleet
+///   under an *active* session; minting that session is what sends the 2FA
+///   code, so **2FA is unavoidable for a reshare** (it isn't for a plain sign).
+///   The Password `key` is the raw [newPassword] (the new secret on a password
+///   change; the unchanged one on a rotation).
+///
+/// Pure so the exact committee shape is locked down by unit tests without a
+/// libwallet client. After the reshare the caller must re-read ALL new key ids
+/// (the generation bumps and every share id changes).
+({List<KeyDescription> oldKeys, List<KeyDescription> newKeys})
+    buildManagementReshareCommittee({
+  required String oldStoreKeyId,
+  required String storeSecret,
+  required String oldPasswordKeyId,
+  required String oldPassword,
+  required String newStorePublic,
+  required String newRemoteKey,
+  required String newPassword,
+}) =>
+        (
+          oldKeys: [
+            KeyDescription(
+                type: 'StoreKey', id: oldStoreKeyId, key: storeSecret),
+            KeyDescription(
+                type: 'Password', id: oldPasswordKeyId, key: oldPassword),
+          ],
+          newKeys: [
+            KeyDescription(type: 'StoreKey', key: newStorePublic),
+            KeyDescription(type: 'RemoteKey', key: newRemoteKey),
+            KeyDescription(type: 'Password', key: newPassword),
+          ],
+        );
