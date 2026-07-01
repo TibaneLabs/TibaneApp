@@ -1688,14 +1688,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
   }
 
-  /// Forget session secrets. Wallet metadata persists; user must unlock again
-  /// before signing.
-  void lock() {
-    _storeKeyPriv = null;
-    _password = null;
-    notifyListeners();
-  }
-
   @override
   Future<void> disconnect() async {
     final id = _walletId;
@@ -2742,21 +2734,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   // ------------------------------------------------------------------
   // Device transfer — SEND side (this device = the old/source phone)
   // ------------------------------------------------------------------
-
-  /// Pure routing for the device-transfer SEND screen, extracted for tests.
-  /// Decides what must happen before [targetWalletId]'s StoreKey share can be
-  /// released: switch to it, unlock it, or export straight away.
-  static DeviceTransferSendRoute deviceTransferSendRoute({
-    required String? activeWalletId,
-    required String targetWalletId,
-    required bool isUnlocked,
-  }) {
-    if (activeWalletId != targetWalletId) {
-      return DeviceTransferSendRoute.switchFirst;
-    }
-    if (!isUnlocked) return DeviceTransferSendRoute.unlockFirst;
-    return DeviceTransferSendRoute.exportDirectly;
-  }
 
   /// Open a device-to-device transfer session for [walletId]. The caller
   /// paints [DeviceTransferSession.pairingCode] as a QR; the new device scans
