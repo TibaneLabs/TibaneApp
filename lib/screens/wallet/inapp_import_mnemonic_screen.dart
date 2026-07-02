@@ -34,6 +34,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
   final _mnemonicCtrl = TextEditingController();
   final _passphraseCtrl = TextEditingController();
   final _pwCtrl = TextEditingController();
+  final _pwCtrl2 = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = PhoneController(
     initialValue: const PhoneNumber(isoCode: IsoCode.US, nsn: ''),
@@ -58,6 +59,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
     _mnemonicCtrl.dispose();
     _passphraseCtrl.dispose();
     _pwCtrl.dispose();
+    _pwCtrl2.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
     _codeCtrl.dispose();
@@ -76,6 +78,10 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
     }
     if (_pwCtrl.text.length < 8) {
       setState(() => _error = 'Password must be at least 8 characters');
+      return;
+    }
+    if (_pwCtrl.text != _pwCtrl2.text) {
+      setState(() => _error = 'Passwords do not match');
       return;
     }
     setState(() {
@@ -279,9 +285,16 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
         TextField(
           controller: _pwCtrl,
           obscureText: true,
+          textInputAction: TextInputAction.next,
           decoration: const InputDecoration(
             labelText: 'Password (one of the three shares)',
           ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _pwCtrl2,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'Confirm password'),
         ),
         if (_error != null) ...[
           const SizedBox(height: 12),
