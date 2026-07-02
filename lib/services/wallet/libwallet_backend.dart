@@ -122,6 +122,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   String? _pendingName;
   String? _pendingPasswordKeyId;
   String? _pendingStoreKeyPriv;
+  String? _pendingStoreKeyPub; // the transferred StoreKey's public — keys the
+  // biometric entry so an imported wallet gets the same custody as a created one
 
   bool _connecting = false;
   String? _error;
@@ -793,12 +795,18 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       }
       rethrow;
     }
-    // Persist the device share so switchWallet can read it back.
-    await _keystore.writeDeviceShare(
+    // Persist the device share with the same Atonline custody as a created wallet
+    // (biometric-first so signing prompts; else no-auth) so switchWallet can
+    // read it back.
+    final persisted = await _persistFreshStoreKey(
       walletId: promoted.id,
-      value: storePair.privateKey,
+      priv: storePair.privateKey,
+      pub: storePair.publicKey,
       password: password,
     );
+    if (!persisted) {
+      throw StateError('Could not persist the imported wallet key');
+    }
     return promoted;
   }
 
@@ -1180,11 +1188,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         freshRemoteKeyResource: freshRemote,
       );
       WalletKey? oldRemoteKey;
+      WalletKey? oldStoreKey;
       for (final k in wallet.keys) {
-        if (k.type == 'RemoteKey') {
-          oldRemoteKey = k;
-          break;
-        }
+        if (k.type == 'RemoteKey') oldRemoteKey = k;
+        if (k.type == 'StoreKey') oldStoreKey = k;
       }
       final newKeys = <KeyDescription>[
         KeyDescription.storeKey(newStorePair.publicKey),
@@ -1212,6 +1219,14 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _storeKeyPriv = newStorePair.privateKey;
       _password = newPassword;
       await _persist(storeKeyPublic: newStorePair.publicKey);
+      // Atonline custody for the fresh StoreKey (biometric-first; scrubs the dead
+      // old share + any no-auth copy _persist just wrote on a biometric device).
+      await _persistFreshStoreKey(
+        priv: newStorePair.privateKey,
+        pub: newStorePair.publicKey,
+        password: newPassword,
+        oldPub: oldStoreKey?.key,
+      );
       notifyListeners();
       unawaited(ensureSolanaDefault());
       return true;
@@ -1310,22 +1325,20 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       }
 
       // The old device share is now useless (the server re-encrypted the new
-      // share to the FRESH StoreKey public). Persist the fresh secret and
-      // VERIFY it reads back before flipping the pointers — a lost fresh secret
-      // would strand this device on 2FA recovery (zero-data-loss rule).
-      await _keystore.writeDeviceShare(
-        walletId: _walletId!,
-        value: storePair.privateKey,
+      // share to the FRESH StoreKey public). Persist the fresh secret with
+      // consistent custody (biometric-first on a biometric device, so signing
+      // keeps prompting; else no-auth) and VERIFY before flipping the pointers —
+      // a lost fresh secret would strand this device on 2FA recovery.
+      final persisted = await _persistFreshStoreKey(
+        priv: storePair.privateKey,
+        pub: storePair.publicKey,
         password: pw,
+        oldPub: oldStore.key,
       );
-      final readBack = await _keystore.readDeviceShare(
-        walletId: _walletId!,
-        password: pw,
-      );
-      if (readBack != storePair.privateKey) {
+      if (!persisted) {
         _error = 'Device share rotated, but re-saving it failed. Unlock again '
             'with your password to retry.';
-        debugPrint('[rotateDeviceShare] device-share verify mismatch');
+        debugPrint('[rotateDeviceShare] device-share persist verify mismatch');
         notifyListeners();
         return false;
       }
@@ -2446,6 +2459,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // (guaranteed present by validateTransferAcceptance above).
       final share =
           result.deviceShares.firstWhere((d) => d.walletKeyId == storeKeyId);
+      // The StoreKey's public keys the biometric entry (Atonline convention).
+      final storeKeyPub =
+          wallet.keys.firstWhere((k) => k.id == storeKeyId).key;
 
       final accounts = await client.accounts.list(wallet: wallet.id);
       Account? account;
@@ -2470,6 +2486,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _pendingName = wallet.name.isNotEmpty ? wallet.name : 'In-app wallet';
       _pendingPasswordKeyId = passwordKeyId;
       _pendingStoreKeyPriv = share.privateKey;
+      _pendingStoreKeyPub = storeKeyPub;
       notifyListeners();
       return true;
     } catch (e) {
@@ -2506,7 +2523,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     final walletId = _pendingWalletId;
     final passwordKeyId = _pendingPasswordKeyId;
     final storeKeyPriv = _pendingStoreKeyPriv;
-    if (walletId == null || passwordKeyId == null || storeKeyPriv == null) {
+    final storeKeyPub = _pendingStoreKeyPub;
+    if (walletId == null ||
+        passwordKeyId == null ||
+        storeKeyPriv == null ||
+        storeKeyPub == null) {
       _error = 'No transferred wallet to activate';
       debugPrint('[device-transfer] activate: $_error');
       notifyListeners();
@@ -2526,13 +2547,22 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         notifyListeners();
         return false;
       }
-      // Persist the transferred device share under the NEW wallet's id, keyed
-      // per-wallet so it never touches the active wallet's share.
-      await _keystore.writeDeviceShare(
+      // Persist the transferred device share under the NEW wallet's id with the
+      // same Atonline custody as a created/rotated wallet: biometric-first (so the
+      // imported wallet also prompts on sign) + the D8 blob; else no-auth. Keyed
+      // per-wallet, so it never touches the active wallet's share.
+      final persisted = await _persistFreshStoreKey(
         walletId: walletId,
-        value: storeKeyPriv,
+        priv: storeKeyPriv,
+        pub: storeKeyPub,
         password: password,
       );
+      if (!persisted) {
+        _error = 'Could not save the transferred wallet key on this device.';
+        debugPrint('[device-transfer] activate: persist verify failed');
+        notifyListeners();
+        return false;
+      }
       final hadActive = hasWallet;
       _clearPendingTransfer();
       // Promote to active when asked, or unconditionally when this is the
@@ -2585,6 +2615,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     _pendingName = null;
     _pendingPasswordKeyId = null;
     _pendingStoreKeyPriv = null;
+    _pendingStoreKeyPub = null;
   }
 
   /// Acceptance gate for a wallet arriving over device transfer, extracted so
@@ -2829,11 +2860,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       freshRemoteKeyResource: freshRemoteKeyResource,
     );
     WalletKey? oldRemoteKey;
+    WalletKey? oldStoreKey;
     for (final k in wallet.keys) {
-      if (k.type == 'RemoteKey') {
-        oldRemoteKey = k;
-        break;
-      }
+      if (k.type == 'RemoteKey') oldRemoteKey = k;
+      if (k.type == 'StoreKey') oldStoreKey = k;
     }
     final remoteKeyForReshare = freshRemoteKeyResource ?? oldRemoteKey?.key;
     final reshareNew = <KeyDescription>[
@@ -2866,12 +2896,79 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefsStorePub, newStorePair.publicKey);
     await prefs.setString(_prefsStoreKeyId, freshStoreKeyId);
+    final persisted = await _persistFreshStoreKey(
+      priv: newStorePair.privateKey,
+      pub: newStorePair.publicKey,
+      password: password,
+      oldPub: oldStoreKey?.key,
+    );
+    if (!persisted) {
+      throw StateError('Could not persist the recovered device share');
+    }
+    return newStorePair.privateKey;
+  }
+
+  /// Persist a StoreKey private ([priv]/[pub]) for [walletId] (default: the
+  /// active wallet) with consistent custody — the Atonline model, matching
+  /// creation + [migrateToBiometricV1]. Used by every path that lands a fresh
+  /// StoreKey on this device: rotate, 2FA recovery, and device-transfer import.
+  ///
+  /// On a biometric device the private is enrolled behind `biometric_storage`
+  /// (so every sign prompts) and kept ONLY as the D8 password blob at rest (no
+  /// no-auth copy); without biometric it falls back to the no-auth OS keystore
+  /// copy. See [freshStoreKeyPersistPlan].
+  ///
+  /// The at-rest blob is written + verified FIRST (zero-data-loss: the wallet
+  /// must have a readable local copy), then biometric enrollment is best-effort
+  /// on top. When replacing a share via reshare, pass the old StoreKey public as
+  /// [oldPub] to scrub its now-dead biometric entry (null for a fresh import).
+  /// Returns false only when the at-rest copy can't be verified — the caller
+  /// must then NOT flip pointers.
+  Future<bool> _persistFreshStoreKey({
+    required String priv,
+    required String pub,
+    required String password,
+    String? walletId,
+    String? oldPub,
+  }) async {
+    final wid = walletId ?? _walletId!;
+    final plan = freshStoreKeyPersistPlan(
+      hasBiometric: await Biometric.hasBiometric(),
+    );
+    // 1. At-rest safety net FIRST: the D8 password blob always, plus the no-auth
+    //    OS copy only when there's no biometric. Never leave a freshly-reshared
+    //    wallet with no local copy.
     await _keystore.writeDeviceShare(
-      walletId: _walletId!,
-      value: newStorePair.privateKey,
+      walletId: wid,
+      value: priv,
+      password: password,
+      osKeystoreCopy: plan.osKeystoreCopy,
+    );
+    // 2. Biometric custody: scrub any stale no-auth copy so nothing bypasses the
+    //    gate, then verify the remaining at-rest copy reads back.
+    if (plan.enrollBiometric) {
+      await _keystore.deleteNoAuthKeystoreCopy(wid);
+    }
+    final readBack = await _keystore.readDeviceShare(
+      walletId: wid,
       password: password,
     );
-    return newStorePair.privateKey;
+    if (readBack != priv) return false;
+    // 3. Enroll behind biometric so signing prompts (Atonline). Best-effort — the
+    //    verified blob above is the safety net if the prompt is cancelled.
+    if (plan.enrollBiometric) {
+      try {
+        await Biometric.setSecuredKey(priv, pub);
+      } catch (e) {
+        debugPrint('[persistFreshStoreKey] biometric enroll failed: $e');
+      }
+    }
+    // 4. The old StoreKey's secret is dead post-reshare — scrub its biometric
+    //    entry so a future read can't resurrect it.
+    if (oldPub != null && oldPub.isNotEmpty && oldPub != pub) {
+      await Biometric.deleteSecuredKey(oldPub);
+    }
+    return true;
   }
 
   Future<void> _persist({

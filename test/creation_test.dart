@@ -56,4 +56,25 @@ void main() {
       expect(modeHasStoreKey(CreationMode.passwordOnly), isFalse);
     });
   });
+
+  group('freshStoreKeyPersistPlan (Atonline custody alignment)', () {
+    test('biometric device: enroll biometric, NO no-auth copy', () {
+      final plan = freshStoreKeyPersistPlan(hasBiometric: true);
+      expect(plan.enrollBiometric, isTrue);
+      expect(plan.osKeystoreCopy, isFalse);
+    });
+
+    test('no biometric: no-auth copy, no biometric enrollment', () {
+      final plan = freshStoreKeyPersistPlan(hasBiometric: false);
+      expect(plan.enrollBiometric, isFalse);
+      expect(plan.osKeystoreCopy, isTrue);
+    });
+
+    test('invariant: biometric custody and a no-auth copy are exclusive', () {
+      for (final has in [true, false]) {
+        final plan = freshStoreKeyPersistPlan(hasBiometric: has);
+        expect(plan.enrollBiometric, isNot(plan.osKeystoreCopy));
+      }
+    });
+  });
 }
