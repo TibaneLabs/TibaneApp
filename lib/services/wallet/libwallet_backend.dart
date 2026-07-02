@@ -1136,6 +1136,53 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
   }
 
+  /// Repair a **desynced server-side RemoteKey (2FA) share** from the wallet's
+  /// local backup copy (libwallet 0.4.76 `Wallet:repairRemoteKey`).
+  ///
+  /// Needed when a wallet restored from backup has a 2FA share that a
+  /// mid-upload-abandoned reshare left out of sync — so `Wallet:reshare`
+  /// (recovery) stalls with "participant stopped responding". The wallet keeps a
+  /// byte-identical, fleet-encrypted copy of the share (preserved by backup);
+  /// this pushes it back under a FRESH validated 2FA session. The device never
+  /// sees the share plaintext.
+  ///
+  /// Flow: the caller runs [startRemoteKeyReshare] (sends the code), passes that
+  /// [sessionToken] + [code] here → we validate + repair. Recovery is then run
+  /// as usual with ANOTHER fresh session ([recoverDeviceShareVia2fa]).
+  Future<bool> repairRemoteKeyVia2fa({
+    required String sessionToken,
+    required String code,
+  }) async {
+    if (_walletId == null) {
+      _error = 'No wallet to repair';
+      notifyListeners();
+      return false;
+    }
+    try {
+      final client = await _getClient();
+      final validation = await _fleetCall(
+        'remoteKeys.validate(repair)',
+        client.remoteKeys.validate(session: sessionToken, code: code),
+      );
+      if (validation.remoteKey.isEmpty) {
+        _error = '2FA validation returned no remote key';
+        notifyListeners();
+        return false;
+      }
+      await _fleetCall(
+        'repairRemoteKey',
+        client.wallets.repairRemoteKey(_walletId!, remoteKey: validation.remoteKey),
+      );
+      debugPrint('[recovery] RemoteKey share repaired for $_walletId');
+      return true;
+    } catch (e) {
+      _error = 'Repair failed: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Reset the wallet password WITHOUT the old one, using the on-device
   /// StoreKey share + a 2FA-validated RemoteKey. Reshare committee
   /// `[StoreKey + RemoteKey] → [StoreKey(new) + Password(new) + RemoteKey]`.
@@ -2834,64 +2881,25 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     ];
   }
 
-  /// Hard cap on the WHOLE `wallets.reshare` ceremony. The FROST/eddsa reshare
-  /// runs against the WalletSign / wdrone fleet over Spot; if the fleet stalls
-  /// the stream can hang indefinitely (sometimes still emitting Progress
-  /// heartbeats, so a per-event timeout never fires). This is an OVERALL bound —
-  /// on expiry we cancel the subscription and surface a retryable error. Normal
-  /// reshares complete in seconds; this only trips on a genuinely stuck fleet.
-  static const Duration _reshareOverallTimeout = Duration(seconds: 120);
-
-  /// Consume a `wallets.reshare` stream to its final [Wallet], bounded by
-  /// [_reshareOverallTimeout] total (not per-event). Cancels the ceremony and
-  /// throws a retryable [ReshareStalledException] on timeout. Used by every
-  /// reshare path (change-password, rotate, recovery).
+  /// Consume a `wallets.reshare` stream to its final [Wallet].
+  ///
+  /// We deliberately do NOT impose a client-side timeout here: libwallet 0.4.75
+  /// bounds the ceremony internally — a 2-minute rounds deadline that surfaces a
+  /// descriptive error if a committee participant (RemoteKey/wdrone) goes silent
+  /// mid-ceremony ("the wallet committee is unchanged"), plus a *tenacious*
+  /// `setGeneratedKey` that retries transport failures for up to 5 minutes. A
+  /// client cap short of that would cut off the tenacious upload retry and could
+  /// re-open the share-desync window 0.4.75 exists to close. So we let the
+  /// ceremony run to its own conclusion and just surface its error/result.
   Future<Wallet> _runReshare(Stream<ProgressOr<Wallet>> stream) async {
-    final completer = Completer<Wallet?>();
     Wallet? after;
-    late final StreamSubscription<ProgressOr<Wallet>> sub;
-    var progressTicks = 0;
-    final timer = Timer(_reshareOverallTimeout, () {
-      if (!completer.isCompleted) {
-        debugPrint('[fleet] Wallet:reshare OVERALL TIMEOUT after '
-            '${_reshareOverallTimeout.inSeconds}s ($progressTicks progress events)');
-        completer.completeError(
-          ReshareStalledException(
-            "Couldn't reach the signing service to finish — it may be "
-            'temporarily busy. Check your connection and try again.',
-          ),
-        );
-      }
-    });
-    sub = stream.listen(
-      (ev) {
-        if (ev is Complete<Wallet>) {
-          after = ev.value;
-        } else {
-          progressTicks++;
-        }
-      },
-      onError: (Object e, StackTrace st) {
-        if (!completer.isCompleted) completer.completeError(e, st);
-      },
-      onDone: () {
-        if (!completer.isCompleted) completer.complete(after);
-      },
-      cancelOnError: true,
-    );
-    try {
-      final result = await completer.future;
-      if (result == null) {
-        throw StateError('Reshare did not return a wallet');
-      }
-      return result;
-    } finally {
-      timer.cancel();
-      // Fire-and-forget: cancelling a STUCK platform stream blocks (its native
-      // onCancel waits on the hung ceremony), which would swallow the timeout
-      // and keep the UI spinning. Abandon the subscription and move on.
-      unawaited(sub.cancel());
+    await for (final ev in stream) {
+      if (ev is Complete<Wallet>) after = ev.value;
     }
+    if (after == null) {
+      throw StateError('Reshare did not return a wallet');
+    }
+    return after;
   }
 
   /// Bound a single fleet/WalletSign round-trip (RemoteKey reshare/validate)

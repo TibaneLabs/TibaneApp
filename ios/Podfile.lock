@@ -41,7 +41,7 @@ PODS:
   - flutter_secure_storage_darwin (10.0.0):
     - Flutter
     - FlutterMacOS
-  - libwallet (0.4.74)
+  - libwallet (0.4.76)
   - local_auth_darwin (0.0.1):
     - Flutter
     - FlutterMacOS
@@ -118,7 +118,7 @@ SPEC CHECKSUMS:
   file_picker: b159e0c068aef54932bb15dc9fd1571818edaf49
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_secure_storage_darwin: 557817588b80e60213cbecb573c45c76b788018d
-  libwallet: 7ce64921ea47197863cd5e2f1953bf6c483cf573
+  libwallet: 7ffa54db4ffad632b6f2565cc245e5b7a9e92244
   local_auth_darwin: 63c73d6d28cc3e239be2b6aa460ea6e317cd5100
   mobile_scanner: 77265f3dc8d580810e91849d4a0811a90467ed5e
   SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
