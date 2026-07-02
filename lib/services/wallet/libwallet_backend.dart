@@ -913,8 +913,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       }
       // Validate the 2FA code → the FRESH RemoteKey session the reshare pushes
       // the re-split RemoteKey share to (the stored one is a `done` session).
-      final validation =
-          await client.remoteKeys.validate(session: sessionToken, code: code);
+      final validation = await _fleetCall(
+        'remoteKeys.validate',
+        client.remoteKeys.validate(session: sessionToken, code: code),
+      );
       if (validation.remoteKey.isEmpty) {
         _error = '2FA validation returned no remote key';
         notifyListeners();
@@ -1028,7 +1030,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // derives it from the remote key record, removing the foot-gun
       // where a host-side defaulted wallet.curve mis-routed the
       // ceremony into the wrong curve/protocol.
-      return await client.remoteKeys.reshare(key: remoteKey.key);
+      return await _fleetCall(
+        'remoteKeys.reshare(sendCode)',
+        client.remoteKeys.reshare(key: remoteKey.key),
+      );
     } catch (e) {
       _error = 'Reshare failed to start: $e';
       debugPrint(_error);
@@ -1045,9 +1050,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   }) async {
     try {
       final client = await _getClient();
-      final validation = await client.remoteKeys.validate(
-        session: session,
-        code: code,
+      final validation = await _fleetCall(
+        'remoteKeys.validate(2fa-rotate)',
+        client.remoteKeys.validate(session: session, code: code),
       );
       if (validation.remoteKey.isNotEmpty &&
           validation.remoteKey != _remoteKeyId) {
@@ -1084,6 +1089,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       return false;
     }
     try {
+      debugPrint('[recovery] recoverDeviceShareVia2fa: validating 2FA code…');
       final client = await _getClient();
       // Validate the SMS/email code. We need the freshly-minted
       // RemoteKey resource id back from validate — the stored
@@ -1093,9 +1099,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // session: done`. Per libwallet 0.4.37 device_share.md, the
       // validate result's `remoteKey` field replaces it on both
       // old and new committee RemoteKey KeyDescriptions.
-      final validation = await client.remoteKeys.validate(
-        session: sessionToken,
-        code: code,
+      final validation = await _fleetCall(
+        'remoteKeys.validate(recover)',
+        client.remoteKeys.validate(session: sessionToken, code: code),
       );
       if (validation.remoteKey.isEmpty) {
         _error = '2FA validation returned no remote key';
@@ -1109,6 +1115,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       }
       // Mint a fresh device share locally and run the Wallet:reshare
       // ceremony using the fresh RemoteKey session id.
+      debugPrint('[recovery] validated; running device-share reshare…');
       final wallet = await client.wallets.get(_walletId!);
       final priv = await _resharedDeviceShare(
         client: client,
@@ -1171,9 +1178,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       }
       // Validate the 2FA code → fresh RemoteKey resource (the stored one is a
       // `done` session and can't authorize a reshare).
-      final validation = await client.remoteKeys.validate(
-        session: sessionToken,
-        code: code,
+      final validation = await _fleetCall(
+        'remoteKeys.validate(reset)',
+        client.remoteKeys.validate(session: sessionToken, code: code),
       );
       if (validation.remoteKey.isEmpty) {
         _error = '2FA validation returned no remote key';
@@ -1184,7 +1191,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // Reshare: authorize with StoreKey + RemoteKey (no old password), set a
       // new Password. Mint a fresh StoreKey for the new committee.
       final wallet = await client.wallets.get(_walletId!);
-      final newStorePair = await client.storeKeys.create();
+      final newStorePair =
+          await _fleetCall('storeKeys.create(reset)', client.storeKeys.create());
       final oldKeys = buildReshareOldKeys(
         wallet: wallet,
         password: null,
@@ -1290,8 +1298,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         return false;
       }
       // Validate the 2FA code → the fresh RemoteKey session for the NEW share.
-      final validation =
-          await client.remoteKeys.validate(session: sessionToken, code: code);
+      final validation = await _fleetCall(
+        'remoteKeys.validate',
+        client.remoteKeys.validate(session: sessionToken, code: code),
+      );
       if (validation.remoteKey.isEmpty) {
         _error = '2FA validation returned no remote key';
         notifyListeners();
@@ -2824,33 +2834,86 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     ];
   }
 
-  /// Max time a `wallets.reshare` stream may go without emitting an event before
-  /// we give up. The FROST/eddsa reshare ceremony runs against the WalletSign /
-  /// wdrone fleet over Spot; if the fleet stalls the stream hangs indefinitely,
-  /// leaving the UI on an infinite spinner. A stall beyond this surfaces a
-  /// clear, retryable error instead. Normal reshares complete in seconds.
-  static const Duration _reshareStallTimeout = Duration(seconds: 90);
+  /// Hard cap on the WHOLE `wallets.reshare` ceremony. The FROST/eddsa reshare
+  /// runs against the WalletSign / wdrone fleet over Spot; if the fleet stalls
+  /// the stream can hang indefinitely (sometimes still emitting Progress
+  /// heartbeats, so a per-event timeout never fires). This is an OVERALL bound —
+  /// on expiry we cancel the subscription and surface a retryable error. Normal
+  /// reshares complete in seconds; this only trips on a genuinely stuck fleet.
+  static const Duration _reshareOverallTimeout = Duration(seconds: 120);
 
   /// Consume a `wallets.reshare` stream to its final [Wallet], bounded by
-  /// [_reshareStallTimeout] between events. Throws a retryable [StateError] if
-  /// the ceremony stalls (fleet unreachable / not progressing) or yields no
-  /// wallet. Used by every reshare path (change-password, rotate, recovery).
+  /// [_reshareOverallTimeout] total (not per-event). Cancels the ceremony and
+  /// throws a retryable [ReshareStalledException] on timeout. Used by every
+  /// reshare path (change-password, rotate, recovery).
   Future<Wallet> _runReshare(Stream<ProgressOr<Wallet>> stream) async {
+    final completer = Completer<Wallet?>();
     Wallet? after;
-    try {
-      await for (final ev in stream.timeout(_reshareStallTimeout)) {
-        if (ev is Complete<Wallet>) after = ev.value;
+    late final StreamSubscription<ProgressOr<Wallet>> sub;
+    var progressTicks = 0;
+    final timer = Timer(_reshareOverallTimeout, () {
+      if (!completer.isCompleted) {
+        debugPrint('[fleet] Wallet:reshare OVERALL TIMEOUT after '
+            '${_reshareOverallTimeout.inSeconds}s ($progressTicks progress events)');
+        completer.completeError(
+          ReshareStalledException(
+            "Couldn't reach the signing service to finish — it may be "
+            'temporarily busy. Check your connection and try again.',
+          ),
+        );
       }
+    });
+    sub = stream.listen(
+      (ev) {
+        if (ev is Complete<Wallet>) {
+          after = ev.value;
+        } else {
+          progressTicks++;
+        }
+      },
+      onError: (Object e, StackTrace st) {
+        if (!completer.isCompleted) completer.completeError(e, st);
+      },
+      onDone: () {
+        if (!completer.isCompleted) completer.complete(after);
+      },
+      cancelOnError: true,
+    );
+    try {
+      final result = await completer.future;
+      if (result == null) {
+        throw StateError('Reshare did not return a wallet');
+      }
+      return result;
+    } finally {
+      timer.cancel();
+      // Fire-and-forget: cancelling a STUCK platform stream blocks (its native
+      // onCancel waits on the hung ceremony), which would swallow the timeout
+      // and keep the UI spinning. Abandon the subscription and move on.
+      unawaited(sub.cancel());
+    }
+  }
+
+  /// Bound a single fleet/WalletSign round-trip (RemoteKey reshare/validate)
+  /// so a stalled server fails cleanly instead of hanging the whole flow
+  /// forever — the reshare STREAM has its own [_runReshare] bound; this covers
+  /// the plain Futures BEFORE it (which is where a stuck recovery hangs with no
+  /// ceremony logs). [label] is logged on timeout to pinpoint the stall.
+  static const Duration _fleetCallTimeout = Duration(seconds: 45);
+
+  Future<T> _fleetCall<T>(String label, Future<T> op) async {
+    debugPrint('[fleet] $label …');
+    try {
+      final r = await op.timeout(_fleetCallTimeout);
+      debugPrint('[fleet] $label ok');
+      return r;
     } on TimeoutException {
+      debugPrint('[fleet] $label TIMED OUT after ${_fleetCallTimeout.inSeconds}s');
       throw ReshareStalledException(
-        "Couldn't reach the signing service to finish — it may be temporarily "
-        'busy. Check your connection and try again.',
+        "Couldn't reach the signing service — it may be temporarily busy. "
+        'Check your connection and try again.',
       );
     }
-    if (after == null) {
-      throw StateError('Reshare did not return a wallet');
-    }
-    return after;
   }
 
   /// Auto-rotate the device share on a wallet that exists locally but
@@ -2871,7 +2934,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     required String password,
     String? freshRemoteKeyResource,
   }) async {
-    final newStorePair = await client.storeKeys.create();
+    final newStorePair =
+        await _fleetCall('storeKeys.create(recover)', client.storeKeys.create());
     final reshareOld = buildReshareOldKeys(
       wallet: wallet,
       password: password,
@@ -2891,11 +2955,13 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         KeyDescription(type: 'RemoteKey', key: remoteKeyForReshare),
       KeyDescription.password(password),
     ];
+    debugPrint('[recovery] starting Wallet:reshare ceremony…');
     final afterReshare = await _runReshare(client.wallets.reshare(
       wallet.id,
       oldKeys: reshareOld,
       newKeys: reshareNew,
     ));
+    debugPrint('[recovery] Wallet:reshare ceremony complete');
     final freshKeyIds = _extractKeyIdsByType(afterReshare);
     final freshStoreKeyId = freshKeyIds['StoreKey'];
     if (freshStoreKeyId == null) {
