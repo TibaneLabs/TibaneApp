@@ -9,6 +9,7 @@ import '../../services/wallet/unified_account.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
+import 'inapp_unlock_screen.dart';
 
 /// Restore an in-app wallet from a Tibane backup: pick the exported file
 /// (primary) or paste the backup JSON (fallback for small payloads), then
@@ -132,9 +133,21 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
           await wallet.useLibwallet();
         }
         if (!mounted) return;
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Wallet restored')),
-        );
+        // A backup never contains this device's signing key (StoreKey) — it's
+        // device-only for security. So a freshly restored wallet CAN'T sign yet;
+        // the restore only becomes usable after "Set up this device" mints a
+        // local share via 2FA. Steer the user straight there and explain why,
+        // rather than dropping them on a wallet that silently can't send.
+        final setupNow = await _promptFinishSetup();
+        if (!mounted) return;
+        if (setupNow && restoredId != null) {
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => InAppUnlockScreen(walletId: restoredId),
+            ),
+          );
+          if (!mounted) return;
+        }
         Navigator.of(context).pop(true);
       } else {
         final err = wallet.libwallet.error ?? 'Import failed';
@@ -162,6 +175,46 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
   String _friendlyError(Object e) {
     if (e is FormatException) return e.message;
     return e.toString();
+  }
+
+  /// Explain why a restored wallet still needs a device-side setup step, and
+  /// offer to run it now. Returns true = the user chose "Set up now".
+  Future<bool> _promptFinishSetup() async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: TibaneColors.card,
+        title: const Text('One more step'),
+        content: const Text(
+          "Wallet restored. But this device can't sign transactions yet.\n\n"
+          "For security, your signing key is never included in a backup — it "
+          "only ever lives on a device. Verify with a 2FA code to create this "
+          "device's signing key and finish.\n\n"
+          "You can do this later from Security & Privacy, but you won't be able "
+          "to send or sign until you do.",
+          style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text(
+              'Later',
+              style: TextStyle(color: TibaneColors.textMuted),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: TibaneColors.orange,
+              foregroundColor: TibaneColors.black,
+            ),
+            child: const Text('Set up now'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   @override
