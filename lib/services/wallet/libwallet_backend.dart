@@ -43,6 +43,16 @@ class TokenSearchResult {
 /// prompt for a password, route into 2FA recovery, or surface an error.
 enum SwitchResult { ok, needsPassword, wrongPassword, needsRecovery, error }
 
+/// Thrown when a `wallets.reshare` ceremony stalls past the fleet timeout. Its
+/// [toString] is the bare user-facing [message] (no "Exception:"/"Bad state:"
+/// prefix), so callers that format `'<op> failed: $e'` read cleanly.
+class ReshareStalledException implements Exception {
+  ReshareStalledException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 /// Pure routing decision for a wallet switch — extracted so it can be
 /// unit-tested without a libwallet client. See
 /// [LibwalletBackend.planWalletSwitch].
@@ -923,17 +933,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         newPassword: newPassword,
       );
 
-      Wallet? after;
-      await for (final ev in client.wallets.reshare(
+      final after = await _runReshare(client.wallets.reshare(
         _walletId!,
         oldKeys: committee.oldKeys,
         newKeys: committee.newKeys,
-      )) {
-        if (ev is Complete<Wallet>) after = ev.value;
-      }
-      if (after == null) {
-        throw StateError('Reshare did not return a wallet');
-      }
+      ));
 
       // Reshare bumps the generation and mints a fresh WalletKey id for every
       // committee member (StoreKey, RemoteKey, Password) — re-extract and
@@ -1199,17 +1203,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
           KeyDescription(type: 'RemoteKey', key: freshRemote),
         KeyDescription.password(newPassword),
       ];
-      Wallet? after;
-      await for (final ev in client.wallets.reshare(
+      final after = await _runReshare(client.wallets.reshare(
         _walletId!,
         oldKeys: oldKeys,
         newKeys: newKeys,
-      )) {
-        if (ev is Complete<Wallet>) after = ev.value;
-      }
-      if (after == null) {
-        throw StateError('Password-reset reshare returned no wallet');
-      }
+      ));
       // Adopt the new committee + persist under the new password. The wallet
       // is now the active, unlocked one.
       final freshIds = _extractKeyIdsByType(after);
@@ -1312,17 +1310,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         newPassword: pw,
       );
 
-      Wallet? after;
-      await for (final ev in client.wallets.reshare(
+      final after = await _runReshare(client.wallets.reshare(
         _walletId!,
         oldKeys: committee.oldKeys,
         newKeys: committee.newKeys,
-      )) {
-        if (ev is Complete<Wallet>) after = ev.value;
-      }
-      if (after == null) {
-        throw StateError('Reshare did not return a wallet');
-      }
+      ));
 
       // The old device share is now useless (the server re-encrypted the new
       // share to the FRESH StoreKey public). Persist the fresh secret with
@@ -2834,6 +2826,35 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     ];
   }
 
+  /// Max time a `wallets.reshare` stream may go without emitting an event before
+  /// we give up. The FROST/eddsa reshare ceremony runs against the WalletSign /
+  /// wdrone fleet over Spot; if the fleet stalls the stream hangs indefinitely,
+  /// leaving the UI on an infinite spinner. A stall beyond this surfaces a
+  /// clear, retryable error instead. Normal reshares complete in seconds.
+  static const Duration _reshareStallTimeout = Duration(seconds: 90);
+
+  /// Consume a `wallets.reshare` stream to its final [Wallet], bounded by
+  /// [_reshareStallTimeout] between events. Throws a retryable [StateError] if
+  /// the ceremony stalls (fleet unreachable / not progressing) or yields no
+  /// wallet. Used by every reshare path (change-password, rotate, recovery).
+  Future<Wallet> _runReshare(Stream<ProgressOr<Wallet>> stream) async {
+    Wallet? after;
+    try {
+      await for (final ev in stream.timeout(_reshareStallTimeout)) {
+        if (ev is Complete<Wallet>) after = ev.value;
+      }
+    } on TimeoutException {
+      throw ReshareStalledException(
+        "Couldn't reach the signing service to finish — it may be temporarily "
+        'busy. Check your connection and try again.',
+      );
+    }
+    if (after == null) {
+      throw StateError('Reshare did not return a wallet');
+    }
+    return after;
+  }
+
   /// Auto-rotate the device share on a wallet that exists locally but
   /// has no SecureKeystore entry for its StoreKey private. Per
   /// libwallet's device-share docs
@@ -2872,17 +2893,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         KeyDescription(type: 'RemoteKey', key: remoteKeyForReshare),
       KeyDescription.password(password),
     ];
-    Wallet? afterReshare;
-    await for (final ev in client.wallets.reshare(
+    final afterReshare = await _runReshare(client.wallets.reshare(
       wallet.id,
       oldKeys: reshareOld,
       newKeys: reshareNew,
-    )) {
-      if (ev is Complete<Wallet>) afterReshare = ev.value;
-    }
-    if (afterReshare == null) {
-      throw StateError('Device-share reshare did not return a wallet');
-    }
+    ));
     final freshKeyIds = _extractKeyIdsByType(afterReshare);
     final freshStoreKeyId = freshKeyIds['StoreKey'];
     if (freshStoreKeyId == null) {
