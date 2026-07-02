@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../../services/wallet/signing.dart';
 import '../../../services/wallet_service.dart';
+import '../inapp_unlock_screen.dart';
 import 'sign_sheet.dart';
 
 /// Per-transaction authorize-and-sign helpers (Atonline-parity §4.3).
@@ -26,6 +27,30 @@ void _toast(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 }
 
+/// A toast whose action routes straight into device-key setup — used when the
+/// wallet has no local signing share yet (e.g. freshly restored from a backup),
+/// so "Later" during restore still leads somewhere instead of dead-ending.
+void _promptSetUp(BuildContext context, String walletId, String message) {
+  debugPrint('[authorizeAndSign] $message');
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message),
+      duration: const Duration(seconds: 6),
+      action: SnackBarAction(
+        label: 'Set up',
+        onPressed: () {
+          if (!context.mounted) return;
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => InAppUnlockScreen(walletId: walletId),
+            ),
+          );
+        },
+      ),
+    ),
+  );
+}
+
 /// Collect per-transaction signing keys for the current in-app wallet via the
 /// sign sheet. Returns the keys, or null when the user cancels or the wallet
 /// can't be signed on this device (an explanatory toast is shown). Only call
@@ -39,10 +64,11 @@ Future<List<SigningKey>?> collectSigningKeys(BuildContext context) async {
     return null;
   }
   if (!canAssembleThreshold(wallet)) {
-    _toast(
+    _promptSetUp(
       context,
-      'This wallet can’t be signed on this device. Recover the device key via '
-      '2FA in wallet settings.',
+      wallet.id,
+      "This device isn't set up to sign this wallet yet — finish setup with a "
+      '2FA code.',
     );
     return null;
   }
@@ -76,10 +102,11 @@ Future<({String password, String? storeKeyPriv})?> collectManagementKeys(
     return null;
   }
   if (!canAssembleThreshold(wallet)) {
-    _toast(
+    _promptSetUp(
       context,
-      'This wallet can’t be unlocked on this device. Recover the device key '
-      'via 2FA in wallet settings.',
+      wallet.id,
+      "This device isn't set up for this wallet yet — finish setup with a 2FA "
+      'code.',
     );
     return null;
   }
