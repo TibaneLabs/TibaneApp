@@ -170,7 +170,7 @@ class _ToolsSection extends StatelessWidget {
         FeatureCard(
           icon: Icons.swap_horiz,
           title: 'Swap',
-          description: 'Swap tokens directly via Jupiter with minimal fees.',
+          description: 'Swap tokens across Solana and EVM chains with minimal fees.',
           badge: 'LIVE',
           badgeColor: TibaneColors.cyan,
           onTap: () => onNavigate(1),
