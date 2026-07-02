@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../services/wallet/unified_account.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
@@ -111,30 +112,49 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
     });
     try {
       final wallet = context.read<WalletService>();
+      final messenger = ScaffoldMessenger.of(context);
       final ok = await wallet.libwallet.importFromBackup(
         backupJson: json,
         password: pw,
       );
       if (!mounted) return;
       if (ok) {
-        await wallet.useLibwallet();
+        // Restore ADDS the wallet; make it the current account so the user
+        // lands on it (else the account model stays on the old current).
+        final restoredId = wallet.libwallet.walletId;
+        await wallet.refreshAccounts();
         if (!mounted) return;
+        final acct =
+            restoredId == null ? null : accountForWallet(wallet.accounts, restoredId);
+        if (acct != null) {
+          await wallet.setCurrentAccount(acct);
+        } else {
+          await wallet.useLibwallet();
+        }
+        if (!mounted) return;
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Wallet restored')),
+        );
         Navigator.of(context).pop(true);
       } else {
-        logError(
-          '[InAppBackupRestore._restore] import failed: ${wallet.libwallet.error}',
-        );
+        final err = wallet.libwallet.error ?? 'Import failed';
+        logError('[InAppBackupRestore._restore] import failed: $err');
+        // SnackBar in addition to the inline error — the inline message sits
+        // below the password field and can hide under the keyboard.
+        messenger.showSnackBar(SnackBar(content: Text(err)));
         setState(() {
           _busy = false;
-          _error = wallet.libwallet.error ?? 'Import failed';
+          _error = err;
         });
       }
     } catch (e) {
       logError('[InAppBackupRestore._restore] restore error: $e');
       if (!mounted) return;
+      final err = _friendlyError(e);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
       setState(() {
         _busy = false;
-        _error = _friendlyError(e);
+        _error = err;
       });
     }
   }
