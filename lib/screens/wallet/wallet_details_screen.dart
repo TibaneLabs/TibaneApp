@@ -344,7 +344,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                     child: OutlinedButton.icon(
                       onPressed: _resetPassword,
                       icon: const Icon(Icons.lock_reset, size: 16),
-                      label: const Text('Reset password (2FA)'),
+                      label: const Text('Forgot password? Reset via 2FA'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: TibaneColors.text,
                         side: const BorderSide(color: TibaneColors.border),
@@ -705,7 +705,7 @@ class _ActionsRow extends StatelessWidget {
           child: OutlinedButton.icon(
             onPressed: onBackup,
             icon: const Icon(Icons.download_outlined, size: 16),
-            label: const Text('Backup'),
+            label: const Text('Export'),
             style: OutlinedButton.styleFrom(
               foregroundColor: TibaneColors.text,
               side: const BorderSide(color: TibaneColors.border),

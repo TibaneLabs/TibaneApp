@@ -41,30 +41,32 @@ class SecurityPrivacyScreen extends StatelessWidget {
                 SettingsTile(
                   icon: Icons.password_outlined,
                   title: 'Change password',
-                  subtitle: 'Reshare the Password share with a new secret',
+                  subtitle: "Set a new password. You'll need your current one.",
                   onTap: () => _changePassword(context, wallet),
                 ),
                 const SizedBox(height: 6),
                 SettingsTile(
                   icon: Icons.refresh,
-                  title: 'Rotate device share',
-                  subtitle: 'Replace the on-device TSS share with a fresh one',
+                  title: "Reset this device's key",
+                  subtitle: 'Replace the signing key stored on this phone. '
+                      'Use if this device may be compromised.',
                   onTap: () => _rotateDeviceShare(context, wallet),
                 ),
                 const SizedBox(height: 6),
                 SettingsTile(
                   icon: Icons.sms_outlined,
-                  title: 'Rotate 2FA share',
-                  subtitle: 'Reshare the remote (email / SMS) TSS share',
+                  title: 'Reset 2FA key',
+                  subtitle: 'Replace your email / SMS recovery key. '
+                      'Use if your 2FA may be compromised.',
                   onTap: () => _rotateRemoteKey(context, wallet),
                 ),
                 const SizedBox(height: 6),
                 SettingsTile(
                   icon: Icons.healing_outlined,
-                  title: 'Recover device key (2FA)',
+                  title: 'Set up signing on this device',
                   subtitle:
-                      "Re-mint this device's TSS share via 2FA — use if signing "
-                      "can't find the device key (e.g. on a new device)",
+                      "Restore this wallet's signing key here using 2FA — needed "
+                      'on a new phone or after reinstalling.',
                   onTap: () => _recoverDeviceShare(context, wallet),
                 ),
               ] else ...[
@@ -72,8 +74,8 @@ class SecurityPrivacyScreen extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   child: const Text(
                     'Security options are managed by your external wallet. '
-                    'Switch to or create an in-app wallet to see password, '
-                    'biometric, and TSS share controls here.',
+                    'Switch to or create an in-app wallet to see password, key, '
+                    'and 2FA controls here.',
                     style: TextStyle(color: TibaneColors.textMuted),
                   ),
                 ),
