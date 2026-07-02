@@ -2060,8 +2060,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   }
 
   /// Restore a wallet from a previously exported backup JSON. The password
-  /// must match the original wallet's password. On success the restored
-  /// wallet becomes the active in-app wallet (state persisted, unlocked).
+  /// must match the original wallet's password. On success the restored wallet
+  /// is ADDED (multi-wallet) and becomes the active in-app wallet; any
+  /// previously-active wallet stays in the list (switchable via the account
+  /// switcher) — its per-wallet device share is untouched, since restore never
+  /// writes the keystore.
   ///
   /// Returns true on success. Note: the original device-share private key
   /// is not part of the backup — after import, signing flows will require
@@ -2070,11 +2073,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     required String backupJson,
     required String password,
   }) async {
-    if (hasWallet) {
-      _error = 'Disconnect the current wallet before importing';
-      notifyListeners();
-      return false;
-    }
     _connecting = true;
     _error = null;
     notifyListeners();
