@@ -5,13 +5,13 @@
 String shareTypeLabel(String type) {
   switch (type) {
     case 'StoreKey':
-      return 'Device share';
+      return 'Device key';
     case 'RemoteKey':
-      return 'Email / SMS second factor';
+      return 'Email / SMS 2FA key';
     case 'Password':
-      return 'Password share';
+      return 'Password';
     case 'Plain':
-      return 'Imported share';
+      return 'Imported key';
     default:
       return type;
   }
