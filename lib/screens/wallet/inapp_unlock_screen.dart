@@ -330,6 +330,11 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
           const SizedBox(height: 12),
           Text(_error!, style: const TextStyle(color: TibaneColors.error)),
         ],
+        // Minimum gap that survives the Spacer collapsing when the keyboard
+        // shrinks the viewport (KeyboardSafeForm switches to intrinsic height +
+        // scroll, giving the Spacer zero flex). Without it the button sits flush
+        // against the input/error above.
+        const SizedBox(height: 24),
         const Spacer(),
         if (codeSent)
           TextButton(
