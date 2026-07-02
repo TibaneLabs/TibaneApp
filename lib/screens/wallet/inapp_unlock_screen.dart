@@ -298,6 +298,32 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
                         'send a code to your registered email or phone.'),
           style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
+        // Single-device wallet: the committee has one device-key slot, so
+        // "Set up this device" MOVES it here and retires any other phone set up
+        // for this wallet. Warn only on the set-up path (repair doesn't touch
+        // the device slot).
+        if (!repair) ...[
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              Icon(Icons.info_outline, color: TibaneColors.amber, size: 16),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'A wallet signs on one device at a time. Setting up here makes '
+                  'this your signing device — if it was set up on another phone, '
+                  'that phone will need to set up again to sign.',
+                  style: TextStyle(
+                    color: TibaneColors.amber,
+                    fontSize: 12.5,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
         if (_notice != null) ...[
           const SizedBox(height: 12),
           Text(_notice!, style: const TextStyle(color: TibaneColors.cyan)),
