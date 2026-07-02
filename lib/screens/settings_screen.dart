@@ -8,6 +8,7 @@ import '../widgets/tibane_card.dart';
 import 'settings/browser_screen.dart';
 import 'settings/connections_screen.dart';
 import 'settings/general_screen.dart';
+import 'settings/help_faq_screen.dart';
 import 'settings/security_privacy_screen.dart';
 import 'settings/wallets_accounts_screen.dart';
 import 'wallet/wallet_details_screen.dart';
@@ -84,6 +85,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => Navigator.of(
               context,
             ).push(MaterialPageRoute(builder: (_) => const GeneralScreen())),
+          ),
+          const SizedBox(height: 6),
+          SettingsTile(
+            icon: Icons.help_outline,
+            title: 'Help & FAQ',
+            subtitle: 'Backups, moving phones, passwords & 2FA',
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const HelpFaqScreen())),
           ),
 
           // In-app wallets are lockless (no persistent unlock to lock), so the
