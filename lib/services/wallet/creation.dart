@@ -47,3 +47,20 @@ List<String> creationKeyTypes(CreationMode mode) => switch (mode) {
 /// WITHOUT one (D5) is signed the same lockless way — the sign sheet collects
 /// its two Password shares per transaction.
 bool modeHasStoreKey(CreationMode mode) => mode == CreationMode.biometric;
+
+/// How to persist a **freshly-minted StoreKey** (creation, rotate, 2FA
+/// recovery, device-import) so custody stays consistent — the Atonline model:
+///
+/// - On a biometric device the StoreKey private is custodied **only** behind
+///   `biometric_storage` (so every sign prompts), plus the D8 password blob for
+///   OS-restore recovery. There is **no** no-auth keystore copy — [enrollBiometric]
+///   is true, [osKeystoreCopy] false.
+/// - Without biometric it falls back to the no-auth OS keystore copy (+ blob) —
+///   [enrollBiometric] false, [osKeystoreCopy] true.
+///
+/// The invariant: `enrollBiometric == !osKeystoreCopy` — biometric custody and
+/// a no-auth copy are mutually exclusive, so nothing ever bypasses the gate.
+({bool enrollBiometric, bool osKeystoreCopy}) freshStoreKeyPersistPlan({
+  required bool hasBiometric,
+}) =>
+    (enrollBiometric: hasBiometric, osKeystoreCopy: !hasBiometric);
