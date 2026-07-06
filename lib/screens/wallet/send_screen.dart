@@ -18,6 +18,31 @@ import 'widgets/authorize_and_sign.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
 
+/// Per-unit USD price for a token holding: the direct [priceUsd] when present,
+/// else the fiat total ÷ balance (for chains that only report a value total),
+/// else null. Pure, for unit-testing the send-screen USD estimate.
+@visibleForTesting
+double? holdingUnitPriceUsd({
+  required double? priceUsd,
+  required double? valueUsd,
+  required double uiBalance,
+}) {
+  if (priceUsd != null) return priceUsd;
+  if (valueUsd != null && uiBalance > 0) return valueUsd / uiBalance;
+  return null;
+}
+
+/// Formats a USD amount for the send-screen estimate: `< $0.01` for dust,
+/// K/M/B suffixes for large values, two decimals otherwise. Pure, for tests.
+@visibleForTesting
+String formatSendUsd(double v) {
+  if (v > 0 && v < 0.01) return '< \$0.01';
+  if (v >= 1e9) return '\$${(v / 1e9).toStringAsFixed(2)}B';
+  if (v >= 1e6) return '\$${(v / 1e6).toStringAsFixed(2)}M';
+  if (v >= 1e3) return '\$${(v / 1e3).toStringAsFixed(2)}K';
+  return '\$${v.toStringAsFixed(2)}';
+}
+
 class SendScreen extends StatefulWidget {
   /// Optional SPL mint to send instead of native SOL. When null the
   /// screen behaves as a SOL transfer (the default).
@@ -58,6 +83,12 @@ class _SendScreenState extends State<SendScreen> {
   int _decimals = 9;
   String? _imageUrl;
 
+  // Per-unit USD price of the native asset (Solana: the wSOL price from
+  // Jupiter; other chains: derived from the native asset's fiat total). SPL /
+  // token prices come from each [TokenHolding.priceUsd]. Drives the ~$ estimate
+  // of the entered amount shown under the balance. Null until loaded / unknown.
+  double? _nativePriceUsd;
+
   // The current account's network — drives the native asset's symbol/decimals
   // and the per-chain asset key so send is correct on every chain (Phase 5a).
   // Resolved authoritatively in _loadHoldings (the cached value can be stale).
@@ -87,17 +118,25 @@ class _SendScreenState extends State<SendScreen> {
     _symbol = widget.symbol ?? 'SOL';
     _decimals = widget.decimals ?? 9;
     _addrCtrl.addListener(_onAddrChanged);
+    // Recompute the ~$ estimate as the amount changes — a listener (not the
+    // field's onChanged) so it also fires when MAX sets the text programmatically.
+    _amountCtrl.addListener(_onAmountChanged);
     _loadHoldings();
   }
 
   @override
   void dispose() {
     _addrCtrl.removeListener(_onAddrChanged);
+    _amountCtrl.removeListener(_onAmountChanged);
     _resolveDebounce?.cancel();
     _addrCtrl.dispose();
     _amountCtrl.dispose();
     _jupiter.dispose();
     super.dispose();
+  }
+
+  void _onAmountChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadHoldings() async {
@@ -146,14 +185,18 @@ class _SendScreenState extends State<SendScreen> {
         // Solana: discover all SPL holdings via Jupiter (broader than the
         // tracked-only getAssets). wsolMint is excluded so it doesn't
         // duplicate the native SOL row the picker renders separately. Native
-        // SOL is 9 decimals (the fallback constant is authoritative here).
-        final holdings = await _jupiter.fetchHoldings(
-          addr,
-          excludeMint: wsolMint,
-        );
+        // SOL is 9 decimals (the fallback constant is authoritative here). The
+        // wSOL price is fetched in parallel for the native-send USD estimate.
+        final results = await Future.wait([
+          _jupiter.fetchHoldings(addr, excludeMint: wsolMint),
+          _jupiter.fetchTokenPrices([wsolMint]),
+        ]);
         if (!mounted) return;
+        final holdings = results[0] as List<TokenHolding>;
+        final solPrice = (results[1] as Map<String, double>)[wsolMint];
         applyNative(fallbackDec, fallbackSym, () {
           _holdings = holdings;
+          _nativePriceUsd = solPrice;
           _loadingHoldings = false;
           // If opened for a specific SPL mint, pull its imageUrl from the
           // freshly-loaded holdings so the selector chip shows a proper logo.
@@ -184,8 +227,15 @@ class _SendScreenState extends State<SendScreen> {
         final sym = (nativeAsset != null && nativeAsset.symbol.isNotEmpty)
             ? nativeAsset.symbol
             : fallbackSym;
+        // Per-unit native price from the native asset's fiat total ÷ balance.
+        final nativeUi = nativeAsset?.amount.toDouble() ?? 0;
+        final nativeFiat = nativeAsset?.fiatAmount?.toDouble();
+        final nativePrice = (nativeFiat != null && nativeUi > 0)
+            ? nativeFiat / nativeUi
+            : null;
         applyNative(dec, sym, () {
           _assets = assets;
+          _nativePriceUsd = nativePrice;
           _holdings = [
             for (final a in assets)
               if (!a.isNative && (net == null || a.network == net.id))
@@ -560,10 +610,31 @@ class _SendScreenState extends State<SendScreen> {
         : s;
   }
 
+  /// Per-unit USD price of the selected token, or null when unknown. Native
+  /// uses [_nativePriceUsd]; an SPL / token uses its holding via
+  /// [holdingUnitPriceUsd].
+  double? _selectedPriceUsd() {
+    if (_mint == null) return _nativePriceUsd;
+    for (final h in _holdings) {
+      if (h.mint != _mint) continue;
+      return holdingUnitPriceUsd(
+        priceUsd: h.priceUsd,
+        valueUsd: h.valueUsd,
+        uiBalance: h.uiBalance,
+      );
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final wallet = context.watch<WalletService>();
     final selectedBalance = _selectedBalance(wallet);
+    final price = _selectedPriceUsd();
+    final amountUi = parseAmount(_amountCtrl.text);
+    final usdValue = (price != null && amountUi != null && amountUi > 0)
+        ? amountUi * price
+        : null;
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: Text('Send $_symbol')),
@@ -684,6 +755,19 @@ class _SendScreenState extends State<SendScreen> {
                       'Balance: ${_fmtBalance(selectedBalance)} $_symbol',
                       style: const TextStyle(
                         color: TibaneColors.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+                if (usdValue != null) ...[
+                  const SizedBox(height: 2),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      '≈ ${formatSendUsd(usdValue)}',
+                      style: const TextStyle(
+                        color: TibaneColors.textDim,
                         fontSize: 12,
                       ),
                     ),
