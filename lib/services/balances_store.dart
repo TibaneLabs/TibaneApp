@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:libwallet/libwallet.dart'
-    show NetworkType, Transaction, TxHistoryUpdatedEvent;
+    show Asset, NetworkType, Transaction, TxHistoryUpdatedEvent;
 
 import '../constants/solana_constants.dart';
 import '../utils/coalescer.dart';
@@ -37,6 +37,15 @@ class BalancesStore extends ChangeNotifier {
 
   /// True until the first tx fetch for the active address completes.
   bool get loadingTxs => _loadingTxs;
+
+  /// Native + tracked-token balances (with fiat). Still *owned* by
+  /// WalletService (it's wired into the startup gate); surfaced here so screens
+  /// read all balance data from one place — this store is the single
+  /// consumption facade. See BALANCES_STORE_MIGRATION.md §6.
+  List<Asset> get assets => _wallet.assets;
+
+  /// Native balance (lamports on Solana), forwarded from WalletService.
+  BigInt get solBalance => _wallet.solBalance;
 
   StreamSubscription<TxHistoryUpdatedEvent>? _txHistorySub;
   bool _kickedHistoryBackfill = false;
@@ -92,6 +101,17 @@ class BalancesStore extends ChangeNotifier {
     } catch (e) {
       debugPrint('[balances] txHistoryUpdates subscribe failed: $e');
     }
+  }
+
+  /// Single post-tx entry point for screens: refresh the balance-derived views
+  /// now + on the confirmation schedule, and (Solana) confirm on-chain then
+  /// reload until the balance settles. Delegates to WalletService's refresh
+  /// machinery; this store's own holdings/tx reload rides the resulting
+  /// swapCommittedTick bump. Call this from screens instead of
+  /// `wallet.notifyTxCommitted()` + `wallet.confirmAndRefresh()`.
+  void onTxCommitted(String? signature) {
+    _wallet.notifyTxCommitted();
+    unawaited(_wallet.confirmAndRefresh(signature));
   }
 
   /// Pull-to-refresh: force fresh balances (WalletService), on-chain SPL

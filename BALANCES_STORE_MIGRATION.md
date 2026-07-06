@@ -1,6 +1,6 @@
 # Balances Store Migration — one centralized `BalancesStore`
 
-**Status:** Phase 1a done (store created + dashboard converted), uncommitted pending device validation. Phase 1b (send + swap) next.
+**Status:** Phase 1a done + **device-validated**. Phase 2 **re-scoped to a facade** (see §6, revised): the store now exposes `assets`/`solBalance`/`onTxCommitted` so screens consume balances from one place, WITHOUT physically relocating `_assets`/`refreshBalances`/`dataReady` out of `WalletService` — that relocation is entangled with the startup gate (`tryRestore` → `dataReady`) and MWA post-tx timing, too risky to land without device validation. Next: convert send + swap to consume the facade.
 
 > **Progress:** `lib/services/balances_store.dart` (new) owns the Jupiter SPL
 > holdings + tx list + reload/listeners; provided in `main.dart`; the dashboard
@@ -174,10 +174,20 @@ Store subscribes to `balanceTick` + `txHistoryUpdates` itself. `WalletService`
 keeps `_assets` for now; the store reads it for native/tracked balances. Ship
 with unit tests for the store.
 
-**Phase 2 — move the balance machinery out of `WalletService`.** Relocate
-`_assets` + `refreshBalances` + `notifyTxCommitted` + `confirmAndRefresh` +
-`discoverHoldings` + tx cache into the store. Repoint every §2d caller to
-`store.onTxCommitted`/`store.refresh`. `WalletService` shrinks per §5.
+**Phase 2 — facade (REVISED after investigation).** Physically relocating
+`_assets`/`refreshBalances`/`dataReady` proved entangled with the startup gate
+(`tryRestore` sets `dataReady` via `refreshBalances`, also called from
+`connectMwa`/`useLibwallet`/`setCurrentAccount`) and with MWA post-tx timing (a
+lazy/attach mistake silently breaks refresh for Seeker users). A bug there =
+"app won't start" / "balances always zero" — not worth landing without device
+validation. So Phase 2 instead makes the store the single **consumption facade**:
+it now exposes `assets` + `solBalance` (forwarded from `WalletService`) and a
+single `onTxCommitted(hash)` (delegates to `WalletService`'s existing machinery;
+the store's own holdings/tx reload rides the resulting `swapCommittedTick` bump).
+The machinery stays in `WalletService` — startup + MWA paths untouched. Screens
+now have one thing to read/trigger. (The physical relocation from §5 is deferred
+as an internal cleanup that doesn't change what screens see; do it later, staged,
+with device validation between steps.)
 
 **Phase 3 — delete the mixin + final cleanup.** Remove `TxConfirmationRefresh`;
 swap uses reactive reads; staking subscribes to `store.txCommitted` for its
