@@ -77,6 +77,7 @@ class _NetworksScreenState extends State<NetworksScreen> {
       );
     } else {
       wallet.refreshBalances();
+      Navigator.of(context).pop();
     }
   }
 
