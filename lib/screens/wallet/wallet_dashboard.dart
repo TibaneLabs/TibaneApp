@@ -1,12 +1,10 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:libwallet/libwallet.dart'
-    show Asset, NetworkType, Transaction, TxHistoryUpdatedEvent;
+import 'package:libwallet/libwallet.dart' show Asset, NetworkType, Transaction;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants/solana_constants.dart';
+import '../../services/balances_store.dart';
 import '../../services/jupiter_service.dart';
 import '../../services/uk_compliance_service.dart';
 import '../../services/wallet_service.dart';
@@ -27,186 +25,20 @@ class WalletDashboard extends StatefulWidget {
 }
 
 class _WalletDashboardState extends State<WalletDashboard> {
-  // Assets/balances live on WalletService now (read via `wallet.assets`); the
-  // dashboard owns only the tx list + the Jupiter SPL list.
-  List<TokenHolding> _holdings = [];
-  List<Transaction> _transactions = [];
-  bool _loadingTxs = true;
-  bool _kickedHistoryBackfill = false;
-  StreamSubscription<TxHistoryUpdatedEvent>? _txHistorySub;
-  WalletService? _walletRef;
-  final JupiterService _jupiter = JupiterService();
+  // Holdings + transactions + their refresh now live in BalancesStore, read via
+  // context.watch<BalancesStore>() in build — the dashboard is a pure consumer.
   int _selectedTab = 0; // 0 = Tokens, 1 = Activity
-
-  // Coalesce overlapping _loadData calls (the balanceTick poller can echo
-  // several times per cycle): run at most one at a time, and if more arrive
-  // while one is in flight, run exactly one more afterwards to catch up.
-  bool _loadInFlight = false;
-  bool _loadQueued = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _walletRef = context.read<WalletService>();
-    // Prime from the per-address cache so a returning user sees their
-    // last-known activity immediately while the background fetch runs.
-    final cached = _walletRef!.cachedTxsFor(_walletRef!.publicKey);
-    if (cached != null) {
-      _transactions = cached;
-      _loadingTxs = false;
-    }
-    _loadData();
-    _subscribeHistory();
-    // Reload tx/holdings on every "tx just committed" event (swap/send). Balance
-    // freshness comes from WalletService (it listens to libwallet's balanceTick
-    // and updates `wallet.assets`); the dashboard watches WalletService in build
-    // and re-renders automatically — no balanceTick listener here.
-    _walletRef!.swapCommittedTick.addListener(_onTxCommitted);
-    // Also reload on libwallet's balance poller (~60s) / tx-broadcast nudge, so
-    // the Jupiter-sourced SPL rows (e.g. USDT) refresh while the user sits on
-    // the dashboard — the headline reads `wallet.assets` reactively, but the
-    // SPL list is only re-pulled by _loadData, which nothing but tx-commit and
-    // mount triggered before. Without this a token balance stays stale here
-    // indefinitely until a manual pull.
-    _walletRef!.libwallet.balanceTick.addListener(_onTxCommitted);
-    // Register any on-chain tokens libwallet's auto-discovery missed so
-    // they appear in the TOKENS section. Runs concurrently with the
-    // initial _loadData; if any new mints land, it bumps
-    // swapCommittedTick to trigger a second reload that sees them.
-    unawaited(_walletRef!.discoverHoldings());
-  }
-
-  void _onTxCommitted() {
-    if (!mounted) return;
-    _loadData();
-  }
-
-  /// Listen for libwallet's tx-history backfill events. Fires whenever the
-  /// background poller finds new on-chain activity for the active account.
-  /// We just reload the dashboard so the new rows show up without the user
-  /// having to pull-to-refresh.
-  Future<void> _subscribeHistory() async {
-    try {
-      final wallet = context.read<WalletService>();
-      final client = await wallet.libwallet.ensureClient();
-      debugPrint('[txhist] subscribed to txHistoryUpdates');
-      _txHistorySub = client.txHistoryUpdates.listen((e) {
-        debugPrint(
-          '[txhist] event: account=${e.accountId} network=${e.networkId} '
-          'count=${e.count}',
-        );
-        if (!mounted) return;
-        _loadData();
-      });
-    } catch (e) {
-      debugPrint('[txhist] txHistoryUpdates subscribe failed: $e');
-    }
-  }
-
-  @override
-  void dispose() {
-    _txHistorySub?.cancel();
-    _walletRef?.swapCommittedTick.removeListener(_onTxCommitted);
-    _walletRef?.libwallet.balanceTick.removeListener(_onTxCommitted);
-    _jupiter.dispose();
-    super.dispose();
-  }
-
-  /// Coalescing wrapper: at most one [_loadDataOnce] runs at a time; extra
-  /// triggers (balanceTick echoes, overlapping tx-commit + poller) collapse
-  /// into a single catch-up run so we don't fan out redundant Jupiter fetches.
-  Future<void> _loadData() async {
-    if (_loadInFlight) {
-      _loadQueued = true;
-      return;
-    }
-    _loadInFlight = true;
-    try {
-      await _loadDataOnce();
-    } finally {
-      _loadInFlight = false;
-      if (_loadQueued && mounted) {
-        _loadQueued = false;
-        unawaited(_loadData());
-      }
-    }
-  }
-
-  Future<void> _loadDataOnce() async {
-    final wallet = context.read<WalletService>();
-    final lw = wallet.libwallet;
-    final addr = wallet.publicKey;
-    // Assets/balances now come from WalletService (the single libwallet
-    // listener; read via `wallet.assets` in build). Here we only load the
-    // transaction history and (Solana only) the Jupiter SPL list. Jupiter is a
-    // Solana RPC — calling it with an EVM address fails ("Invalid param"), so
-    // skip it off-Solana; EVM tokens come from wallet.assets instead.
-    final isSolana =
-        (lw.currentNetwork?.type ?? NetworkType.solana) == NetworkType.solana;
-    try {
-      final results = await Future.wait([
-        lw.getTransactions(limit: 50, forAddress: addr),
-        if (addr != null && isSolana)
-          _jupiter.fetchHoldings(addr, excludeMint: wsolMint)
-        else
-          Future.value(const <TokenHolding>[]),
-      ]);
-      if (!mounted) return;
-      final txs = results[0] as List<Transaction>;
-      final holdings = results[1] as List<TokenHolding>;
-      debugPrint(
-        '[dashboard] _loadData: addr=$addr account=${lw.accountId} '
-        'network=${lw.currentNetwork?.id} '
-        'assets=${wallet.assets.length} holdings=${holdings.length} '
-        'txs=${txs.length}',
-      );
-      if (addr != null) wallet.cacheTxsFor(addr, txs);
-      setState(() {
-        _transactions = txs;
-        _holdings = holdings;
-        _loadingTxs = false;
-      });
-      // Always kick libwallet's tx-history backfill once per dashboard
-      // mount, not just when the filtered list comes back empty. The
-      // previous "only if empty" gate missed the case where the user
-      // has *outgoing* txs (so the filter returns non-empty) but
-      // *incoming* SPL transfers were never indexed — the backfill
-      // would never re-fire and the receives stayed invisible.
-      // kickHistoryBackfill itself is idempotent / cheap, so re-firing
-      // it on every dashboard mount is safe.
-      if (!_kickedHistoryBackfill) {
-        _kickedHistoryBackfill = true;
-        debugPrint(
-          '[dashboard] kicking tx-history backfill on mount '
-          '(txs=${txs.length})',
-        );
-        unawaited(lw.kickHistoryBackfill());
-      }
-    } catch (e) {
-      debugPrint('[dashboard] _loadData failed: $e');
-      if (!mounted) return;
-      setState(() => _loadingTxs = false);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     final wallet = context.watch<WalletService>();
+    final store = context.watch<BalancesStore>();
     final addr = wallet.publicKey ?? '';
 
     return RefreshIndicator(
-      onRefresh: () async {
-        wallet.refreshBalances();
-        // Re-run on-chain SPL discovery so tokens acquired since the last
-        // load (or missed on first launch if the network cache wasn't
-        // ready) show up after a pull-to-refresh.
-        unawaited(wallet.discoverHoldings());
-        // Pull-to-refresh is the user's explicit "I expect new
-        // activity to show up" gesture, so force a fresh backfill
-        // sweep here regardless of whether the mount-time one ran.
-        unawaited(wallet.libwallet.kickHistoryBackfill());
-        await _loadData();
-      },
+      // Pull-to-refresh: the store forces fresh balances + on-chain SPL
+      // discovery + a tx-history backfill sweep, then reloads holdings + tx.
+      onRefresh: store.refresh,
       color: TibaneColors.orange,
       child: ListView(
         padding: const EdgeInsets.all(16),
@@ -227,7 +59,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 // Solana these are the Jupiter holdings; on EVM/BTC they
                 // are the libwallet asset rows — keeping the headline in
                 // step with the token list on every chain.
-                final tokensFiat = _displayTokens(wallet)
+                final tokensFiat = _displayTokens(wallet, store.holdings)
                     .where((h) => !h.mint.endsWith('.NATIVE'))
                     .fold<double>(0, (sum, h) => sum + (h.valueUsd ?? 0));
                 final totalUsd = solFiat + tokensFiat;
@@ -314,7 +146,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
           ),
           const SizedBox(height: 12),
           if (_selectedTab == 0) ...[
-            if (_displayTokens(wallet).isEmpty)
+            if (_displayTokens(wallet, store.holdings).isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Center(
@@ -325,7 +157,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 ),
               )
             else
-              ..._displayTokens(wallet).map((h) {
+              ..._displayTokens(wallet, store.holdings).map((h) {
                 final isNativeRow = h.mint.endsWith('.NATIVE');
                 final net = wallet.libwallet.currentNetwork;
                 final isSolanaNative =
@@ -426,14 +258,14 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 );
               }),
           ] else ...[
-            if (_loadingTxs)
+            if (store.loadingTxs)
               const Center(
                 child: Padding(
                   padding: EdgeInsets.all(32),
                   child: CircularProgressIndicator(color: TibaneColors.orange),
                 ),
               )
-            else if (_transactions.isEmpty)
+            else if (store.transactions.isEmpty)
               Center(
                 child: Padding(
                   padding: const EdgeInsets.all(32),
@@ -444,11 +276,11 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 ),
               )
             else
-              ..._transactions.map(
+              ...store.transactions.map(
                 (tx) => _TransactionRow(
                   tx: tx,
                   myAddr: addr,
-                  tokenInfo: _resolveTokenInfo(tx, wallet),
+                  tokenInfo: _resolveTokenInfo(tx, wallet, store.holdings),
                 ),
               ),
           ],
@@ -469,17 +301,19 @@ class _WalletDashboardState extends State<WalletDashboard> {
   /// list isn't empty during the brief window before assets arrive.
   /// `_holdings` is built with `excludeMint: wsolMint`, so the SPL
   /// path never duplicates SOL.
-  List<TokenHolding> _displayTokens(WalletService wallet) {
+  List<TokenHolding> _displayTokens(
+    WalletService wallet,
+    List<TokenHolding> holdings,
+  ) {
     final native = _nativeRowForCurrentNetwork(wallet);
     final net = wallet.libwallet.currentNetwork;
     final isSolana = (net?.type ?? NetworkType.solana) == NetworkType.solana;
 
     if (isSolana) {
-      // Solana: native SOL row + Jupiter-discovered SPL holdings
-      // (`_holdings` is built with `excludeMint: wsolMint`, so SOL is
-      // never duplicated).
-      if (native == null) return _holdings;
-      return [native, ..._holdings];
+      // Solana: native SOL row + Jupiter-discovered SPL holdings (the list is
+      // built with `excludeMint: wsolMint`, so SOL is never duplicated).
+      if (native == null) return holdings;
+      return [native, ...holdings];
     }
 
     // Non-Solana (EVM / Bitcoin): libwallet's getAssets is the source of
@@ -609,7 +443,11 @@ class _WalletDashboardState extends State<WalletDashboard> {
   /// network's native ticker when nothing matches (libwallet's tx
   /// table is shared across networks and the asset key may reference
   /// a chain we haven't fetched assets for yet).
-  _TxTokenInfo _resolveTokenInfo(Transaction tx, WalletService wallet) {
+  _TxTokenInfo _resolveTokenInfo(
+    Transaction tx,
+    WalletService wallet,
+    List<TokenHolding> holdings,
+  ) {
     final assetKey = tx.asset;
     final lastDot = assetKey.lastIndexOf('.');
     final tail = lastDot >= 0 ? assetKey.substring(lastDot + 1) : assetKey;
@@ -631,7 +469,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
       }
     }
     if (!isNative) {
-      for (final h in _holdings) {
+      for (final h in holdings) {
         if (h.mint == tail) {
           return _TxTokenInfo(
             symbol: h.symbol.isNotEmpty ? h.symbol : h.name,
