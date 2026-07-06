@@ -434,6 +434,12 @@ class _SendScreenState extends State<SendScreen> {
       // until libwallet's tx-history/balance poller fires. See
       // BALANCE_REFRESH_SPEC.md (Gap 1).
       wallet.notifyTxCommitted();
+      // Also refresh the moment the tx actually lands on-chain — a slow
+      // confirmation can outlast all of notifyTxCommitted's fixed re-polls,
+      // leaving a stale balance until the ~60s poller. Fire-and-forget: it runs
+      // at the service level and survives this screen popping. Swap already
+      // confirms inline before refreshing; this brings Send to parity.
+      unawaited(wallet.confirmAndRefresh(tx.hash));
       // Show a success modal with the tx id; OK returns to the previous screen.
       await _showSuccessDialog(tx.hash);
     } catch (e) {

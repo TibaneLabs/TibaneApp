@@ -44,6 +44,14 @@ WalletKind reconcileWalletKind({
   return kind;
 }
 
+/// Whether a just-broadcast tx should be RPC-confirmed before a post-tx
+/// refresh: only a Solana tx that carries a real signature. Non-Solana
+/// confirmation is provider-specific (e.g. OKX order status) and must NOT be
+/// polled via the Solana RPC, which would only ever time out. Pure, for tests.
+@visibleForTesting
+bool shouldRpcConfirm({required String? signature, required bool isSolana}) =>
+    isSolana && signature != null && signature.isNotEmpty;
+
 /// Façade that routes every wallet call to the active [WalletBackend]. Screens
 /// and auth flows continue to use this class; only the backends change.
 class WalletService extends ChangeNotifier {
@@ -415,6 +423,10 @@ class WalletService extends ChangeNotifier {
   /// screen closes on success). See BALANCE_REFRESH_SPEC.md (Gap 1).
   void notifyTxCommitted() {
     _refreshAfterTx();
+    // Pull the just-committed tx into the Activity list without a manual
+    // refresh — parity with pull-to-refresh (Solution C). Self-skips when
+    // there's no libwallet account (MWA).
+    unawaited(_libwallet.kickHistoryBackfill());
     // Service-level (guarded by isConnected, not mounted) so the delayed
     // re-polls survive the originating screen being popped. Screens with their
     // own data use the TxConfirmationRefresh mixin with the same delays.
@@ -427,7 +439,47 @@ class WalletService extends ChangeNotifier {
 
   void _refreshAfterTx() {
     swapCommittedTick.value++;
-    refreshBalances();
+    unawaited(_refreshFresh());
+  }
+
+  /// Refresh balances after dropping libwallet's short-lived asset cache, so
+  /// the read reflects freshly-confirmed on-chain state instead of a memoized
+  /// pre-confirmation snapshot (Solution C). This is what pull-to-refresh gets
+  /// implicitly; doing it here removes the "manual refresh works, auto doesn't"
+  /// asymmetry. The invalidate is skipped for MWA (no libwallet account) — its
+  /// direct-RPC path in [refreshBalances] is already uncached.
+  Future<void> _refreshFresh() async {
+    if (_kind == WalletKind.inapp && _libwallet.hasWallet) {
+      try {
+        await _libwallet.invalidateAssetCache();
+      } catch (e) {
+        debugPrint('[tx] invalidateAssetCache failed: $e');
+      }
+    }
+    await refreshBalances();
+  }
+
+  /// Confirm a just-broadcast Solana transaction on-chain, then do one fresh
+  /// refresh the moment it lands (Solution A). A send returns at *broadcast*;
+  /// [notifyTxCommitted]'s fixed re-polls (now/3s/9s) can all fall before a
+  /// slow confirmation, leaving a stale balance until the ~60s poller. This
+  /// closes that gap by refreshing exactly when the tx confirms. Fire it
+  /// unawaited — it runs at the service level and survives the originating
+  /// screen being popped. No-op for non-Solana (confirmation there is chain- /
+  /// provider-specific; the re-polls + poller still cover it).
+  Future<void> confirmAndRefresh(String? signature) async {
+    final net = _libwallet.currentNetwork;
+    final isSolana = (net?.type ?? NetworkType.solana) == NetworkType.solana;
+    if (!shouldRpcConfirm(signature: signature, isSolana: isSolana)) return;
+    final rpc = RpcService();
+    try {
+      final landed = await rpc.confirmTransaction(signature!);
+      if (landed && isConnected) await _refreshFresh();
+    } catch (e) {
+      debugPrint('[tx] confirmAndRefresh failed: $e');
+    } finally {
+      rpc.dispose();
+    }
   }
 
   /// A tracked token was added/removed (a local libwallet token-table change,

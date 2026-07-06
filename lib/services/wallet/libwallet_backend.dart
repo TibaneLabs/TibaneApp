@@ -1826,6 +1826,15 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     return client.assets.list(convert: convert);
   }
 
+  /// Drop libwallet's short-lived balance-snapshot cache so the next
+  /// [getAssets] fetches fresh on-chain balances instead of a memoized
+  /// snapshot. Call after an action the host knows changed balances (e.g. a
+  /// confirmed send) when waiting out the cache TTL isn't acceptable.
+  Future<void> invalidateAssetCache() async {
+    final client = await _getClient();
+    await client.assets.invalidateCache();
+  }
+
   /// Resolve an arbitrary token's metadata by contract/mint on the CURRENT
   /// network (chain-aware, via `tokens.discover`) — used by the swap output
   /// picker to resolve a pasted address on non-Solana chains, where the
