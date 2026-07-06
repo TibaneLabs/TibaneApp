@@ -52,6 +52,15 @@ WalletKind reconcileWalletKind({
 bool shouldRpcConfirm({required String? signature, required bool isSolana}) =>
     isSolana && signature != null && signature.isNotEmpty;
 
+/// After a tx confirms on-chain, the *derived* balance views still lag a few
+/// seconds — the dashboard's SPL rows come from Jupiter and the native balance
+/// from libwallet `getAssets`. Reload up to this many times, spaced
+/// [kPostConfirmRefreshInterval] apart, stopping as soon as the native balance
+/// moves (a send always moves SOL via the fee), so we don't loop on a change we
+/// can't observe.
+const int kPostConfirmRefreshTries = 6;
+const Duration kPostConfirmRefreshInterval = Duration(seconds: 2);
+
 /// Façade that routes every wallet call to the active [WalletBackend]. Screens
 /// and auth flows continue to use this class; only the backends change.
 class WalletService extends ChangeNotifier {
@@ -459,22 +468,32 @@ class WalletService extends ChangeNotifier {
     await refreshBalances();
   }
 
-  /// Confirm a just-broadcast Solana transaction on-chain, then do one fresh
-  /// refresh the moment it lands (Solution A). A send returns at *broadcast*;
-  /// [notifyTxCommitted]'s fixed re-polls (now/3s/9s) can all fall before a
-  /// slow confirmation, leaving a stale balance until the ~60s poller. This
-  /// closes that gap by refreshing exactly when the tx confirms. Fire it
-  /// unawaited — it runs at the service level and survives the originating
-  /// screen being popped. No-op for non-Solana (confirmation there is chain- /
-  /// provider-specific; the re-polls + poller still cover it).
+  /// Confirm a just-broadcast Solana transaction on-chain, then reload until
+  /// the balance views reflect it (Solution A). A send returns at *broadcast*;
+  /// [notifyTxCommitted]'s fixed re-polls (now/3s/9s) can all fall before a slow
+  /// confirmation. Once confirmed, the derived views still lag — the dashboard's
+  /// SPL rows come from Jupiter and the native balance from libwallet
+  /// `getAssets`, both trailing a confirmation by a few seconds — so we reload,
+  /// *bumping [swapCommittedTick] so the dashboard re-pulls its Jupiter holdings
+  /// (not just the headline)*, until the native balance actually moves (capped).
+  /// Fire it unawaited — it runs at the service level and survives the
+  /// originating screen being popped. No-op for non-Solana (confirmation there
+  /// is chain- / provider-specific; the re-polls + poller still cover it).
   Future<void> confirmAndRefresh(String? signature) async {
     final net = _libwallet.currentNetwork;
     final isSolana = (net?.type ?? NetworkType.solana) == NetworkType.solana;
     if (!shouldRpcConfirm(signature: signature, isSolana: isSolana)) return;
+    final baseline = solBalance; // a send always moves SOL (fee/rent)
     final rpc = RpcService();
     try {
       final landed = await rpc.confirmTransaction(signature!);
-      if (landed && isConnected) await _refreshFresh();
+      if (!landed) return;
+      for (var i = 0; i < kPostConfirmRefreshTries && isConnected; i++) {
+        swapCommittedTick.value++; // reload the dashboard's Jupiter SPL rows
+        await _refreshFresh(); // fresh headline + tracked-token balances
+        if (solBalance != baseline) break; // settled — stop early
+        await Future.delayed(kPostConfirmRefreshInterval);
+      }
     } catch (e) {
       debugPrint('[tx] confirmAndRefresh failed: $e');
     } finally {

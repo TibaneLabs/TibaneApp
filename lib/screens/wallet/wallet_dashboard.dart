@@ -38,6 +38,12 @@ class _WalletDashboardState extends State<WalletDashboard> {
   final JupiterService _jupiter = JupiterService();
   int _selectedTab = 0; // 0 = Tokens, 1 = Activity
 
+  // Coalesce overlapping _loadData calls (the balanceTick poller can echo
+  // several times per cycle): run at most one at a time, and if more arrive
+  // while one is in flight, run exactly one more afterwards to catch up.
+  bool _loadInFlight = false;
+  bool _loadQueued = false;
+
   @override
   void initState() {
     super.initState();
@@ -56,6 +62,13 @@ class _WalletDashboardState extends State<WalletDashboard> {
     // and updates `wallet.assets`); the dashboard watches WalletService in build
     // and re-renders automatically — no balanceTick listener here.
     _walletRef!.swapCommittedTick.addListener(_onTxCommitted);
+    // Also reload on libwallet's balance poller (~60s) / tx-broadcast nudge, so
+    // the Jupiter-sourced SPL rows (e.g. USDT) refresh while the user sits on
+    // the dashboard — the headline reads `wallet.assets` reactively, but the
+    // SPL list is only re-pulled by _loadData, which nothing but tx-commit and
+    // mount triggered before. Without this a token balance stays stale here
+    // indefinitely until a manual pull.
+    _walletRef!.libwallet.balanceTick.addListener(_onTxCommitted);
     // Register any on-chain tokens libwallet's auto-discovery missed so
     // they appear in the TOKENS section. Runs concurrently with the
     // initial _loadData; if any new mints land, it bumps
@@ -94,11 +107,32 @@ class _WalletDashboardState extends State<WalletDashboard> {
   void dispose() {
     _txHistorySub?.cancel();
     _walletRef?.swapCommittedTick.removeListener(_onTxCommitted);
+    _walletRef?.libwallet.balanceTick.removeListener(_onTxCommitted);
     _jupiter.dispose();
     super.dispose();
   }
 
+  /// Coalescing wrapper: at most one [_loadDataOnce] runs at a time; extra
+  /// triggers (balanceTick echoes, overlapping tx-commit + poller) collapse
+  /// into a single catch-up run so we don't fan out redundant Jupiter fetches.
   Future<void> _loadData() async {
+    if (_loadInFlight) {
+      _loadQueued = true;
+      return;
+    }
+    _loadInFlight = true;
+    try {
+      await _loadDataOnce();
+    } finally {
+      _loadInFlight = false;
+      if (_loadQueued && mounted) {
+        _loadQueued = false;
+        unawaited(_loadData());
+      }
+    }
+  }
+
+  Future<void> _loadDataOnce() async {
     final wallet = context.read<WalletService>();
     final lw = wallet.libwallet;
     final addr = wallet.publicKey;
