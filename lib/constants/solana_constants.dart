@@ -33,6 +33,20 @@ const walletConnectProjectId = '';
 // Tibane Thecat ($ChiefPussy) token
 const chiefPussyMint = 'DRtvTCzfiKGhCVREmBbZdN9sB8PHeq9KdRZ3VmFhpump';
 
+// Well-known stablecoin mints (Solana).
+const usdcMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const usdtMint = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
+
+/// Bundled logo assets for well-known mints — offline, crisp, and reliable
+/// where metadata servers fall short (e.g. Helius/libwallet return no image for
+/// USDT). [TokenIcon] uses these with priority over a network `imageUrl`.
+const Map<String, String> kBundledTokenIcons = {
+  wsolMint: 'assets/icons/sol.png',
+  usdcMint: 'assets/icons/usdc.png',
+  usdtMint: 'assets/icons/usdt.png',
+  chiefPussyMint: 'assets/icons/chiefp.jpeg',
+};
+
 // Account discriminators
 final poolDiscriminator = Uint8List.fromList([
   0xc7,

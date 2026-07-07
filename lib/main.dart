@@ -19,6 +19,7 @@ import 'screens/wallet/wallet_screen.dart';
 import 'services/balances_store.dart';
 import 'services/browser_preferences.dart';
 import 'services/favorites_service.dart';
+import 'services/token_meta_store.dart';
 import 'services/uk_compliance_service.dart';
 import 'services/wallet_service.dart';
 import 'theme/tibane_theme.dart';
@@ -101,6 +102,10 @@ class TibaneApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => FavoritesService()..load()),
         ChangeNotifierProvider(create: (_) => BrowserPreferences()..load()),
         ChangeNotifierProvider(create: (_) => UkComplianceService()..init()),
+        // Single source of truth for token logos/metadata; TokenIcon resolves
+        // any missing logo through it (Helius backfill). See
+        // TOKEN_METADATA_REGISTRY.md.
+        ChangeNotifierProvider(create: (_) => TokenMetaStore()),
       ],
       child: MaterialApp(
         title: 'Tibane',
