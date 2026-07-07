@@ -15,6 +15,7 @@ import 'screens/settings_screen.dart';
 import 'screens/swap_screen.dart';
 import 'screens/wallet/biometric_migration_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
+import 'services/balances_store.dart';
 import 'services/browser_preferences.dart';
 import 'services/favorites_service.dart';
 import 'services/uk_compliance_service.dart';
@@ -69,6 +70,11 @@ class TibaneApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => WalletService()..tryRestore()),
+        // Centralized holdings + tx store; reads WalletService (listed first so
+        // it's resolvable here). See BALANCES_STORE_MIGRATION.md.
+        ChangeNotifierProvider(
+          create: (ctx) => BalancesStore(ctx.read<WalletService>())..init(),
+        ),
         ChangeNotifierProvider(create: (_) => FavoritesService()..load()),
         ChangeNotifierProvider(create: (_) => BrowserPreferences()..load()),
         ChangeNotifierProvider(create: (_) => UkComplianceService()..init()),
@@ -109,8 +115,7 @@ class TibaneShell extends StatefulWidget {
   State<TibaneShell> createState() => TibaneShellState();
 }
 
-class TibaneShellState extends State<TibaneShell>
-    with WidgetsBindingObserver {
+class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
   late int _currentIndex = widget.initialIndex;
 
   /// The Browse tab (dApp webview) is built lazily: its heavy platform-view /
@@ -144,8 +149,10 @@ class TibaneShellState extends State<TibaneShell>
   }
 
   Future<void> _checkBiometricMigration() async {
-    final need =
-        await context.read<WalletService>().libwallet.needsBiometricMigration();
+    final need = await context
+        .read<WalletService>()
+        .libwallet
+        .needsBiometricMigration();
     if (!mounted) return;
     setState(() => _needsMigration = need);
   }
@@ -237,7 +244,8 @@ class TibaneShellState extends State<TibaneShell>
     // never get the Swap tab.
     final isUk = context.watch<UkComplianceService>().isUk;
     final showSwap =
-        (widget.forceSeeker ?? (wallet.currentAccount?.isMwa ?? false)) && !isUk;
+        (widget.forceSeeker ?? (wallet.currentAccount?.isMwa ?? false)) &&
+        !isUk;
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(

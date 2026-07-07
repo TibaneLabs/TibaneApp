@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../constants/solana_constants.dart';
+import '../services/balances_store.dart';
 import '../services/favorites_service.dart';
 import '../services/jupiter_service.dart';
 import '../services/rpc_service.dart';
@@ -808,15 +809,14 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         _quoteOutUi = null;
         _amountController.clear();
       });
-      // libwallet 0.4.27 handles both balance-refresh notification and
-      // auto-registration of unknown swap outputs server-side, but kick
-      // the wallet service explicitly so any dashboard view that's
-      // mounted in another tab reloads now instead of waiting for the
-      // txHistory stream to fire.
-      wallet.notifyTxCommitted();
-      // Re-pull our own holdings now + on the confirmation-delay schedule (the
-      // swap screen stays mounted). notifyTxCommitted covers balances + the
-      // dashboard with its own service-level delayed re-polls.
+      // Post-swap refresh through the store: refreshes the dashboard's token
+      // list + headline now and on the confirmation schedule, plus an adaptive
+      // settle loop that keeps reloading until the balance actually moves
+      // (covers slow Jupiter/RPC indexing past the fixed re-polls).
+      context.read<BalancesStore>().onTxCommitted(signature);
+      // Re-pull our OWN holdings too (the swap From-list has a different shape —
+      // it includes native SOL and excludes the selected output — so it stays
+      // screen-local). Runs now + on the confirmation-delay schedule.
       refreshAfterTx(_loadHoldings);
       // libwallet's auto-discovery doesn't always pick up a brand-new
       // mint before the next Asset:list call. Register the swap output

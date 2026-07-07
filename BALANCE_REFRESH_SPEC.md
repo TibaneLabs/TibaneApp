@@ -243,3 +243,44 @@ Legend: ✅ now = immediate · ⏳ = via libwallet poller / tx-history event
 | dashboard `_loadData()` (token list) | `lib/screens/wallet/wallet_dashboard.dart:97` |
 | dashboard `swapCommittedTick` listener | `lib/screens/wallet/wallet_dashboard.dart:54` |
 | dashboard `txHistoryUpdates` listener | `lib/screens/wallet/wallet_dashboard.dart:76` |
+
+---
+
+## 6. Post-Gap follow-ups — confirmation-driven & cache-fresh refresh
+
+The Gap fixes wired every flow to `notifyTxCommitted` (immediate + fixed re-polls
+at 3s/9s). Two residual reasons users still had to pull-to-refresh, and the fixes:
+
+**Solution A — Send waits for on-chain confirmation (parity with Swap).**
+A send returns at *broadcast*; `notifyTxCommitted`'s fixed re-polls (now/3s/9s)
+can all fall *before* a slow Solana confirmation, leaving a stale balance until
+the ~60s poller. Swap already guarded this (`_confirmLanded` before refresh);
+Send did not. `WalletService.confirmAndRefresh(hash)` now polls
+`RpcService.confirmTransaction` and does one fresh refresh the moment the tx
+lands. Called fire-and-forget from the send success path so it survives the
+screen popping. Solana-only (`shouldRpcConfirm` gate — non-Solana confirmation
+is provider-specific, e.g. OKX order status). Incinerator already did
+confirm→notify; Send is now consistent.
+
+**Solution C — Post-tx refresh is cache-fresh + backfills history (parity with
+pull-to-refresh).** `refreshBalances()` reads libwallet's `getAssets()`, which
+serves a short-lived snapshot cache; a re-poll landing inside that TTL returned
+a pre-confirmation snapshot. `_refreshAfterTx` now routes through
+`_refreshFresh()`, which calls `LibwalletBackend.invalidateAssetCache()`
+(`Asset:invalidateCache`) before `refreshBalances()`, so each post-tx read is
+fresh. `notifyTxCommitted` also fires `kickHistoryBackfill()` once so the new tx
+appears in Activity without a manual pull. This removes the "manual refresh
+works, auto doesn't" asymmetry (invalidate is skipped for MWA — its direct-RPC
+path is already uncached).
+
+| Symbol | Location |
+|---|---|
+| `confirmAndRefresh()` (Solution A) | `lib/services/wallet_service.dart` |
+| `shouldRpcConfirm()` (Solana-only gate, tested) | `lib/services/wallet_service.dart` |
+| `_refreshFresh()` (invalidate + refresh, Solution C) | `lib/services/wallet_service.dart` |
+| `invalidateAssetCache()` (`Asset:invalidateCache`) | `lib/services/wallet/libwallet_backend.dart` |
+| send success → `notifyTxCommitted` + `confirmAndRefresh` | `lib/screens/wallet/send_screen.dart` |
+
+**Not done here (from the earlier options):** B (adaptive poll-until-changed),
+D (Go-side fast-poll burst), E (optimistic UI). Consider B/D if slow-confirmation
+complaints persist.
