@@ -95,9 +95,14 @@ class RpcService {
     return result['value'] as Map<String, dynamic>;
   }
 
-  /// Get SOL balance for an address
+  /// Get SOL balance for an address. Uses `confirmed` commitment so a
+  /// just-confirmed tx is reflected within ~2s instead of waiting ~13s for
+  /// finalization (the RPC default) — matches [confirmTransaction]'s level.
   Future<BigInt> getBalance(String address) async {
-    final result = await _rpc('getBalance', [address]);
+    final result = await _rpc('getBalance', [
+      address,
+      {'commitment': 'confirmed'},
+    ]);
     return BigInt.from(result['value'] as int);
   }
 
@@ -147,7 +152,9 @@ class RpcService {
     final result = await _rpc('getTokenAccountsByOwner', [
       owner,
       {'programId': programId},
-      {'encoding': 'jsonParsed'},
+      // `confirmed` so a just-confirmed token transfer shows within ~2s rather
+      // than waiting ~13s for finalization (the RPC default).
+      {'encoding': 'jsonParsed', 'commitment': 'confirmed'},
     ]);
 
     final accounts = <TokenAccount>[];
