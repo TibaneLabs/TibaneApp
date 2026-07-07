@@ -7,6 +7,7 @@ import 'package:libwallet/libwallet.dart'
 import 'package:provider/provider.dart';
 
 import '../../constants/solana_constants.dart';
+import '../../services/balances_store.dart';
 import '../../services/jupiter_service.dart';
 import '../../services/wallet/send_asset.dart';
 import '../../services/wallet_service.dart';
@@ -65,10 +66,10 @@ class _SendScreenState extends State<SendScreen> {
   String _nativeSymbol = 'SOL';
   int _nativeDecimals = 9;
 
-  // Tokens to offer in the picker. Loaded once on mount. Solana holdings come
-  // from Jupiter (broad SPL discovery); non-Solana from libwallet getAssets
-  // (chain-aware) — kept in [_assets] for the native balance too.
-  final JupiterService _jupiter = JupiterService();
+  // Tokens to offer in the picker. Solana SPL rows come from the shared
+  // BalancesStore (read reactively in build); non-Solana rows are loaded here
+  // from libwallet getAssets (chain-aware) into [_holdings], with [_assets]
+  // also kept for the native balance.
   List<TokenHolding> _holdings = [];
   List<Asset> _assets = const [];
   bool _loadingHoldings = true;
@@ -96,7 +97,6 @@ class _SendScreenState extends State<SendScreen> {
     _resolveDebounce?.cancel();
     _addrCtrl.dispose();
     _amountCtrl.dispose();
-    _jupiter.dispose();
     super.dispose();
   }
 
@@ -143,22 +143,15 @@ class _SendScreenState extends State<SendScreen> {
 
     try {
       if (isSolana) {
-        // Solana: discover all SPL holdings via Jupiter (broader than the
-        // tracked-only getAssets). wsolMint is excluded so it doesn't
-        // duplicate the native SOL row the picker renders separately. Native
-        // SOL is 9 decimals (the fallback constant is authoritative here).
-        final holdings = await _jupiter.fetchHoldings(
-          addr,
-          excludeMint: wsolMint,
-        );
-        if (!mounted) return;
+        // Solana: SPL rows come from the shared BalancesStore (kept fresh by
+        // the balance poller); build reads store.holdings. Native SOL is 9
+        // decimals (the fallback constant is authoritative here).
         applyNative(fallbackDec, fallbackSym, () {
-          _holdings = holdings;
           _loadingHoldings = false;
           // If opened for a specific SPL mint, pull its imageUrl from the
-          // freshly-loaded holdings so the selector chip shows a proper logo.
+          // store's holdings so the selector chip shows a proper logo.
           if (_mint != null && _imageUrl == null) {
-            for (final h in holdings) {
+            for (final h in context.read<BalancesStore>().holdings) {
               if (h.mint == _mint) {
                 _imageUrl = h.imageUrl;
                 break;
@@ -239,7 +232,7 @@ class _SendScreenState extends State<SendScreen> {
       _error = null;    });
   }
 
-  Future<void> _openTokenPicker() async {
+  Future<void> _openTokenPicker(List<TokenHolding> holdings) async {
     if (_sending) return;
     final wallet = context.read<WalletService>();
     await showModalBottomSheet<void>(
@@ -250,7 +243,7 @@ class _SendScreenState extends State<SendScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => _SendTokenPicker(
-        holdings: _holdings,
+        holdings: holdings,
         loading: _loadingHoldings,
         nativeSymbol: _nativeSymbol,
         nativeName: _isSolana ? 'Solana' : (_net?.name ?? _nativeSymbol),
@@ -429,17 +422,10 @@ class _SendScreenState extends State<SendScreen> {
       );
       if (!mounted) return;
       _amountCtrl.clear();
-      // notifyTxCommitted (not just refreshBalances) so the dashboard reloads
-      // its token list too — otherwise a sent SPL token's row balance lags
-      // until libwallet's tx-history/balance poller fires. See
-      // BALANCE_REFRESH_SPEC.md (Gap 1).
-      wallet.notifyTxCommitted();
-      // Also refresh the moment the tx actually lands on-chain — a slow
-      // confirmation can outlast all of notifyTxCommitted's fixed re-polls,
-      // leaving a stale balance until the ~60s poller. Fire-and-forget: it runs
-      // at the service level and survives this screen popping. Swap already
-      // confirms inline before refreshing; this brings Send to parity.
-      unawaited(wallet.confirmAndRefresh(tx.hash));
+      // One post-tx trigger through the store: refreshes the dashboard's token
+      // list + headline now and on the confirmation schedule, and (Solana)
+      // confirms on-chain then reloads until the balance settles.
+      context.read<BalancesStore>().onTxCommitted(tx.hash);
       // Show a success modal with the tx id; OK returns to the previous screen.
       await _showSuccessDialog(tx.hash);
     } catch (e) {
@@ -549,9 +535,9 @@ class _SendScreenState extends State<SendScreen> {
   /// UI balance of the currently-selected token: native SOL from the
   /// (reactive) wallet balance, an SPL token from the loaded holdings.
   /// Null while SPL holdings are still loading / not found.
-  double? _selectedBalance(WalletService wallet) {
+  double? _selectedBalance(WalletService wallet, List<TokenHolding> holdings) {
     if (_mint == null) return _nativeUiBalance(wallet);
-    for (final h in _holdings) {
+    for (final h in holdings) {
       if (h.mint == _mint) return h.uiBalance;
     }
     return null;
@@ -569,7 +555,11 @@ class _SendScreenState extends State<SendScreen> {
   @override
   Widget build(BuildContext context) {
     final wallet = context.watch<WalletService>();
-    final selectedBalance = _selectedBalance(wallet);
+    final store = context.watch<BalancesStore>();
+    // Solana SPL rows come from the shared store; non-Solana tokens are the
+    // getAssets-derived rows loaded locally in _loadHoldings.
+    final holdings = _isSolana ? store.holdings : _holdings;
+    final selectedBalance = _selectedBalance(wallet, holdings);
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: Text('Send $_symbol')),
@@ -587,7 +577,7 @@ class _SendScreenState extends State<SendScreen> {
                   symbol: _symbol,
                   imageUrl: _imageUrl,
                   loading: _loadingHoldings,
-                  onTap: _sending ? null : _openTokenPicker,
+                  onTap: _sending ? null : () => _openTokenPicker(holdings),
                 ),
                 const SizedBox(height: 16),
                 TextField(

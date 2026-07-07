@@ -1,6 +1,18 @@
 # Balances Store Migration — one centralized `BalancesStore`
 
-**Status:** Phase 1a done + **device-validated**. Phase 2 **re-scoped to a facade** (see §6, revised): the store now exposes `assets`/`solBalance`/`onTxCommitted` so screens consume balances from one place, WITHOUT physically relocating `_assets`/`refreshBalances`/`dataReady` out of `WalletService` — that relocation is entangled with the startup gate (`tryRestore` → `dataReady`) and MWA post-tx timing, too risky to land without device validation. Next: convert send + swap to consume the facade.
+**Status:** Phase 1a done + device-validated. Phase 2 = facade (see §6). **Send converted** to consume the store (`store.holdings` + `store.onTxCommitted`) + device-validated. **Swap deferred** (parked for now — keeps `_jupiter` for quotes; convert later). The in-app SOL-headline finalization lag is a known follow-up (§ below).
+
+> **Post-tx freshness fixes landed alongside the send conversion:**
+> - `store.onTxCommitted` runs an **adaptive settle loop** — reloads holdings +
+>   balances every ~4s until one actually changes (cap ~48s), closing the gap
+>   between the fixed 3s/9s re-polls and the ~60s poller.
+> - **Commitment bug (committed separately, `45d644d`):** `RpcService` balance
+>   reads defaulted to `finalized` (~13-16s) while confirmation is at
+>   `confirmed` (~2s) — now both read `confirmed`, so a sent token reflects in
+>   ~2-4s. NOTE: the in-app SOL *headline* still comes from libwallet's own
+>   `getAssets` (its own commitment, ~16s on a pure-SOL send); making that snappy
+>   is a follow-up (source native SOL from the confirmed `RpcService`, or a
+>   libwallet-side change).
 
 > **Progress:** `lib/services/balances_store.dart` (new) owns the Jupiter SPL
 > holdings + tx list + reload/listeners; provided in `main.dart`; the dashboard

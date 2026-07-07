@@ -9,6 +9,12 @@ import '../utils/coalescer.dart';
 import 'jupiter_service.dart';
 import 'wallet_service.dart';
 
+/// Post-tx "settle" polling: after a tx, reload every [kSettleInterval] until a
+/// balance moves, up to [kSettleMaxAttempts] (~its product), covering the gap
+/// between the fixed confirmation re-polls and the ~60s background poller.
+const Duration kSettleInterval = Duration(seconds: 4);
+const int kSettleMaxAttempts = 12;
+
 /// Centralized, reactive store for the wallet's token holdings + transaction
 /// history and their refresh. Screens consume it via `provider` instead of each
 /// spinning up its own [JupiterService] and reload logic — so there's exactly
@@ -51,6 +57,7 @@ class BalancesStore extends ChangeNotifier {
   bool _kickedHistoryBackfill = false;
   String? _lastAddress;
   bool _disposed = false;
+  int _settleGen = 0; // supersedes an in-flight post-tx settle loop
 
   // Coalesce overlapping reloads (the balanceTick poller can echo several times
   // per cycle) into one run + a single catch-up.
@@ -112,7 +119,35 @@ class BalancesStore extends ChangeNotifier {
   void onTxCommitted(String? signature) {
     _wallet.notifyTxCommitted();
     unawaited(_wallet.confirmAndRefresh(signature));
+    unawaited(_settleAfterTx());
   }
+
+  /// Keep reloading balances + holdings until they actually change, then stop
+  /// (capped). Closes the gap between [notifyTxCommitted]'s fixed re-polls
+  /// (~9s) and the ~60s poller: on Solana, confirmation + Jupiter/libwallet
+  /// indexing can take longer than the fixed schedule, so without this the
+  /// dashboard sits stale until the next 60s poll. Reloads directly (not via
+  /// swapCommittedTick), so it works even if that chain lags. A newer tx
+  /// supersedes an in-flight loop via [_settleGen].
+  Future<void> _settleAfterTx() async {
+    final gen = ++_settleGen;
+    final baseSol = _wallet.solBalance;
+    final baseFp = _holdingsFingerprint();
+    for (var i = 0; i < kSettleMaxAttempts && gen == _settleGen; i++) {
+      await Future<void>.delayed(kSettleInterval);
+      if (_disposed || gen != _settleGen || !_wallet.isConnected) return;
+      await _wallet.refreshBalances(); // SOL / tracked-token balances
+      await _reload(); // Jupiter holdings + tx
+      if (_wallet.solBalance != baseSol || _holdingsFingerprint() != baseFp) {
+        return; // settled — balances reflect the tx
+      }
+    }
+  }
+
+  String _holdingsFingerprint() => _fingerprintOf(_holdings);
+
+  String _fingerprintOf(List<TokenHolding> hs) =>
+      hs.map((h) => '${h.mint}:${h.balance}').join(',');
 
   /// Pull-to-refresh: force fresh balances (WalletService), on-chain SPL
   /// discovery, a tx-history backfill sweep, then reload holdings + tx.
