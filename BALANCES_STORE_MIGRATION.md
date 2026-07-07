@@ -1,6 +1,6 @@
 # Balances Store Migration — one centralized `BalancesStore`
 
-**Status:** Phase 1a done + device-validated. Phase 2 = facade (see §6). **Send converted** to consume the store (`store.holdings` + `store.onTxCommitted`) + device-validated. **Swap deferred** (parked for now — keeps `_jupiter` for quotes; convert later). The in-app SOL-headline finalization lag is a known follow-up (§ below).
+**Status:** Phase 1a done + device-validated. Phase 2 = facade (see §6). **Send converted** to consume the store (`store.holdings` + `store.onTxCommitted`) + device-validated. **Swap: post-tx refresh converted** — routed through `store.onTxCommitted` (adaptive settle loop); its holdings stay screen-local *by design* (the swap From-list includes native SOL and excludes the selected output — a different shape than the store's dashboard list — and its `_jupiter` also runs quotes/execution, so it isn't removable). Fully unifying swap holdings would require reshaping the store; deferred. The in-app SOL-headline finalization lag is a known follow-up (§ below).
 
 > **Post-tx freshness fixes landed alongside the send conversion:**
 > - `store.onTxCommitted` runs an **adaptive settle loop** — reloads holdings +
