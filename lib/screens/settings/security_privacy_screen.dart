@@ -12,6 +12,7 @@ import '../wallet/cloud_backup_screen.dart';
 import '../wallet/inapp_unlock_screen.dart';
 import '../wallet/widgets/authorize_and_sign.dart' show collectManagementKeys;
 import '../../utils/log.dart';
+import '../../widgets/wallet_error_display.dart';
 
 /// Sub-screen reached from Settings → "Security & Privacy". Hosts the
 /// biometric toggle, password change, TSS share rotations, and cloud
@@ -169,11 +170,7 @@ class SecurityPrivacyScreen extends StatelessWidget {
     if (!context.mounted) return;
     if (session == null) {
       logError('[SecurityPrivacy._changePassword] reshare start failed: ${wallet.libwallet.error}');
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(wallet.libwallet.error ?? 'Could not send code'),
-        ),
-      );
+      showWalletError(context, wallet.libwallet.error ?? 'Could not send code');
       return;
     }
     final code = await showDialog<String>(
@@ -193,18 +190,14 @@ class SecurityPrivacyScreen extends StatelessWidget {
       ),
     );
     if (!context.mounted) return;
-    if (!ok) {
+    if (ok) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Password changed')),
+      );
+    } else {
       logError('[SecurityPrivacy._changePassword] failed: ${wallet.libwallet.error}');
+      showWalletError(context, wallet.libwallet.error ?? 'Change password failed');
     }
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          ok
-              ? 'Password changed'
-              : (wallet.libwallet.error ?? 'Change password failed'),
-        ),
-      ),
-    );
   }
 
   Future<void> _rotateRemoteKey(
@@ -243,11 +236,8 @@ class SecurityPrivacyScreen extends StatelessWidget {
     final session = await wallet.libwallet.startRemoteKeyReshare();
     if (session == null) {
       logError('[SecurityPrivacy._rotateRemoteKey] reshare start failed: ${wallet.libwallet.error}');
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(wallet.libwallet.error ?? 'Reshare start failed'),
-        ),
-      );
+      if (!context.mounted) return;
+      showWalletError(context, wallet.libwallet.error ?? 'Reshare start failed');
       return;
     }
     if (!context.mounted) return;
@@ -261,18 +251,14 @@ class SecurityPrivacyScreen extends StatelessWidget {
       code: code,
     );
     if (!context.mounted) return;
-    if (!ok) {
+    if (ok) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('2FA share rotated')),
+      );
+    } else {
       logError('[SecurityPrivacy._rotateRemoteKey] reshare failed: ${wallet.libwallet.error}');
+      showWalletError(context, wallet.libwallet.error ?? 'Reshare failed');
     }
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          ok
-              ? '2FA share rotated'
-              : (wallet.libwallet.error ?? 'Reshare failed'),
-        ),
-      ),
-    );
   }
 
   /// Explicit 2FA device-share recovery (Atonline-parity §4.8). Routes to the
@@ -341,11 +327,7 @@ class SecurityPrivacyScreen extends StatelessWidget {
     if (!context.mounted) return;
     if (session == null) {
       logError('[SecurityPrivacy._rotateDeviceShare] reshare start failed: ${wallet.libwallet.error}');
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(wallet.libwallet.error ?? 'Could not send code'),
-        ),
-      );
+      showWalletError(context, wallet.libwallet.error ?? 'Could not send code');
       return;
     }
     final code = await showDialog<String>(
@@ -365,18 +347,14 @@ class SecurityPrivacyScreen extends StatelessWidget {
       ),
     );
     if (!context.mounted) return;
-    if (!ok) {
+    if (ok) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Device share rotated')),
+      );
+    } else {
       logError('[SecurityPrivacy._rotateDeviceShare] rotate failed: ${wallet.libwallet.error}');
+      showWalletError(context, wallet.libwallet.error ?? 'Rotate failed');
     }
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          ok
-              ? 'Device share rotated'
-              : (wallet.libwallet.error ?? 'Rotate failed'),
-        ),
-      ),
-    );
   }
 }
 

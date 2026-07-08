@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// Pairing codes from libwallet's `exportToDevice` are opaque strings that
 /// currently take this URL form. Treated only as a recognition prefix —
@@ -117,7 +118,9 @@ class _DeviceTransferReceiveScreenState
       logError('[DeviceTransferReceive._startImport] transfer failed: ${wallet.libwallet.error}');
       setState(() {
         _phase = _Phase.error;
-        _message = wallet.libwallet.error ?? 'Transfer failed';
+        _message = WalletError.from(
+          wallet.libwallet.error ?? 'Transfer failed',
+        ).message;
       });
     }
   }
@@ -152,7 +155,9 @@ class _DeviceTransferReceiveScreenState
       logError('[DeviceTransferReceive._activate] activate failed: ${wallet.libwallet.error}');
       setState(() {
         _busy = false;
-        _message = wallet.libwallet.error ?? 'Could not activate wallet';
+        _message = WalletError.from(
+          wallet.libwallet.error ?? 'Could not activate wallet',
+        ).message;
       });
     }
   }

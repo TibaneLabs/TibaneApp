@@ -10,6 +10,7 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
 import 'inapp_import_screen.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// Three-step creation flow for the in-app MPC wallet:
 ///   1. Collect email or phone (international format) → libwallet sends a
@@ -122,7 +123,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = 'Could not send code: $e';
+        _error = WalletError.from(e).message;
       });
     }
   }
@@ -156,7 +157,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = 'Code verification failed: $e';
+        _error = WalletError.from(e).message;
       });
     }
   }
@@ -213,7 +214,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
       setState(() {
         _busy = false;
         _step = _Step.password;
-        _error = e.toString();
+        _error = WalletError.from(e).message;
         _progress = null;
       });
     }

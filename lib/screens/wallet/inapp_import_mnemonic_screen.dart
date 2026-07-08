@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// Import an existing BIP-39 mnemonic from another wallet (Phantom,
 /// Backpack, MetaMask, etc.) and upgrade it into a full MPC wallet.
@@ -128,7 +129,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = 'Could not send code: $e';
+        _error = WalletError.from(e).message;
       });
     }
   }
@@ -161,7 +162,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = 'Code verification failed: $e';
+        _error = WalletError.from(e).message;
       });
     }
   }
@@ -198,7 +199,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
       logError('[InAppImportMnemonic._runPromote] import/promote error: $e');
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = WalletError.from(e).message;
         _step = _Step.error;
       });
     }

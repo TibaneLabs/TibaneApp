@@ -18,6 +18,7 @@ import '../../widgets/token_icon.dart';
 import 'widgets/authorize_and_sign.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// Per-unit USD price for a token holding: the direct [priceUsd] when present,
 /// else the fiat total ÷ balance (for chains that only report a value total),
@@ -391,7 +392,7 @@ class _SendScreenState extends State<SendScreen> {
     } catch (e) {
       logError('[Send._setMax] max sendable error: $e');
       if (!mounted) return;
-      setState(() => _error = 'Could not compute max: $e');
+      setState(() => _error = WalletError.from(e).message);
     }
   }
 
@@ -442,7 +443,7 @@ class _SendScreenState extends State<SendScreen> {
       if (!mounted) return;
       setState(() {
         _sending = false;
-        _error = 'Simulation failed: $e';
+        _error = WalletError.from(e).message;
       });
       return;
     }
@@ -483,7 +484,7 @@ class _SendScreenState extends State<SendScreen> {
     } catch (e) {
       logError('[Send._send] send error: $e');
       if (!mounted) return;
-      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      setState(() => _error = WalletError.from(e).message);
     } finally {
       if (mounted) setState(() => _sending = false);
     }

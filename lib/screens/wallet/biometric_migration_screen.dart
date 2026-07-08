@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 import '../../widgets/gradient_button.dart';
 
 /// Mandatory one-time screen (Atonline-parity Phase 3 / D7) that re-secures
@@ -44,8 +46,9 @@ class _BiometricMigrationScreenState extends State<BiometricMigrationScreen> {
           'Some keys could not be secured. Authenticate when prompted and try '
           'again.');
     } catch (e) {
+      logError('[BiometricMigration._secure] migrate to biometric error: $e');
       if (!mounted) return;
-      setState(() => _error = 'Could not secure your wallet: $e');
+      setState(() => _error = WalletError.from(e).message);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

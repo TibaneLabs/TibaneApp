@@ -11,6 +11,7 @@ import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import 'staking_detail_screen.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 class StakingPoolsScreen extends StatefulWidget {
   const StakingPoolsScreen({super.key});
@@ -56,7 +57,7 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
       logError('[StakingPools._loadPools] load error: $e');
       if (!mounted) return;
       setState(() {
-        _error = 'Failed to load pools: $e';
+        _error = WalletError.from(e).message;
         _loading = false;
       });
     }

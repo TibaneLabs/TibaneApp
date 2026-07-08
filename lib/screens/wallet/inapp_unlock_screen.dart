@@ -8,6 +8,7 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
 import '../../widgets/tibane_card.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// 2FA device-share recovery screen (Atonline-parity §4.8). Signing is lockless
 /// (per-transaction via the sign sheet), so there is no "unlock" — this screen
@@ -93,7 +94,9 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
       logError('[InAppUnlock._sendRecoveryCode] send code failed: ${wallet.libwallet.error}');
       setState(() {
         _busy = false;
-        _error = wallet.libwallet.error ?? 'Could not send verification code';
+        _error = WalletError.from(
+          wallet.libwallet.error ?? 'Could not send verification code',
+        ).message;
       });
       return;
     }
@@ -129,7 +132,9 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
       logError('[InAppUnlock._verifyAndRecover] 2FA recovery failed: ${wallet.libwallet.error}');
       setState(() {
         _busy = false;
-        _error = wallet.libwallet.error ?? '2FA recovery failed';
+        _error = WalletError.from(
+          wallet.libwallet.error ?? '2FA recovery failed',
+        ).message;
       });
     }
   }
@@ -167,7 +172,9 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
       logError('[InAppUnlock._verifyAndRepair] repair failed: ${wallet.libwallet.error}');
       setState(() {
         _busy = false;
-        _error = wallet.libwallet.error ?? 'Repair failed';
+        _error = WalletError.from(
+          wallet.libwallet.error ?? 'Repair failed',
+        ).message;
       });
     }
   }

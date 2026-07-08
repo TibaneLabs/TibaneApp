@@ -9,8 +9,9 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
-import '../../widgets/keyboard_safe_form.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
+import '../../widgets/keyboard_safe_form.dart';
 
 /// Two-step export flow: confirm password, then offer a native share sheet
 /// (primary) plus a clipboard fallback for the encrypted backup JSON.
@@ -79,7 +80,7 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = e.toString().replaceFirst('Bad state: ', '');
+        _error = WalletError.from(e).message;
       });
     }
   }
@@ -122,7 +123,7 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
     } catch (e) {
       logError('[InAppExport._share] share backup error: $e');
       if (!mounted) return;
-      await _showErrorDialog('Could not share backup', e.toString());
+      await _showErrorDialog('Could not share backup', WalletError.from(e).message);
     } finally {
       // Scrub the temp file regardless of share outcome.
       if (file != null) {
@@ -146,7 +147,7 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
       await _showErrorDialog(
         'Clipboard rejected the backup',
         'Some devices block large payloads from the clipboard. '
-            'Use the Share button instead. ($e)',
+            'Use the Share button instead. (${WalletError.from(e).message})',
       );
       return;
     }

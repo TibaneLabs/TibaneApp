@@ -7,6 +7,7 @@ import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// Cloud-backup hub. Writes an encrypted copy of the wallet to the app's
 /// documents directory; the device-level "iCloud Backup" (iOS) or "Auto
@@ -66,7 +67,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     setState(() {
       _busy = false;
       if (ts == null) {
-        _error = wallet.libwallet.error ?? 'Backup failed';
+        _error = WalletError.from(
+          wallet.libwallet.error ?? 'Backup failed',
+        ).message;
       }
     });
     await _refresh();
@@ -118,7 +121,11 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     }
     setState(() {
       _busy = false;
-      if (!ok) _error = wallet.libwallet.error ?? 'Restore failed';
+      if (!ok) {
+        _error = WalletError.from(
+          wallet.libwallet.error ?? 'Restore failed',
+        ).message;
+      }
     });
     if (ok) {
       await wallet.useLibwallet();

@@ -10,6 +10,7 @@ import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// Form to provision a new ClawdWallet (agent-controlled MPC wallet).
 ///
@@ -144,7 +145,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
       if (!mounted) return;
       setState(() {
         _stage = _Stage.error;
-        _error = e.toString();
+        _error = WalletError.from(e).message;
       });
     }
   }
