@@ -171,16 +171,10 @@ class _WalletDashboardState extends State<WalletDashboard> {
                     ? networkLogoAsset(net)
                     : null;
                 // Resolve the on-chain mint to push to TokenDetailScreen.
-                // Native rows carry a synthetic ".NATIVE" sentinel that
-                // Helius DAS doesn't understand — substitute wSOL for
-                // Solana; leave EVM/BTC native rows non-tappable since
-                // there's no equivalent analytics surface for them.
-                String? detailMint;
-                if (isNativeRow) {
-                  if (isSolanaNative) detailMint = wsolMint;
-                } else {
-                  detailMint = h.mint;
-                }
+                // Native rows (SOL, ETH, etc.) carry a synthetic ".NATIVE"
+                // sentinel and don't get a token-info page — leave them
+                // non-tappable.
+                final detailMint = isNativeRow ? null : h.mint;
                 // The mint we hand to TokenIcon: for Solana-native, use
                 // wsolMint so the bundled sol.png wins; otherwise pass
                 // the row's mint untouched (synthetic `.NATIVE` sentinel
@@ -195,7 +189,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                         : () => Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) =>
-                                  TokenDetailScreen(mint: detailMint!),
+                                  TokenDetailScreen(mint: detailMint),
                             ),
                           ),
                     child: Row(
