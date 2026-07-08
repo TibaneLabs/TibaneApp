@@ -247,6 +247,14 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
   void navigateTo(int index) => _navigateTo(index);
 
   void _navigateTo(int index) {
+    // Tapping the Wallet/Swap tab always returns to its root (the dashboard),
+    // popping any nested screen left on that tab's stack. Per-tab Navigators
+    // keep their own history, so without this, tapping Wallet would drop you
+    // back on whatever detail screen you last opened there instead of the
+    // dashboard.
+    if (index == 1) {
+      _navKeys[1].currentState?.popUntil((r) => r.isFirst);
+    }
     setState(() => _currentIndex = index);
     _activeTab.value = index;
   }
