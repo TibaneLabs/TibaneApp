@@ -143,7 +143,16 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
                   ),
                 ),
               ),
-            Text(pool.tokenName ?? pool.tokenSymbol ?? 'Pool'),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  pool.tokenName ?? pool.tokenSymbol ?? 'Pool',
+                  maxLines: 1,
+                ),
+              ),
+            ),
           ],
         ),
         actions: [
