@@ -6,7 +6,9 @@ import 'package:provider/provider.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../widgets/wallet_error_display.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// Token CRUD + discovery for the active network. Lists tokens already
 /// registered with libwallet (Token API), shows the curated registry as a
@@ -70,7 +72,7 @@ class _TokensScreenState extends State<TokensScreen> {
       logError('[Tokens._load] load tokens error: $e');
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = WalletError.from(e).message;
         _loading = false;
       });
     }
@@ -125,7 +127,7 @@ class _TokensScreenState extends State<TokensScreen> {
       logError('[Tokens._addByAddress] discover/create error: $e');
       if (!mounted) return;
       Navigator.of(context).pop();
-      messenger.showSnackBar(SnackBar(content: Text('Discover failed: $e')));
+      showWalletError(context, e);
     }
   }
 
@@ -150,7 +152,7 @@ class _TokensScreenState extends State<TokensScreen> {
     } catch (e) {
       logError('[Tokens._addCurated] create error: $e');
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('Add failed: $e')));
+      showWalletError(context, e);
     }
   }
 
@@ -192,9 +194,7 @@ class _TokensScreenState extends State<TokensScreen> {
     } catch (e) {
       logError('[Tokens._delete] delete error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Remove failed: $e')));
+      showWalletError(context, e);
     }
   }
 

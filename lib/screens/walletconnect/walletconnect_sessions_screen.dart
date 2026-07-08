@@ -9,7 +9,9 @@ import '../../services/wallet/walletconnect_bridge.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../widgets/wallet_error_display.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// WalletConnect v2 hub. Lets the user start the relay (if not already
 /// running), paste a `wc:` URI to pair with a dApp, and view / disconnect
@@ -61,7 +63,7 @@ class _WalletConnectSessionsScreenState
       logError('[WalletConnectSessions._init] init error: $e');
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = WalletError.from(e).message;
         _loading = false;
       });
     }
@@ -82,9 +84,7 @@ class _WalletConnectSessionsScreenState
     setState(() => _starting = false);
     if (!ok && bridge.error != null) {
       logError('[WalletConnectSessions._start] relay start failed: ${bridge.error}');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(bridge.error!)));
+      showWalletError(context, bridge.error ?? 'Something went wrong');
     }
   }
 
@@ -142,7 +142,7 @@ class _WalletConnectSessionsScreenState
     setState(() {
       _pairing = false;
       if (topic == null) {
-        _error = bridge.error ?? 'Pair failed';
+        _error = WalletError.from(bridge.error ?? 'Pair failed').message;
       } else {
         _uriCtrl.clear();
       }

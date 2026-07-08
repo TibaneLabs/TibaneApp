@@ -6,7 +6,9 @@ import 'package:provider/provider.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../widgets/wallet_error_display.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// Contacts CRUD — backed by libwallet's `Contact` API. List → tap to
 /// edit, swipe / button to delete, FAB to add. Recipient autocomplete in
@@ -51,7 +53,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
       logError('[Contacts._load] load error: $e');
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = WalletError.from(e).message;
         _loading = false;
       });
     }
@@ -108,9 +110,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
     } catch (e) {
       logError('[Contacts._delete] delete error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+      showWalletError(context, e);
     }
   }
 
@@ -349,7 +349,7 @@ class _ContactEditScreenState extends State<_ContactEditScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = e.toString();
+        _error = WalletError.from(e).message;
       });
     }
   }

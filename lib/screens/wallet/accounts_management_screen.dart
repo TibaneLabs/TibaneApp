@@ -8,8 +8,10 @@ import '../../services/wallet/libwallet_backend.dart'
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../widgets/wallet_error_display.dart';
 import 'inapp_create_screen.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// Lists every chain account derived from libwallet wallets on this
 /// device. Shows the parent wallet, the chain type, the on-chain
@@ -61,7 +63,7 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
       logError('[AccountsManagement._load] load accounts error: $e');
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = WalletError.from(e).message;
         _loading = false;
       });
     }
@@ -88,9 +90,7 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
         if (!mounted) return;
         if (r != SwitchResult.ok) {
           logError('[AccountsManagement._setActive] switch wallet failed: $r');
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(backend.error ?? 'Could not switch wallet')),
-          );
+          showWalletError(context, backend.error ?? 'Could not switch wallet');
           return;
         }
         break;
@@ -99,9 +99,7 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
     if (!mounted) return;
     if (!ok) {
       logError('[AccountsManagement._setActive] switch account failed: ${backend.error}');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(backend.error ?? 'Could not switch account')),
-      );
+      showWalletError(context, backend.error ?? 'Could not switch account');
       return;
     }
     // Refresh balances for the new active account so the UI updates.
@@ -146,9 +144,7 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
     } catch (e) {
       logError('[AccountsManagement._remove] remove account error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Remove failed: $e')));
+      showWalletError(context, e);
     }
   }
 

@@ -3,6 +3,7 @@ import 'package:libwallet/libwallet.dart' show SigningKey, Wallet, WalletKey;
 
 import '../../../services/wallet/signing.dart';
 import '../../../theme/tibane_theme.dart';
+import '../../../utils/wallet_error.dart';
 import '../../../widgets/gradient_button.dart';
 
 /// Per-transaction sign sheet (Atonline-parity Phase 1, §4.3).
@@ -121,7 +122,7 @@ class _SignSheetState extends State<_SignSheet> {
         });
       } catch (e) {
         debugPrint('[signSheet] device key unlock failed: $e');
-        setState(() => _error = 'Device key unlock failed: $e');
+        setState(() => _error = WalletError.from(e).message);
       } finally {
         if (mounted) setState(() => _busy = false);
       }

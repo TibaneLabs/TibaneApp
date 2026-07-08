@@ -22,6 +22,7 @@ import 'swap_screen.dart';
 import 'wallet/receive_screen.dart';
 import 'wallet/send_screen.dart';
 import '../utils/log.dart';
+import '../utils/wallet_error.dart';
 
 /// Read-only analytics view for a single SPL token: metadata, supply,
 /// market cap, top holders, recent transactions, optional staking-pool
@@ -93,7 +94,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
       logError('[token-detail._loadToken] error: $e');
       if (!mounted) return;
       setState(() {
-        _error = 'Failed to load token: $e';
+        _error = WalletError.from(e).message;
         _loading = false;
       });
     }

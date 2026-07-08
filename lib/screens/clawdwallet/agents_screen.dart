@@ -1,4 +1,3 @@
-import 'package:atonline_api/atonline_api.dart' show AtOnlinePlatformException;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -11,6 +10,8 @@ import '../wallet/widgets/authorize_and_sign.dart';
 import 'activity_screen.dart';
 import 'create_agent_wallet_screen.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
+import '../../widgets/wallet_error_display.dart';
 
 /// USDC mainnet mint. Stage 1 demo flows transfer USDC.
 const _usdcMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
@@ -72,17 +73,13 @@ class _AgentsScreenState extends State<AgentsScreen> {
         }
       }
     } catch (e) {
-      // AtOnlinePlatformException has no toString — its data field is the
-      // actual server error payload (status, error code, message). Surface
-      // it instead of "Instance of AtOnlinePlatformException".
-      final detail = e is AtOnlinePlatformException
-          ? '${e.data}'
-          : e.toString();
-      debugPrint('agents list failed: $detail');
+      // Keep the raw exception in the log for developers; WalletError maps it
+      // (including the AtOnlinePlatformException payload) to a friendly message.
+      logError('[Agents._load] list failed', e);
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = detail;
+        _error = WalletError.from(e).message;
       });
     }
   }
@@ -126,12 +123,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
       setState(() {
         wallet['locked'] = !locked;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not update lock: $e'),
-          backgroundColor: TibaneColors.error,
-        ),
-      );
+      showWalletError(context, e);
     }
   }
 

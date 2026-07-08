@@ -8,6 +8,7 @@ import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
 import 'create_agent_wallet_screen.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// Handles an incoming `clawd://pair?agent=...&token=...` URL.
 ///
@@ -64,7 +65,7 @@ class _PairingScreenState extends State<PairingScreen> {
       setState(() {
         _stage = _Stage.error;
         _errorTitle = 'Pairing failed';
-        _errorBody = 'An unexpected error occurred: $e';
+        _errorBody = WalletError.from(e).message;
       });
     }
   }

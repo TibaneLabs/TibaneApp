@@ -8,6 +8,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../services/wallet/libwallet_backend.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../utils/wallet_error.dart';
 
 enum _Phase { starting, showing, expired, confirming, done, declined, error }
 
@@ -194,7 +195,7 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
       if (!mounted) return;
       setState(() {
         _phase = _Phase.error;
-        _message = 'Transfer confirmation failed: $e';
+        _message = WalletError.from(e).message;
       });
     }
   }

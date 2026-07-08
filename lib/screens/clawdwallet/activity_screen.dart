@@ -6,6 +6,7 @@ import '../../services/clawdwallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// Polled activity feed for a single ClawdWallet.
 ///
@@ -60,7 +61,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        if (initial) _error = e.toString();
+        if (initial) _error = WalletError.from(e).message;
       });
     }
   }

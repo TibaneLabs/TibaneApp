@@ -13,8 +13,10 @@ import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
+import '../widgets/wallet_error_display.dart';
 import 'wallet/widgets/authorize_and_sign.dart';
 import '../utils/log.dart';
+import '../utils/wallet_error.dart';
 
 class FeeSharingScreen extends StatefulWidget {
   final String mint;
@@ -83,7 +85,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
     } catch (e) {
       logError('[FeeSharing._loadConfig] load error: $e');
       setState(() {
-        _error = 'Failed to load config: $e';
+        _error = WalletError.from(e).message;
         _loading = false;
       });
     }
@@ -156,9 +158,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
     } catch (e) {
       logError('[FeeSharing._createConfig] error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      showWalletError(context, e);
     } finally {
       setState(() => _executing = false);
       _loadConfig();
@@ -209,9 +209,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
     } catch (e) {
       logError('[FeeSharing._distributeFees] error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      showWalletError(context, e);
     } finally {
       setState(() => _executing = false);
       _loadConfig();
@@ -253,9 +251,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
     } catch (e) {
       logError('[FeeSharing._updateShares] error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      showWalletError(context, e);
     } finally {
       setState(() => _executing = false);
       _loadConfig();
@@ -303,9 +299,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
     } catch (e) {
       logError('[FeeSharing._transferAuthority] error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      showWalletError(context, e);
     } finally {
       setState(() => _executing = false);
       _loadConfig();
@@ -376,9 +370,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
     } catch (e) {
       logError('[FeeSharing._revokeAuthority] error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      showWalletError(context, e);
     } finally {
       setState(() => _executing = false);
       _loadConfig();

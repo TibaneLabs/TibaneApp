@@ -9,6 +9,8 @@ import '../../services/wallet/unified_account.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
+import '../../widgets/wallet_error_display.dart';
 import 'inapp_unlock_screen.dart';
 
 /// Restore an in-app wallet from a Tibane backup: pick the exported file
@@ -90,7 +92,7 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
       logError('[InAppBackupRestore._pickFile] file pick error: $e');
       setState(() {
         _busy = false;
-        _error = _friendlyError(e);
+        _error = WalletError.from(e).message;
       });
     }
   }
@@ -113,7 +115,6 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
     });
     try {
       final wallet = context.read<WalletService>();
-      final messenger = ScaffoldMessenger.of(context);
       final ok = await wallet.libwallet.importFromBackup(
         backupJson: json,
         password: pw,
@@ -154,7 +155,7 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
         logError('[InAppBackupRestore._restore] import failed: $err');
         // SnackBar in addition to the inline error — the inline message sits
         // below the password field and can hide under the keyboard.
-        messenger.showSnackBar(SnackBar(content: Text(err)));
+        showWalletError(context, err);
         setState(() {
           _busy = false;
           _error = err;
@@ -163,18 +164,13 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
     } catch (e) {
       logError('[InAppBackupRestore._restore] restore error: $e');
       if (!mounted) return;
-      final err = _friendlyError(e);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+      final err = WalletError.from(e).message;
+      showWalletError(context, err);
       setState(() {
         _busy = false;
         _error = err;
       });
     }
-  }
-
-  String _friendlyError(Object e) {
-    if (e is FormatException) return e.message;
-    return e.toString();
   }
 
   /// Explain why a restored wallet still needs a device-side setup step, and

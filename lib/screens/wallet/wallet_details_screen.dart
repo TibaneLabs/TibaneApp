@@ -6,11 +6,13 @@ import '../../services/wallet/unified_account.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../widgets/wallet_error_display.dart';
 import 'device_transfer_send_screen.dart';
 import 'inapp_export_screen.dart';
 import 'reset_password_screen.dart';
 import 'share_labels.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// Wallet detail view. When [walletId] is null, falls back to the
 /// active in-app wallet (legacy callers); otherwise shows the wallet
@@ -175,11 +177,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       messenger.showSnackBar(SnackBar(content: Text('"$name" is now in use')));
     } else {
       logError('[WalletDetails._use] switch failed: ${ws.libwallet.error}');
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(ws.libwallet.error ?? 'Could not switch to "$name"'),
-        ),
-      );
+      showWalletError(context, ws.libwallet.error ?? 'Could not switch to "$name"');
     }
   }
 
@@ -238,9 +236,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       ).showSnackBar(SnackBar(content: Text('Renamed to "$newName"')));
     } else {
       logError('[WalletDetails._rename] rename failed: ${ws.libwallet.error}');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ws.libwallet.error ?? 'Rename failed')),
-      );
+      showWalletError(context, ws.libwallet.error ?? 'Rename failed');
     }
   }
 
@@ -282,9 +278,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       Navigator.of(context).pop(true);
     } else {
       logError('[WalletDetails._remove] remove failed: ${ws.libwallet.error}');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ws.libwallet.error ?? 'Remove failed')),
-      );
+      showWalletError(context, ws.libwallet.error ?? 'Remove failed');
     }
   }
 
@@ -649,7 +643,9 @@ class _RenameWalletDialogState extends State<_RenameWalletDialog> {
   void _submit() {
     final result = WalletDetailsScreen.validateWalletName(_ctrl.text);
     if (result.error != null) {
-      setState(() => _error = result.error);
+      setState(() => _error = result.error == null
+          ? null
+          : WalletError.from(result.error!).message);
       return;
     }
     Navigator.of(context).pop(result.name);

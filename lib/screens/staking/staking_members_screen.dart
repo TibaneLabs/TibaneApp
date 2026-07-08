@@ -7,6 +7,7 @@ import '../../services/rpc_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 class StakingMembersScreen extends StatefulWidget {
   final StakingPool pool;
@@ -74,7 +75,7 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
     } catch (e) {
       logError('[StakingMembers._loadMembers] load error: $e');
       setState(() {
-        _error = 'Failed to load members: $e';
+        _error = WalletError.from(e).message;
         _loading = false;
       });
     }

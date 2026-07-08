@@ -6,7 +6,9 @@ import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/network_logos.dart';
 import '../../widgets/tibane_card.dart';
+import '../../widgets/wallet_error_display.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// List every libwallet-configured network with the active one highlighted.
 /// Tapping a row swaps the current network via `LibwalletBackend.setCurrent
@@ -57,7 +59,7 @@ class _NetworksScreenState extends State<NetworksScreen> {
       logError('[Networks._load] load networks error: $e');
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = WalletError.from(e).message;
         _loading = false;
       });
     }
@@ -72,9 +74,7 @@ class _NetworksScreenState extends State<NetworksScreen> {
     setState(() => _switchingId = null);
     if (!ok) {
       logError('[Networks._pick] switch network failed: ${wallet.libwallet.error}');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(wallet.libwallet.error ?? 'Switch failed')),
-      );
+      showWalletError(context, wallet.libwallet.error ?? 'Switch failed');
     } else {
       wallet.refreshBalances();
       Navigator.of(context).pop();

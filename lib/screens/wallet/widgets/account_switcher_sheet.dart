@@ -9,6 +9,7 @@ import '../../../services/wallet/unified_account.dart';
 import '../../../services/wallet_service.dart';
 import '../../../theme/tibane_theme.dart';
 import '../../../widgets/network_chip.dart';
+import '../../../widgets/wallet_error_display.dart';
 import '../inapp_export_screen.dart';
 
 /// Open the account switcher (Atonline-parity §4.1/§4.2, Phase 4b-2): the unified
@@ -72,9 +73,7 @@ Future<void> _switchAccount(
   if (ok) {
     nav.pop();
   } else {
-    messenger.showSnackBar(
-      SnackBar(content: Text(wallet.libwallet.error ?? 'Could not switch account')),
-    );
+    showWalletError(context, wallet.libwallet.error ?? 'Could not switch account');
   }
 }
 
@@ -355,7 +354,6 @@ class AccountSwitcherSheet extends StatelessWidget {
     if (!context.mounted) return;
     final name = nameCtrl.text.trim();
     if (name.isEmpty) return;
-    final messenger = ScaffoldMessenger.of(context);
     final nav = Navigator.of(context);
     final ok = await wallet.addAccount(
       walletId: target.walletId!,
@@ -366,11 +364,7 @@ class AccountSwitcherSheet extends StatelessWidget {
     if (ok) {
       nav.pop(); // close the switcher; the new account is now current
     } else {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(wallet.libwallet.error ?? 'Could not add account'),
-        ),
-      );
+      showWalletError(context, wallet.libwallet.error ?? 'Could not add account');
     }
   }
 }

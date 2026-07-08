@@ -27,6 +27,8 @@ import '../widgets/token_search.dart';
 import 'wallet/widgets/authorize_and_sign.dart';
 import '../utils/amount.dart';
 import '../utils/log.dart';
+import '../utils/wallet_error.dart';
+import '../widgets/wallet_error_display.dart';
 
 class SwapScreen extends StatefulWidget {
   /// Optional input mint to pre-select once holdings finish loading. Pass
@@ -59,24 +61,6 @@ class SwapScreen extends StatefulWidget {
 
   @override
   State<SwapScreen> createState() => _SwapScreenState();
-}
-
-/// Clean up raw exceptions into user-friendly messages
-String _friendlyError(Object e) {
-  final s = e.toString();
-  if (s.contains('SocketException') ||
-      s.contains('Failed host lookup') ||
-      s.contains('No address associated')) {
-    return 'No internet connection';
-  }
-  if (s.contains('Connection refused') || s.contains('Connection reset')) {
-    return 'Server unavailable, try again later';
-  }
-  if (s.contains('TimeoutException') || s.contains('timed out')) {
-    return 'Request timed out, try again';
-  }
-  // Strip "Exception: " prefix
-  return s.replaceFirst('Exception: ', '');
 }
 
 class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
@@ -331,9 +315,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       logError('[swap._switchToSolana] error: $e');
       if (!mounted) return;
       setState(() => _switchingNetwork = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Switch failed: $e')));
+      showWalletError(context, e);
     }
   }
 
@@ -474,7 +456,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       logError('[swap._loadHoldings] error: $e');
       if (!mounted) return;
       setState(() {
-        _error = _friendlyError(e);
+        _error = WalletError.from(e).message;
         _loadingHoldings = false;
       });
     }
@@ -566,7 +548,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       logError('[swap._fetchQuote] error: $e');
       if (!mounted) return;
       setState(() {
-        _quoteError = _friendlyError(e);
+        _quoteError = WalletError.from(e).message;
         _loadingQuote = false;
       });
     }
@@ -854,7 +836,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       logError('[swap._executeSwap] error: $e');
       if (!mounted) return;
       setState(() {
-        _error = _friendlyError(e);
+        _error = WalletError.from(e).message;
       });
     } finally {
       if (mounted) {
@@ -2013,9 +1995,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
     } catch (e) {
       logError('[swap._selectByMint] error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(_friendlyError(e))));
+      showWalletError(context, e);
     } finally {
       rpc.dispose();
     }

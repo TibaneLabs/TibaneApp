@@ -15,11 +15,13 @@ import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
+import '../../widgets/wallet_error_display.dart';
 import '../swap_screen.dart';
 import '../wallet/widgets/authorize_and_sign.dart';
 import 'staking_members_screen.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 class StakingDetailScreen extends StatefulWidget {
   final StakingPool pool;
@@ -100,7 +102,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
       logError('[StakingDetail._loadUserStake] load error: $e');
       if (!mounted) return;
       setState(() {
-        _error = 'Failed to load stake: $e';
+        _error = WalletError.from(e).message;
         _loadingStake = false;
       });
     }
@@ -424,9 +426,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
     } catch (e) {
       logError('[StakingDetail._handleAdminAction] $action error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      showWalletError(context, e);
     } finally {
       if (mounted) {
         setState(() => _staking = false);
@@ -487,9 +487,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
     } catch (e) {
       logError('[StakingDetail._handleUpdateSettings] update error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      showWalletError(context, e);
     } finally {
       if (mounted) {
         setState(() => _staking = false);
@@ -626,17 +624,13 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
         _unstakeController.clear();
       } else if (wallet.error != null) {
         logError('[StakingDetail._handleAction] $action wallet error: ${wallet.error}');
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(wallet.error!)));
+        showWalletError(context, wallet.error ?? 'Something went wrong');
         wallet.clearError();
       }
     } catch (e) {
       logError('[StakingDetail._handleAction] $action error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      showWalletError(context, e);
     } finally {
       if (mounted) {
         setState(() => _staking = false);

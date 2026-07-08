@@ -5,7 +5,9 @@ import 'package:provider/provider.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../widgets/wallet_error_display.dart';
 import '../../utils/log.dart';
+import '../../utils/wallet_error.dart';
 
 /// Lists every dApp the user has granted EIP-1193 (window.ethereum /
 /// window.solana) access to via the in-app browser. Each row exposes a
@@ -52,7 +54,7 @@ class _Web3ConnectionsScreenState extends State<Web3ConnectionsScreen> {
       logError('[Web3Connections._load] load connections error: $e');
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = WalletError.from(e).message;
         _loading = false;
       });
     }
@@ -96,9 +98,7 @@ class _Web3ConnectionsScreenState extends State<Web3ConnectionsScreen> {
     } catch (e) {
       logError('[Web3Connections._revoke] revoke error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Revoke failed: $e')));
+      showWalletError(context, e);
     }
   }
 

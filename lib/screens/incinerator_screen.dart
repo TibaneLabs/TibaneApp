@@ -20,6 +20,8 @@ import '../widgets/token_icon.dart';
 import 'wallet/widgets/authorize_and_sign.dart';
 import '../utils/amount.dart';
 import '../utils/log.dart';
+import '../utils/wallet_error.dart';
+import '../widgets/wallet_error_display.dart';
 
 class IncineratorScreen extends StatefulWidget {
   const IncineratorScreen({super.key});
@@ -146,7 +148,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
     } catch (e) {
       logError('[Incinerator._loadTokens] error: $e');
       setState(() {
-        _error = 'Failed to load tokens: $e';
+        _error = WalletError.from(e).message;
         _loadingTokens = false;
       });
     }
@@ -420,9 +422,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
     } catch (e) {
       logError('[Incinerator._partialBurn] error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      showWalletError(context, e);
     } finally {
       setState(() => _burning = false);
     }
@@ -570,17 +570,13 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         _clearSelection();
       } else if (wallet.error != null) {
         logError('[Incinerator._directBurn] wallet error: ${wallet.error}');
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(wallet.error!)));
+        showWalletError(context, wallet.error ?? 'Something went wrong');
         wallet.clearError();
       }
     } catch (e) {
       logError('[Incinerator._directBurn] error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      showWalletError(context, e);
     } finally {
       setState(() => _burning = false);
       if (lastSig != null) {
@@ -759,9 +755,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
             '[SponsoredBurn] signTransaction returned null, wallet error: ${wallet.error}',
           );
           if (mounted && wallet.error != null) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text('Wallet: ${wallet.error}')));
+            showWalletError(context, wallet.error ?? 'Wallet error');
             wallet.clearError();
           }
           break;
@@ -784,9 +778,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
     } catch (e) {
       logError('[Incinerator._sponsoredBurn] error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      showWalletError(context, e);
     } finally {
       setState(() => _burning = false);
       // Wait for the last submitted tx to confirm before reloading. Without
