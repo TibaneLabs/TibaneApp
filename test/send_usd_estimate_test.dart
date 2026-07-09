@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libwallet/libwallet.dart' show NetworkType;
 import 'package:tibaneapp/screens/wallet/send_screen.dart';
+import 'package:tibaneapp/widgets/tx_success.dart';
 
 /// Unit tests for the send-screen "≈ $X" amount estimate helpers.
 void main() {

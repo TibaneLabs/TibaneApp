@@ -6,7 +6,6 @@ import 'package:libwallet/libwallet.dart'
     show Amount, Asset, Network, NetworkType, TransactionSimulation;
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants/solana_constants.dart';
 import '../../services/balances_store.dart';
@@ -18,6 +17,7 @@ import '../../widgets/keyboard_safe_form.dart';
 import '../../widgets/network_logos.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
+import '../../widgets/tx_success.dart';
 import 'widgets/authorize_and_sign.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
@@ -48,57 +48,12 @@ String formatSendUsd(double v) {
   return '\$${v.toStringAsFixed(2)}';
 }
 
-/// Formats a token amount for the send review sheet: up to [decimals]
-/// fractional digits with insignificant trailing zeros stripped, and the
-/// integer part grouped with thousands separators — so `10000` renders as
-/// `10,000` and `0.5` stays `0.5`. Pure, for unit-testing the review display.
+/// Formats a send amount for the review sheet with the entered token's exact
+/// [decimals] as the precision cap. Thin wrapper over the shared grouped
+/// formatter (kept for the send-specific call sites + unit tests).
 @visibleForTesting
-String formatSendAmountGrouped(double v, int decimals) {
-  // Clamp to Dart's toStringAsFixed limit; large-decimal chains (EVM = 18)
-  // are still well within range.
-  final digits = decimals < 0 ? 0 : (decimals > 20 ? 20 : decimals);
-  var s = v.toStringAsFixed(digits);
-  if (s.contains('.')) {
-    s = s.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
-  }
-  final neg = s.startsWith('-');
-  if (neg) s = s.substring(1);
-  final dot = s.indexOf('.');
-  final intPart = dot == -1 ? s : s.substring(0, dot);
-  final fracPart = dot == -1 ? '' : s.substring(dot); // keeps the '.'
-  final buf = StringBuffer();
-  for (var i = 0; i < intPart.length; i++) {
-    if (i > 0 && (intPart.length - i) % 3 == 0) buf.write(',');
-    buf.write(intPart[i]);
-  }
-  return '${neg ? '-' : ''}$buf$fracPart';
-}
-
-/// Human name of the block explorer for a chain, for the success screen's
-/// "View on ..." link (e.g. Solscan / Etherscan). Null when we don't have a
-/// branded name — the caller then falls back to a generic "View on explorer".
-/// Pure, for unit-testing the label.
-@visibleForTesting
-String? explorerNameFor(NetworkType type, String chainId) {
-  switch (type) {
-    case NetworkType.solana:
-      return 'Solscan';
-    case NetworkType.evm:
-      switch (chainId) {
-        case '1':
-          return 'Etherscan';
-        case '56':
-          return 'BscScan';
-        case '137':
-          return 'Polygonscan';
-      }
-      return null;
-    case NetworkType.bitcoin:
-      return null;
-    case NetworkType.unknown:
-      return null;
-  }
-}
+String formatSendAmountGrouped(double v, int decimals) =>
+    formatAmountGrouped(v, maxDecimals: decimals);
 
 class SendScreen extends StatefulWidget {
   /// Optional SPL mint to send instead of native SOL. When null the
@@ -1128,22 +1083,10 @@ class _SendSuccessScreen extends StatelessWidget {
     required this.net,
   });
 
-  /// Chain-aware explorer URL for [txHash] (Solscan fallback for Solana),
-  /// or null when no explorer / no hash is available. Mirrors the swap sheet.
-  String? get _explorerUrl {
-    final h = txHash;
-    final n = net;
-    if (h == null || n == null) return null;
-    final composed = n.transactionUrl(h);
-    if (composed.isNotEmpty) return composed;
-    if (n.type == NetworkType.solana) return 'https://solscan.io/tx/$h';
-    return null;
-  }
-
   String _receiptText() {
     final b = StringBuffer('Sent $amountLabel\nTo: $toAddress');
     if (txHash != null) b.write('\nTransaction: $txHash');
-    final url = _explorerUrl;
+    final url = explorerTxUrl(net, txHash);
     if (url != null) b.write('\n$url');
     return b.toString();
   }
@@ -1160,46 +1103,9 @@ class _SendSuccessScreen extends StatelessWidget {
     }
   }
 
-  void _copy(BuildContext context, String value, String label) {
-    Clipboard.setData(ClipboardData(text: value));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$label copied'),
-        duration: const Duration(seconds: 1),
-      ),
-    );
-  }
-
-  /// Open [url] trying a few launch modes so we don't silently no-op when no
-  /// default browser is registered. Surfaces a snackbar on failure.
-  Future<void> _openExplorer(BuildContext context, String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) {
-      logError('[SendSuccess._openExplorer] invalid URL: $url');
-      return;
-    }
-    Object? lastErr;
-    for (final mode in const [
-      LaunchMode.externalApplication,
-      LaunchMode.inAppBrowserView,
-      LaunchMode.platformDefault,
-    ]) {
-      try {
-        if (await launchUrl(uri, mode: mode)) return;
-      } catch (e) {
-        lastErr = e;
-      }
-    }
-    logError('[SendSuccess._openExplorer] could not open $url: $lastErr');
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Could not open $url')));
-  }
-
   @override
   Widget build(BuildContext context) {
-    final url = _explorerUrl;
+    final url = explorerTxUrl(net, txHash);
     final exName = net == null ? null : explorerNameFor(net!.type, net!.chainId);
     return Scaffold(
       backgroundColor: TibaneColors.black,
@@ -1213,7 +1119,7 @@ class _SendSuccessScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     const SizedBox(height: 36),
-                    _successMark(),
+                    txSuccessMark(),
                     const SizedBox(height: 28),
                     const Text(
                       'Send successful',
@@ -1234,36 +1140,45 @@ class _SendSuccessScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 32),
-                    _infoCard(
-                      context,
+                    txReceiptCard(
                       icon: Icons.north_east,
                       label: 'From',
                       value: fromAddress ?? '—',
                       onTap: fromAddress == null
                           ? null
-                          : () =>
-                                _copy(context, fromAddress!, 'Address'),
+                          : () => copyWithToast(
+                              context,
+                              fromAddress!,
+                              'Address',
+                            ),
                     ),
                     const SizedBox(height: 12),
-                    _infoCard(
-                      context,
+                    txReceiptCard(
                       icon: Icons.south_west,
                       label: 'To',
                       value: toAddress,
-                      onTap: () => _copy(context, toAddress, 'Address'),
+                      onTap: () => copyWithToast(context, toAddress, 'Address'),
                     ),
                     const SizedBox(height: 12),
-                    _infoCard(
-                      context,
+                    txReceiptCard(
                       icon: Icons.receipt_long_outlined,
                       label: 'Transaction',
-                      value: _shorten(txHash) ?? '(unavailable)',
+                      value: shortenTxHash(txHash) ?? '(unavailable)',
                       onTap: txHash == null
                           ? null
-                          : () => _copy(context, txHash!, 'Transaction ID'),
+                          : () => copyWithToast(
+                              context,
+                              txHash!,
+                              'Transaction ID',
+                            ),
                       trailing: url == null
                           ? null
-                          : _explorerLink(context, url, exName),
+                          : txExplorerLink(
+                              onTap: () => openExplorerUrl(context, url),
+                              label: exName != null
+                                  ? 'View on $exName'
+                                  : 'View on explorer',
+                            ),
                     ),
                     const SizedBox(height: 20),
                     if (txHash != null)
@@ -1281,135 +1196,12 @@ class _SendSuccessScreen extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () =>
-                      Navigator.of(context).popUntil((r) => r.isFirst),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: TibaneColors.orange,
-                    foregroundColor: TibaneColors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  child: const Text(
-                    'Back to home',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                  ),
-                ),
-              ),
+              child: txBackToHomeButton(context),
             ),
           ],
         ),
       ),
     );
-  }
-
-  Widget _successMark() {
-    return Container(
-      width: 96,
-      height: 96,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: TibaneColors.cyan.withValues(alpha: 0.10),
-        border: Border.all(color: TibaneColors.cyan, width: 2.5),
-        boxShadow: [
-          BoxShadow(
-            color: TibaneColors.cyan.withValues(alpha: 0.45),
-            blurRadius: 32,
-            spreadRadius: 2,
-          ),
-        ],
-      ),
-      child: const Icon(Icons.check_rounded, color: TibaneColors.cyan, size: 52),
-    );
-  }
-
-  Widget _infoCard(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required String value,
-    VoidCallback? onTap,
-    Widget? trailing,
-  }) {
-    return Material(
-      color: TibaneColors.darker,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: TibaneColors.border),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, size: 18, color: TibaneColors.textMuted),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        color: TibaneColors.textMuted,
-                        fontSize: 11,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: monoStyle(fontSize: 13, color: TibaneColors.text),
-                    ),
-                  ],
-                ),
-              ),
-              if (trailing != null) ...[const SizedBox(width: 8), trailing],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _explorerLink(BuildContext context, String url, String? name) {
-    return InkWell(
-      onTap: () => _openExplorer(context, url),
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              name != null ? 'View on $name' : 'View on explorer',
-              style: const TextStyle(
-                color: TibaneColors.orange,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(width: 4),
-            const Icon(Icons.open_in_new, size: 13, color: TibaneColors.orange),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Middle-ellipsis for a long signature ("5mR8…x2Kp"); returns null for null.
-  static String? _shorten(String? s) {
-    if (s == null) return null;
-    if (s.length <= 16) return s;
-    return '${s.substring(0, 8)}…${s.substring(s.length - 6)}';
   }
 }
 
