@@ -51,4 +51,25 @@ void main() {
       expect(formatSendUsd(0), '\$0.00');
     });
   });
+
+  group('formatSendAmountGrouped', () {
+    test('groups thousands and strips trailing zeros', () {
+      expect(formatSendAmountGrouped(10000, 6), '10,000');
+      expect(formatSendAmountGrouped(1234567, 2), '1,234,567');
+    });
+
+    test('keeps significant fractional digits, groups the integer part', () {
+      expect(formatSendAmountGrouped(1234.5, 9), '1,234.5');
+      expect(formatSendAmountGrouped(0.5, 9), '0.5');
+    });
+
+    test('sub-thousand values are ungrouped', () {
+      expect(formatSendAmountGrouped(999, 0), '999');
+      expect(formatSendAmountGrouped(0, 6), '0');
+    });
+
+    test('boundary at exactly one thousand gets a separator', () {
+      expect(formatSendAmountGrouped(1000, 2), '1,000');
+    });
+  });
 }

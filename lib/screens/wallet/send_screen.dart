@@ -13,6 +13,7 @@ import '../../services/wallet/send_asset.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
+import '../../widgets/network_logos.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import 'widgets/authorize_and_sign.dart';
@@ -43,6 +44,32 @@ String formatSendUsd(double v) {
   if (v >= 1e6) return '\$${(v / 1e6).toStringAsFixed(2)}M';
   if (v >= 1e3) return '\$${(v / 1e3).toStringAsFixed(2)}K';
   return '\$${v.toStringAsFixed(2)}';
+}
+
+/// Formats a token amount for the send review sheet: up to [decimals]
+/// fractional digits with insignificant trailing zeros stripped, and the
+/// integer part grouped with thousands separators — so `10000` renders as
+/// `10,000` and `0.5` stays `0.5`. Pure, for unit-testing the review display.
+@visibleForTesting
+String formatSendAmountGrouped(double v, int decimals) {
+  // Clamp to Dart's toStringAsFixed limit; large-decimal chains (EVM = 18)
+  // are still well within range.
+  final digits = decimals < 0 ? 0 : (decimals > 20 ? 20 : decimals);
+  var s = v.toStringAsFixed(digits);
+  if (s.contains('.')) {
+    s = s.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+  }
+  final neg = s.startsWith('-');
+  if (neg) s = s.substring(1);
+  final dot = s.indexOf('.');
+  final intPart = dot == -1 ? s : s.substring(0, dot);
+  final fracPart = dot == -1 ? '' : s.substring(dot); // keeps the '.'
+  final buf = StringBuffer();
+  for (var i = 0; i < intPart.length; i++) {
+    if (i > 0 && (intPart.length - i) % 3 == 0) buf.write(',');
+    buf.write(intPart[i]);
+  }
+  return '${neg ? '-' : ''}$buf$fracPart';
 }
 
 class SendScreen extends StatefulWidget {
@@ -449,7 +476,18 @@ class _SendScreenState extends State<SendScreen> {
     }
     if (!mounted) return;
     setState(() => _sending = false);
-    final approved = await _showReviewSheet(addr, amountFloat, sim);
+    // Surface the human-readable name in the review sheet when the recipient
+    // was entered as a resolved .sol / .eth name (else the sheet shows the
+    // generic "Recipient" label above the address).
+    final recipientName = (typed == _resolvedName && _resolvedAddress != null)
+        ? _resolvedName
+        : null;
+    final approved = await _showReviewSheet(
+      addr,
+      amountFloat,
+      sim,
+      recipientName,
+    );
     if (approved != true) return;
     if (!mounted) return;
 
@@ -567,6 +605,7 @@ class _SendScreenState extends State<SendScreen> {
     String to,
     double amountUi,
     TransactionSimulation sim,
+    String? recipientName,
   ) {
     return showModalBottomSheet<bool>(
       context: context,
@@ -577,9 +616,15 @@ class _SendScreenState extends State<SendScreen> {
       ),
       builder: (ctx) => _SendReviewSheet(
         to: to,
+        recipientName: recipientName,
         amountUi: amountUi,
         symbol: _symbol,
         decimals: _decimals,
+        imageUrl: _imageUrl,
+        // Native SOL resolves its bundled logo via wsolMint; other chains'
+        // natives fall back to the symbol placeholder. Mirrors _TokenSelector.
+        iconMint: _mint ?? (_isSolana ? wsolMint : ''),
+        net: _net,
         sim: sim,
       ),
     );
@@ -804,143 +849,258 @@ class _SendScreenState extends State<SendScreen> {
   }
 }
 
-/// Pre-broadcast review of an outgoing transfer. Surfaces what libwallet's
+/// Pre-broadcast review of an outgoing transfer. Leads with the token, the
+/// amount, the recipient, and the network — then surfaces what libwallet's
 /// `Transaction:simulate` predicts (will-revert flag, recipient rent, etc.)
 /// before the user is asked to authenticate the send.
 class _SendReviewSheet extends StatelessWidget {
   final String to;
+
+  /// Resolved .sol / .eth name the recipient was entered as, shown as the
+  /// pill above the address. Null falls back to the generic "Recipient" label.
+  final String? recipientName;
   final double amountUi;
   final String symbol;
   final int decimals;
+
+  /// Token-logo inputs, mirrored from the send screen so the review icon
+  /// matches the selector (network `imageUrl` first, then bundled/mint logo).
+  final String? imageUrl;
+  final String iconMint;
+
+  /// Active network — drives the "Network" card name + chain badge.
+  final Network? net;
   final TransactionSimulation sim;
 
   const _SendReviewSheet({
     required this.to,
+    required this.recipientName,
     required this.amountUi,
     required this.symbol,
     required this.decimals,
+    required this.imageUrl,
+    required this.iconMint,
+    required this.net,
     required this.sim,
   });
 
   @override
   Widget build(BuildContext context) {
-    final shortTo = to.length > 14
-        ? '${to.substring(0, 6)}…${to.substring(to.length - 6)}'
-        : to;
     final blocking =
         sim.willRevert || sim.warnings.any((w) => w.severity == 'block');
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: Container(
+    final amountText = '${formatSendAmountGrouped(amountUi, decimals)} $symbol';
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 12,
+          bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: TibaneColors.textDim,
+                color: TibaneColors.borderHover,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Text('Review send', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 16),
-          _kv('To', shortTo),
-          const SizedBox(height: 8),
-          _kv(
-            'Amount',
-            '${amountUi.toStringAsFixed(decimals).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '')} $symbol',
-          ),
-          if (sim.unitsConsumed != null) ...[
-            const SizedBox(height: 8),
-            _kv('Compute', '${sim.unitsConsumed} CU'),
-          ],
-          if (sim.willRevert) ...[
-            const SizedBox(height: 14),
-            _warning(
-              TibaneColors.error,
-              Icons.error_outline,
-              'Simulation predicts this will fail: '
-              '${sim.revertReason ?? "unknown error"}',
+            const SizedBox(height: 20),
+            Text(
+              'Review send',
+              style: Theme.of(context).textTheme.titleLarge,
             ),
-          ],
-          for (final w in sim.warnings) ...[
-            const SizedBox(height: 10),
-            _warning(
-              w.severity == 'block'
-                  ? TibaneColors.error
-                  : (w.severity == 'info'
-                        ? TibaneColors.textMuted
-                        : TibaneColors.gold),
-              w.severity == 'block'
-                  ? Icons.error_outline
-                  : Icons.warning_amber_rounded,
-              w.message.isNotEmpty ? w.message : w.code,
+            const SizedBox(height: 6),
+            const Text(
+              'Please review the details before confirming this transaction.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: TibaneColors.textMuted, fontSize: 13),
             ),
-          ],
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: TibaneColors.textMuted,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+            const SizedBox(height: 28),
+            // Token logo with a soft brand glow.
+            Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: TibaneColors.orange.withValues(alpha: 0.28),
+                    blurRadius: 44,
+                    spreadRadius: 2,
                   ),
-                  child: const Text('Cancel'),
-                ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: blocking
-                      ? null
-                      : () => Navigator.pop(context, true),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: TibaneColors.orange,
-                    foregroundColor: TibaneColors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  child: Text(
-                    blocking ? 'Cannot send' : 'Confirm',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
+              child: TokenIcon(
+                imageUrl: imageUrl,
+                mint: iconMint,
+                symbol: symbol,
+                size: 72,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              amountText,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: TibaneColors.text,
+                fontSize: 30,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'To',
+              style: TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            _recipientPill(recipientName ?? 'Recipient'),
+            const SizedBox(height: 10),
+            Text(
+              to,
+              textAlign: TextAlign.center,
+              style: monoStyle(fontSize: 13, color: TibaneColors.text),
+            ),
+            const SizedBox(height: 22),
+            if (net != null) _networkCard(net!),
+            if (sim.willRevert) ...[
+              const SizedBox(height: 14),
+              _warning(
+                TibaneColors.error,
+                Icons.error_outline,
+                'Simulation predicts this will fail: '
+                '${sim.revertReason ?? "unknown error"}',
               ),
             ],
-          ),
-        ],
+            for (final w in sim.warnings) ...[
+              const SizedBox(height: 10),
+              _warning(
+                w.severity == 'block'
+                    ? TibaneColors.error
+                    : (w.severity == 'info'
+                          ? TibaneColors.textMuted
+                          : TibaneColors.gold),
+                w.severity == 'block'
+                    ? Icons.error_outline
+                    : Icons.warning_amber_rounded,
+                w.message.isNotEmpty ? w.message : w.code,
+              ),
+            ],
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: TibaneColors.textMuted,
+                      side: const BorderSide(color: TibaneColors.borderHover),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: blocking
+                        ? null
+                        : () => Navigator.pop(context, true),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: TibaneColors.orange,
+                      foregroundColor: TibaneColors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: Text(
+                      blocking ? 'Cannot send' : 'Confirm',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _kv(String k, String v) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 84,
-          child: Text(
-            k,
-            style: const TextStyle(color: TibaneColors.textMuted, fontSize: 12),
-          ),
+  Widget _recipientPill(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+      decoration: BoxDecoration(
+        color: TibaneColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: TibaneColors.border),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: TibaneColors.text,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
         ),
-        Expanded(
-          child: Text(
-            v,
-            style: monoStyle(fontSize: 12, color: TibaneColors.text),
+      ),
+    );
+  }
+
+  Widget _networkCard(Network net) {
+    final logoAsset = networkLogoAsset(net);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: TibaneColors.darker,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: TibaneColors.border),
+      ),
+      child: Row(
+        children: [
+          TokenIcon(
+            imageUrl: imageUrl,
+            mint: iconMint,
+            symbol: symbol,
+            size: 32,
           ),
-        ),
-      ],
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Network',
+                  style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  net.name,
+                  style: const TextStyle(
+                    color: TibaneColors.text,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (logoAsset != null)
+            Image.asset(
+              logoAsset,
+              width: 22,
+              height: 22,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+        ],
+      ),
     );
   }
 
