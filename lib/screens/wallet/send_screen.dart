@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart'
     show Amount, Asset, Network, NetworkType, TransactionSimulation;
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants/solana_constants.dart';
 import '../../services/balances_store.dart';
@@ -70,6 +72,32 @@ String formatSendAmountGrouped(double v, int decimals) {
     buf.write(intPart[i]);
   }
   return '${neg ? '-' : ''}$buf$fracPart';
+}
+
+/// Human name of the block explorer for a chain, for the success screen's
+/// "View on ..." link (e.g. Solscan / Etherscan). Null when we don't have a
+/// branded name — the caller then falls back to a generic "View on explorer".
+/// Pure, for unit-testing the label.
+@visibleForTesting
+String? explorerNameFor(NetworkType type, String chainId) {
+  switch (type) {
+    case NetworkType.solana:
+      return 'Solscan';
+    case NetworkType.evm:
+      switch (chainId) {
+        case '1':
+          return 'Etherscan';
+        case '56':
+          return 'BscScan';
+        case '137':
+          return 'Polygonscan';
+      }
+      return null;
+    case NetworkType.bitcoin:
+      return null;
+    case NetworkType.unknown:
+      return null;
+  }
 }
 
 class SendScreen extends StatefulWidget {
@@ -517,8 +545,14 @@ class _SendScreenState extends State<SendScreen> {
       // list + headline now and on the confirmation schedule, and (Solana)
       // confirms on-chain then reloads until the balance settles.
       context.read<BalancesStore>().onTxCommitted(tx.hash);
-      // Show a success modal with the tx id; OK returns to the previous screen.
-      await _showSuccessDialog(tx.hash);
+      // Replace the form with a full-screen success view (From / To / tx +
+      // explorer link + share). Its own buttons own the return navigation.
+      _showSuccessScreen(
+        from: wallet.publicKey,
+        to: addr,
+        hash: tx.hash,
+        amountUi: amountFloat,
+      );
     } catch (e) {
       logError('[Send._send] send error: $e');
       if (!mounted) return;
@@ -528,77 +562,30 @@ class _SendScreenState extends State<SendScreen> {
     }
   }
 
-  /// Success modal shown after a broadcast: confirmation + the transaction id
-  /// with a copy button. Pressing OK closes the modal and returns to the
-  /// previous screen.
-  Future<void> _showSuccessDialog(String? hash) async {
+  /// Full-screen success view shown after a broadcast. Replaces the send form
+  /// so the app-bar back arrow returns to wherever send was launched from;
+  /// "Back to home" pops the tab stack to the dashboard.
+  void _showSuccessScreen({
+    required String? from,
+    required String to,
+    required String? hash,
+    required double amountUi,
+  }) {
     if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: TibaneColors.card,
-        title: Row(
-          children: const [
-            Icon(Icons.check_circle, color: TibaneColors.cyan, size: 22),
-            SizedBox(width: 8),
-            Text('Sent'),
-          ],
+    final amountLabel =
+        '${formatSendAmountGrouped(amountUi, _decimals)} $_symbol';
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => _SendSuccessScreen(
+          symbol: _symbol,
+          amountLabel: amountLabel,
+          fromAddress: from,
+          toAddress: to,
+          txHash: hash,
+          net: _net,
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Your $_symbol transfer was sent successfully.',
-              style: const TextStyle(color: TibaneColors.textMuted),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'TRANSACTION ID',
-              style: TextStyle(color: TibaneColors.textDim, fontSize: 10),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Expanded(
-                  child: SelectableText(
-                    hash ?? '(unavailable)',
-                    style: monoStyle(fontSize: 12),
-                  ),
-                ),
-                if (hash != null)
-                  IconButton(
-                    tooltip: 'Copy',
-                    icon: const Icon(Icons.copy, size: 18),
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: hash));
-                      ScaffoldMessenger.of(ctx).showSnackBar(
-                        const SnackBar(
-                          content: Text('Transaction ID copied'),
-                          duration: Duration(seconds: 1),
-                        ),
-                      );
-                    },
-                  ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            style: FilledButton.styleFrom(
-              backgroundColor: TibaneColors.orange,
-              foregroundColor: TibaneColors.black,
-            ),
-            child: const Text('OK'),
-          ),
-        ],
       ),
     );
-    // Return to the previous screen after the user acknowledges.
-    if (mounted) Navigator.of(context).pop();
   }
 
   Future<bool?> _showReviewSheet(
@@ -1115,6 +1102,314 @@ class _SendReviewSheet extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+/// Full-screen confirmation shown after a transfer is broadcast: a success
+/// mark, the From / To / transaction details (each tap-to-copy), a link to the
+/// chain explorer, and share + back-to-home actions.
+class _SendSuccessScreen extends StatelessWidget {
+  final String symbol;
+
+  /// Pre-formatted amount ("10,000 FLASH") — used only in the shared receipt
+  /// text; the reference success view itself doesn't restate the amount.
+  final String amountLabel;
+  final String? fromAddress;
+  final String toAddress;
+  final String? txHash;
+  final Network? net;
+
+  const _SendSuccessScreen({
+    required this.symbol,
+    required this.amountLabel,
+    required this.fromAddress,
+    required this.toAddress,
+    required this.txHash,
+    required this.net,
+  });
+
+  /// Chain-aware explorer URL for [txHash] (Solscan fallback for Solana),
+  /// or null when no explorer / no hash is available. Mirrors the swap sheet.
+  String? get _explorerUrl {
+    final h = txHash;
+    final n = net;
+    if (h == null || n == null) return null;
+    final composed = n.transactionUrl(h);
+    if (composed.isNotEmpty) return composed;
+    if (n.type == NetworkType.solana) return 'https://solscan.io/tx/$h';
+    return null;
+  }
+
+  String _receiptText() {
+    final b = StringBuffer('Sent $amountLabel\nTo: $toAddress');
+    if (txHash != null) b.write('\nTransaction: $txHash');
+    final url = _explorerUrl;
+    if (url != null) b.write('\n$url');
+    return b.toString();
+  }
+
+  Future<void> _share(BuildContext context) async {
+    try {
+      await SharePlus.instance.share(ShareParams(text: _receiptText()));
+    } catch (e) {
+      logError('[SendSuccess._share] share error: $e');
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the share sheet')),
+      );
+    }
+  }
+
+  void _copy(BuildContext context, String value, String label) {
+    Clipboard.setData(ClipboardData(text: value));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label copied'),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  /// Open [url] trying a few launch modes so we don't silently no-op when no
+  /// default browser is registered. Surfaces a snackbar on failure.
+  Future<void> _openExplorer(BuildContext context, String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      logError('[SendSuccess._openExplorer] invalid URL: $url');
+      return;
+    }
+    Object? lastErr;
+    for (final mode in const [
+      LaunchMode.externalApplication,
+      LaunchMode.inAppBrowserView,
+      LaunchMode.platformDefault,
+    ]) {
+      try {
+        if (await launchUrl(uri, mode: mode)) return;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    logError('[SendSuccess._openExplorer] could not open $url: $lastErr');
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Could not open $url')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = _explorerUrl;
+    final exName = net == null ? null : explorerNameFor(net!.type, net!.chainId);
+    return Scaffold(
+      backgroundColor: TibaneColors.black,
+      appBar: AppBar(title: Text('Send $symbol')),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 36),
+                    _successMark(),
+                    const SizedBox(height: 28),
+                    const Text(
+                      'Send successful',
+                      style: TextStyle(
+                        color: TibaneColors.text,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Your $symbol transfer was completed.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: TibaneColors.textMuted,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    _infoCard(
+                      context,
+                      icon: Icons.north_east,
+                      label: 'From',
+                      value: fromAddress ?? '—',
+                      onTap: fromAddress == null
+                          ? null
+                          : () =>
+                                _copy(context, fromAddress!, 'Address'),
+                    ),
+                    const SizedBox(height: 12),
+                    _infoCard(
+                      context,
+                      icon: Icons.south_west,
+                      label: 'To',
+                      value: toAddress,
+                      onTap: () => _copy(context, toAddress, 'Address'),
+                    ),
+                    const SizedBox(height: 12),
+                    _infoCard(
+                      context,
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Transaction',
+                      value: _shorten(txHash) ?? '(unavailable)',
+                      onTap: txHash == null
+                          ? null
+                          : () => _copy(context, txHash!, 'Transaction ID'),
+                      trailing: url == null
+                          ? null
+                          : _explorerLink(context, url, exName),
+                    ),
+                    const SizedBox(height: 20),
+                    if (txHash != null)
+                      TextButton.icon(
+                        onPressed: () => _share(context),
+                        icon: const Icon(Icons.ios_share, size: 16),
+                        style: TextButton.styleFrom(
+                          foregroundColor: TibaneColors.textMuted,
+                        ),
+                        label: const Text('Share receipt'),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () =>
+                      Navigator.of(context).popUntil((r) => r.isFirst),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: TibaneColors.orange,
+                    foregroundColor: TibaneColors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text(
+                    'Back to home',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _successMark() {
+    return Container(
+      width: 96,
+      height: 96,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: TibaneColors.cyan.withValues(alpha: 0.10),
+        border: Border.all(color: TibaneColors.cyan, width: 2.5),
+        boxShadow: [
+          BoxShadow(
+            color: TibaneColors.cyan.withValues(alpha: 0.45),
+            blurRadius: 32,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: const Icon(Icons.check_rounded, color: TibaneColors.cyan, size: 52),
+    );
+  }
+
+  Widget _infoCard(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String value,
+    VoidCallback? onTap,
+    Widget? trailing,
+  }) {
+    return Material(
+      color: TibaneColors.darker,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: TibaneColors.border),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: TibaneColors.textMuted),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: TibaneColors.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: monoStyle(fontSize: 13, color: TibaneColors.text),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[const SizedBox(width: 8), trailing],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _explorerLink(BuildContext context, String url, String? name) {
+    return InkWell(
+      onTap: () => _openExplorer(context, url),
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              name != null ? 'View on $name' : 'View on explorer',
+              style: const TextStyle(
+                color: TibaneColors.orange,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.open_in_new, size: 13, color: TibaneColors.orange),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Middle-ellipsis for a long signature ("5mR8…x2Kp"); returns null for null.
+  static String? _shorten(String? s) {
+    if (s == null) return null;
+    if (s.length <= 16) return s;
+    return '${s.substring(0, 8)}…${s.substring(s.length - 6)}';
   }
 }
 

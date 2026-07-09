@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:libwallet/libwallet.dart' show NetworkType;
 import 'package:tibaneapp/screens/wallet/send_screen.dart';
 
 /// Unit tests for the send-screen "≈ $X" amount estimate helpers.
@@ -70,6 +71,24 @@ void main() {
 
     test('boundary at exactly one thousand gets a separator', () {
       expect(formatSendAmountGrouped(1000, 2), '1,000');
+    });
+  });
+
+  group('explorerNameFor', () {
+    test('Solana maps to Solscan', () {
+      expect(explorerNameFor(NetworkType.solana, 'mainnet'), 'Solscan');
+    });
+
+    test('known EVM chains map to their scanners', () {
+      expect(explorerNameFor(NetworkType.evm, '1'), 'Etherscan');
+      expect(explorerNameFor(NetworkType.evm, '56'), 'BscScan');
+      expect(explorerNameFor(NetworkType.evm, '137'), 'Polygonscan');
+    });
+
+    test('unknown chain id / type has no branded name', () {
+      expect(explorerNameFor(NetworkType.evm, '42161'), isNull);
+      expect(explorerNameFor(NetworkType.bitcoin, ''), isNull);
+      expect(explorerNameFor(NetworkType.unknown, ''), isNull);
     });
   });
 }
