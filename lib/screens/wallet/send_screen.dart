@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart'
     show Amount, Asset, Network, NetworkType, TransactionSimulation;
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../constants/solana_constants.dart';
 import '../../services/balances_store.dart';
@@ -13,8 +14,10 @@ import '../../services/wallet/send_asset.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
+import '../../widgets/network_logos.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
+import '../../widgets/tx_success.dart';
 import 'widgets/authorize_and_sign.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
@@ -44,6 +47,13 @@ String formatSendUsd(double v) {
   if (v >= 1e3) return '\$${(v / 1e3).toStringAsFixed(2)}K';
   return '\$${v.toStringAsFixed(2)}';
 }
+
+/// Formats a send amount for the review sheet with the entered token's exact
+/// [decimals] as the precision cap. Thin wrapper over the shared grouped
+/// formatter (kept for the send-specific call sites + unit tests).
+@visibleForTesting
+String formatSendAmountGrouped(double v, int decimals) =>
+    formatAmountGrouped(v, maxDecimals: decimals);
 
 class SendScreen extends StatefulWidget {
   /// Optional SPL mint to send instead of native SOL. When null the
@@ -449,7 +459,18 @@ class _SendScreenState extends State<SendScreen> {
     }
     if (!mounted) return;
     setState(() => _sending = false);
-    final approved = await _showReviewSheet(addr, amountFloat, sim);
+    // Surface the human-readable name in the review sheet when the recipient
+    // was entered as a resolved .sol / .eth name (else the sheet shows the
+    // generic "Recipient" label above the address).
+    final recipientName = (typed == _resolvedName && _resolvedAddress != null)
+        ? _resolvedName
+        : null;
+    final approved = await _showReviewSheet(
+      addr,
+      amountFloat,
+      sim,
+      recipientName,
+    );
     if (approved != true) return;
     if (!mounted) return;
 
@@ -479,8 +500,14 @@ class _SendScreenState extends State<SendScreen> {
       // list + headline now and on the confirmation schedule, and (Solana)
       // confirms on-chain then reloads until the balance settles.
       context.read<BalancesStore>().onTxCommitted(tx.hash);
-      // Show a success modal with the tx id; OK returns to the previous screen.
-      await _showSuccessDialog(tx.hash);
+      // Replace the form with a full-screen success view (From / To / tx +
+      // explorer link + share). Its own buttons own the return navigation.
+      _showSuccessScreen(
+        from: wallet.publicKey,
+        to: addr,
+        hash: tx.hash,
+        amountUi: amountFloat,
+      );
     } catch (e) {
       logError('[Send._send] send error: $e');
       if (!mounted) return;
@@ -490,83 +517,37 @@ class _SendScreenState extends State<SendScreen> {
     }
   }
 
-  /// Success modal shown after a broadcast: confirmation + the transaction id
-  /// with a copy button. Pressing OK closes the modal and returns to the
-  /// previous screen.
-  Future<void> _showSuccessDialog(String? hash) async {
+  /// Full-screen success view shown after a broadcast. Replaces the send form
+  /// so the app-bar back arrow returns to wherever send was launched from;
+  /// "Back to home" pops the tab stack to the dashboard.
+  void _showSuccessScreen({
+    required String? from,
+    required String to,
+    required String? hash,
+    required double amountUi,
+  }) {
     if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: TibaneColors.card,
-        title: Row(
-          children: const [
-            Icon(Icons.check_circle, color: TibaneColors.cyan, size: 22),
-            SizedBox(width: 8),
-            Text('Sent'),
-          ],
+    final amountLabel =
+        '${formatSendAmountGrouped(amountUi, _decimals)} $_symbol';
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => _SendSuccessScreen(
+          symbol: _symbol,
+          amountLabel: amountLabel,
+          fromAddress: from,
+          toAddress: to,
+          txHash: hash,
+          net: _net,
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Your $_symbol transfer was sent successfully.',
-              style: const TextStyle(color: TibaneColors.textMuted),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'TRANSACTION ID',
-              style: TextStyle(color: TibaneColors.textDim, fontSize: 10),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Expanded(
-                  child: SelectableText(
-                    hash ?? '(unavailable)',
-                    style: monoStyle(fontSize: 12),
-                  ),
-                ),
-                if (hash != null)
-                  IconButton(
-                    tooltip: 'Copy',
-                    icon: const Icon(Icons.copy, size: 18),
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: hash));
-                      ScaffoldMessenger.of(ctx).showSnackBar(
-                        const SnackBar(
-                          content: Text('Transaction ID copied'),
-                          duration: Duration(seconds: 1),
-                        ),
-                      );
-                    },
-                  ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            style: FilledButton.styleFrom(
-              backgroundColor: TibaneColors.orange,
-              foregroundColor: TibaneColors.black,
-            ),
-            child: const Text('OK'),
-          ),
-        ],
       ),
     );
-    // Return to the previous screen after the user acknowledges.
-    if (mounted) Navigator.of(context).pop();
   }
 
   Future<bool?> _showReviewSheet(
     String to,
     double amountUi,
     TransactionSimulation sim,
+    String? recipientName,
   ) {
     return showModalBottomSheet<bool>(
       context: context,
@@ -577,9 +558,15 @@ class _SendScreenState extends State<SendScreen> {
       ),
       builder: (ctx) => _SendReviewSheet(
         to: to,
+        recipientName: recipientName,
         amountUi: amountUi,
         symbol: _symbol,
         decimals: _decimals,
+        imageUrl: _imageUrl,
+        // Native SOL resolves its bundled logo via wsolMint; other chains'
+        // natives fall back to the symbol placeholder. Mirrors _TokenSelector.
+        iconMint: _mint ?? (_isSolana ? wsolMint : ''),
+        net: _net,
         sim: sim,
       ),
     );
@@ -804,143 +791,258 @@ class _SendScreenState extends State<SendScreen> {
   }
 }
 
-/// Pre-broadcast review of an outgoing transfer. Surfaces what libwallet's
+/// Pre-broadcast review of an outgoing transfer. Leads with the token, the
+/// amount, the recipient, and the network — then surfaces what libwallet's
 /// `Transaction:simulate` predicts (will-revert flag, recipient rent, etc.)
 /// before the user is asked to authenticate the send.
 class _SendReviewSheet extends StatelessWidget {
   final String to;
+
+  /// Resolved .sol / .eth name the recipient was entered as, shown as the
+  /// pill above the address. Null falls back to the generic "Recipient" label.
+  final String? recipientName;
   final double amountUi;
   final String symbol;
   final int decimals;
+
+  /// Token-logo inputs, mirrored from the send screen so the review icon
+  /// matches the selector (network `imageUrl` first, then bundled/mint logo).
+  final String? imageUrl;
+  final String iconMint;
+
+  /// Active network — drives the "Network" card name + chain badge.
+  final Network? net;
   final TransactionSimulation sim;
 
   const _SendReviewSheet({
     required this.to,
+    required this.recipientName,
     required this.amountUi,
     required this.symbol,
     required this.decimals,
+    required this.imageUrl,
+    required this.iconMint,
+    required this.net,
     required this.sim,
   });
 
   @override
   Widget build(BuildContext context) {
-    final shortTo = to.length > 14
-        ? '${to.substring(0, 6)}…${to.substring(to.length - 6)}'
-        : to;
     final blocking =
         sim.willRevert || sim.warnings.any((w) => w.severity == 'block');
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: Container(
+    final amountText = '${formatSendAmountGrouped(amountUi, decimals)} $symbol';
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 12,
+          bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: TibaneColors.textDim,
+                color: TibaneColors.borderHover,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Text('Review send', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 16),
-          _kv('To', shortTo),
-          const SizedBox(height: 8),
-          _kv(
-            'Amount',
-            '${amountUi.toStringAsFixed(decimals).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '')} $symbol',
-          ),
-          if (sim.unitsConsumed != null) ...[
-            const SizedBox(height: 8),
-            _kv('Compute', '${sim.unitsConsumed} CU'),
-          ],
-          if (sim.willRevert) ...[
-            const SizedBox(height: 14),
-            _warning(
-              TibaneColors.error,
-              Icons.error_outline,
-              'Simulation predicts this will fail: '
-              '${sim.revertReason ?? "unknown error"}',
+            const SizedBox(height: 20),
+            Text(
+              'Review send',
+              style: Theme.of(context).textTheme.titleLarge,
             ),
-          ],
-          for (final w in sim.warnings) ...[
-            const SizedBox(height: 10),
-            _warning(
-              w.severity == 'block'
-                  ? TibaneColors.error
-                  : (w.severity == 'info'
-                        ? TibaneColors.textMuted
-                        : TibaneColors.gold),
-              w.severity == 'block'
-                  ? Icons.error_outline
-                  : Icons.warning_amber_rounded,
-              w.message.isNotEmpty ? w.message : w.code,
+            const SizedBox(height: 6),
+            const Text(
+              'Please review the details before confirming this transaction.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: TibaneColors.textMuted, fontSize: 13),
             ),
-          ],
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: TibaneColors.textMuted,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+            const SizedBox(height: 28),
+            // Token logo with a soft brand glow.
+            Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: TibaneColors.orange.withValues(alpha: 0.28),
+                    blurRadius: 44,
+                    spreadRadius: 2,
                   ),
-                  child: const Text('Cancel'),
-                ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: blocking
-                      ? null
-                      : () => Navigator.pop(context, true),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: TibaneColors.orange,
-                    foregroundColor: TibaneColors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  child: Text(
-                    blocking ? 'Cannot send' : 'Confirm',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
+              child: TokenIcon(
+                imageUrl: imageUrl,
+                mint: iconMint,
+                symbol: symbol,
+                size: 72,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              amountText,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: TibaneColors.text,
+                fontSize: 30,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'To',
+              style: TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            _recipientPill(recipientName ?? 'Recipient'),
+            const SizedBox(height: 10),
+            Text(
+              to,
+              textAlign: TextAlign.center,
+              style: monoStyle(fontSize: 13, color: TibaneColors.text),
+            ),
+            const SizedBox(height: 22),
+            if (net != null) _networkCard(net!),
+            if (sim.willRevert) ...[
+              const SizedBox(height: 14),
+              _warning(
+                TibaneColors.error,
+                Icons.error_outline,
+                'Simulation predicts this will fail: '
+                '${sim.revertReason ?? "unknown error"}',
               ),
             ],
-          ),
-        ],
+            for (final w in sim.warnings) ...[
+              const SizedBox(height: 10),
+              _warning(
+                w.severity == 'block'
+                    ? TibaneColors.error
+                    : (w.severity == 'info'
+                          ? TibaneColors.textMuted
+                          : TibaneColors.gold),
+                w.severity == 'block'
+                    ? Icons.error_outline
+                    : Icons.warning_amber_rounded,
+                w.message.isNotEmpty ? w.message : w.code,
+              ),
+            ],
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: TibaneColors.textMuted,
+                      side: const BorderSide(color: TibaneColors.borderHover),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: blocking
+                        ? null
+                        : () => Navigator.pop(context, true),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: TibaneColors.orange,
+                      foregroundColor: TibaneColors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: Text(
+                      blocking ? 'Cannot send' : 'Confirm',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _kv(String k, String v) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 84,
-          child: Text(
-            k,
-            style: const TextStyle(color: TibaneColors.textMuted, fontSize: 12),
-          ),
+  Widget _recipientPill(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+      decoration: BoxDecoration(
+        color: TibaneColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: TibaneColors.border),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: TibaneColors.text,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
         ),
-        Expanded(
-          child: Text(
-            v,
-            style: monoStyle(fontSize: 12, color: TibaneColors.text),
+      ),
+    );
+  }
+
+  Widget _networkCard(Network net) {
+    final logoAsset = networkLogoAsset(net);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: TibaneColors.darker,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: TibaneColors.border),
+      ),
+      child: Row(
+        children: [
+          TokenIcon(
+            imageUrl: imageUrl,
+            mint: iconMint,
+            symbol: symbol,
+            size: 32,
           ),
-        ),
-      ],
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Network',
+                  style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  net.name,
+                  style: const TextStyle(
+                    color: TibaneColors.text,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (logoAsset != null)
+            Image.asset(
+              logoAsset,
+              width: 22,
+              height: 22,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+        ],
+      ),
     );
   }
 
@@ -954,6 +1056,151 @@ class _SendReviewSheet extends StatelessWidget {
           child: Text(text, style: TextStyle(color: color, fontSize: 12)),
         ),
       ],
+    );
+  }
+}
+
+/// Full-screen confirmation shown after a transfer is broadcast: a success
+/// mark, the From / To / transaction details (each tap-to-copy), a link to the
+/// chain explorer, and share + back-to-home actions.
+class _SendSuccessScreen extends StatelessWidget {
+  final String symbol;
+
+  /// Pre-formatted amount ("10,000 FLASH") — used only in the shared receipt
+  /// text; the reference success view itself doesn't restate the amount.
+  final String amountLabel;
+  final String? fromAddress;
+  final String toAddress;
+  final String? txHash;
+  final Network? net;
+
+  const _SendSuccessScreen({
+    required this.symbol,
+    required this.amountLabel,
+    required this.fromAddress,
+    required this.toAddress,
+    required this.txHash,
+    required this.net,
+  });
+
+  String _receiptText() {
+    final b = StringBuffer('Sent $amountLabel\nTo: $toAddress');
+    if (txHash != null) b.write('\nTransaction: $txHash');
+    final url = explorerTxUrl(net, txHash);
+    if (url != null) b.write('\n$url');
+    return b.toString();
+  }
+
+  Future<void> _share(BuildContext context) async {
+    try {
+      await SharePlus.instance.share(ShareParams(text: _receiptText()));
+    } catch (e) {
+      logError('[SendSuccess._share] share error: $e');
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the share sheet')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = explorerTxUrl(net, txHash);
+    final exName = net == null ? null : explorerNameFor(net!.type, net!.chainId);
+    return Scaffold(
+      backgroundColor: TibaneColors.black,
+      appBar: AppBar(title: Text('Send $symbol')),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 36),
+                    txSuccessMark(),
+                    const SizedBox(height: 28),
+                    const Text(
+                      'Send successful',
+                      style: TextStyle(
+                        color: TibaneColors.text,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Your $symbol transfer was completed.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: TibaneColors.textMuted,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    txReceiptCard(
+                      icon: Icons.north_east,
+                      label: 'From',
+                      value: fromAddress ?? '—',
+                      onTap: fromAddress == null
+                          ? null
+                          : () => copyWithToast(
+                              context,
+                              fromAddress!,
+                              'Address',
+                            ),
+                    ),
+                    const SizedBox(height: 12),
+                    txReceiptCard(
+                      icon: Icons.south_west,
+                      label: 'To',
+                      value: toAddress,
+                      onTap: () => copyWithToast(context, toAddress, 'Address'),
+                    ),
+                    const SizedBox(height: 12),
+                    txReceiptCard(
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Transaction',
+                      value: shortenTxHash(txHash) ?? '(unavailable)',
+                      onTap: txHash == null
+                          ? null
+                          : () => copyWithToast(
+                              context,
+                              txHash!,
+                              'Transaction ID',
+                            ),
+                      trailing: url == null
+                          ? null
+                          : txExplorerLink(
+                              onTap: () => openExplorerUrl(context, url),
+                              label: exName != null
+                                  ? 'View on $exName'
+                                  : 'View on explorer',
+                            ),
+                    ),
+                    const SizedBox(height: 20),
+                    if (txHash != null)
+                      TextButton.icon(
+                        onPressed: () => _share(context),
+                        icon: const Icon(Icons.ios_share, size: 16),
+                        style: TextButton.styleFrom(
+                          foregroundColor: TibaneColors.textMuted,
+                        ),
+                        label: const Text('Share receipt'),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+              child: txBackToHomeButton(context),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

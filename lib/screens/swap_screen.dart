@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' as lw;
 import 'package:libwallet/libwallet.dart' show SwapTokenRef;
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../constants/solana_constants.dart';
 import '../services/balances_store.dart';
@@ -21,9 +20,11 @@ import '../services/wallet/swap_asset.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/gradient_button.dart';
+import '../widgets/network_logos.dart';
 import '../widgets/tibane_card.dart';
 import '../widgets/token_icon.dart';
 import '../widgets/token_search.dart';
+import '../widgets/tx_success.dart';
 import 'wallet/widgets/authorize_and_sign.dart';
 import '../utils/amount.dart';
 import '../utils/log.dart';
@@ -721,17 +722,34 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     if (!_hasQuote || _swapping) return;
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
-    final auth = await authorizeBatch(context);
-    if (auth == null) return;
-    if (!mounted) return;
 
-    // Snapshot the trade before clearing state on success so the result
-    // sheet has names + amounts to display.
+    // Snapshot the trade before clearing state on success so the review +
+    // success screens have names, amounts, and logos to display.
     final inputSymbol = _selectedInput?.symbol ?? '';
     final outputSymbol = _selectedOutput?.symbol ?? '';
     final inputAmount = parseAmount(_amountController.text) ?? 0;
     final outputAmount = _quoteOutUi ?? 0;
+    final inputMint = _selectedInput?.mint ?? '';
     final outputMint = _selectedOutput?.mint;
+    final inputImageUrl = _selectedInput?.imageUrl;
+    final outputImageUrl = _outputImageUrl ?? _selectedOutput?.imageUrl;
+
+    // Review the trade before asking the user to authorize the signature.
+    final approved = await _showSwapReviewSheet(
+      inputSymbol: inputSymbol,
+      outputSymbol: outputSymbol,
+      inputAmount: inputAmount,
+      outputAmount: outputAmount,
+      inputMint: inputMint,
+      inputImageUrl: inputImageUrl,
+      outputMint: outputMint ?? '',
+      outputImageUrl: outputImageUrl,
+    );
+    if (approved != true || !mounted) return;
+
+    final auth = await authorizeBatch(context);
+    if (auth == null) return;
+    if (!mounted) return;
 
     final viaOkx = _lwQuote != null;
     setState(() {
@@ -820,17 +838,18 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
               }),
         );
       }
-      // Show the success sheet. Don't await — let it sit while we kick
-      // off a few delayed balance refreshes for confirmation.
-      unawaited(
-        _showSwapResultSheet(
-          signature: signature,
-          inputSymbol: inputSymbol,
-          outputSymbol: outputSymbol,
-          inputAmount: inputAmount,
-          outputAmount: outputAmount,
-          outputMint: outputMint,
-        ),
+      // Push the full-screen success view over the swap form; its own
+      // buttons return home. Delayed balance refreshes keep running behind it.
+      _pushSwapSuccess(
+        signature: signature,
+        inputSymbol: inputSymbol,
+        outputSymbol: outputSymbol,
+        inputAmount: inputAmount,
+        outputAmount: outputAmount,
+        inputMint: inputMint,
+        inputImageUrl: inputImageUrl,
+        outputMint: outputMint ?? '',
+        outputImageUrl: outputImageUrl,
       );
     } catch (e) {
       logError('[swap._executeSwap] error: $e');
@@ -865,49 +884,70 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     }
   }
 
-  Future<void> _showSwapResultSheet({
+  /// Pre-authorization review of the swap: the two tokens + amounts and the
+  /// network, mirroring the send review sheet. Returns true when confirmed.
+  Future<bool?> _showSwapReviewSheet({
+    required String inputSymbol,
+    required String outputSymbol,
+    required double inputAmount,
+    required double outputAmount,
+    required String inputMint,
+    required String? inputImageUrl,
+    required String outputMint,
+    required String? outputImageUrl,
+  }) {
+    final net = context.read<WalletService>().libwallet.currentNetwork;
+    return showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: TibaneColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _SwapReviewSheet(
+        inputSymbol: inputSymbol,
+        outputSymbol: outputSymbol,
+        inputAmount: inputAmount,
+        outputAmount: outputAmount,
+        inputMint: inputMint,
+        inputImageUrl: inputImageUrl,
+        outputMint: outputMint,
+        outputImageUrl: outputImageUrl,
+        net: net,
+      ),
+    );
+  }
+
+  /// Push the full-screen swap success view over the swap form.
+  void _pushSwapSuccess({
     required String signature,
     required String inputSymbol,
     required String outputSymbol,
     required double inputAmount,
     required double outputAmount,
-    required String? outputMint,
-  }) async {
-    final wallet = context.read<WalletService>();
-    final net = wallet.libwallet.currentNetwork;
-    // libwallet 0.4.29: Network.transactionUrl handles per-chain URL
-    // composition (`?cluster=` for non-mainnet Solana, /tx/ vs /address/
-    // paths, "" when no explorer is resolvable). Falls back to Solscan
-    // when the active network has no resolved explorer.
-    String? explorerUrl;
-    if (net != null) {
-      final composed = net.transactionUrl(signature);
-      if (composed.isNotEmpty) {
-        explorerUrl = composed;
-      } else if (net.type == lw.NetworkType.solana) {
-        explorerUrl = 'https://solscan.io/tx/$signature';
-      }
-    } else {
-      explorerUrl = 'https://solscan.io/tx/$signature';
-    }
+    required String inputMint,
+    required String? inputImageUrl,
+    required String outputMint,
+    required String? outputImageUrl,
+  }) {
     if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: TibaneColors.card,
-      isScrollControlled: true,
-      isDismissible: true,
-      enableDrag: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => _SwapResultSheet(
-        signature: signature,
-        inputSymbol: inputSymbol,
-        outputSymbol: outputSymbol,
-        inputAmount: inputAmount,
-        outputAmount: outputAmount,
-        explorerUrl: explorerUrl,
-        networkName: net?.name ?? '',
+    final net = context.read<WalletService>().libwallet.currentNetwork;
+    unawaited(
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => _SwapSuccessScreen(
+            signature: signature,
+            inputSymbol: inputSymbol,
+            outputSymbol: outputSymbol,
+            inputAmount: inputAmount,
+            outputAmount: outputAmount,
+            inputMint: inputMint,
+            inputImageUrl: inputImageUrl,
+            outputMint: outputMint,
+            outputImageUrl: outputImageUrl,
+            net: net,
+          ),
+        ),
       ),
     );
   }
@@ -2186,295 +2226,343 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
   }
 }
 
-/// Bottom sheet shown after a successful swap. Displays the trade summary
-/// (in → out with amounts), the on-chain signature with copy, an explorer
-/// link if available, and a Done button.
-class _SwapResultSheet extends StatelessWidget {
-  final String signature;
+/// The two-token "in → out" hero shared by the swap review sheet and the
+/// swap success screen: each token's logo above its amount, an arrow between.
+/// [approxOutput] prefixes the output amount with `~` (an estimate) in review.
+Widget _swapPairRow({
+  required String inputSymbol,
+  required double inputAmount,
+  required String inputMint,
+  required String? inputImageUrl,
+  required String outputSymbol,
+  required double outputAmount,
+  required String outputMint,
+  required String? outputImageUrl,
+  bool approxOutput = false,
+}) {
+  return Row(
+    children: [
+      Expanded(
+        child: _swapTokenColumn(
+          imageUrl: inputImageUrl,
+          mint: inputMint,
+          symbol: inputSymbol,
+          amount: inputAmount,
+          approx: false,
+        ),
+      ),
+      const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 8),
+        child: Icon(Icons.arrow_forward, color: TibaneColors.textDim, size: 20),
+      ),
+      Expanded(
+        child: _swapTokenColumn(
+          imageUrl: outputImageUrl,
+          mint: outputMint,
+          symbol: outputSymbol,
+          amount: outputAmount,
+          approx: approxOutput,
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _swapTokenColumn({
+  required String? imageUrl,
+  required String mint,
+  required String symbol,
+  required double amount,
+  required bool approx,
+}) {
+  return Column(
+    children: [
+      TokenIcon(imageUrl: imageUrl, mint: mint, symbol: symbol, size: 56),
+      const SizedBox(height: 12),
+      Text(
+        '${approx ? '~' : ''}${formatAmountGrouped(amount)} $symbol',
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: TibaneColors.text,
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    ],
+  );
+}
+
+/// Pre-authorization review of a swap: the two tokens + amounts, the network,
+/// and Cancel / Confirm. A mix of the send review sheet's chrome with the swap
+/// two-token summary.
+class _SwapReviewSheet extends StatelessWidget {
   final String inputSymbol;
   final String outputSymbol;
   final double inputAmount;
   final double outputAmount;
-  final String? explorerUrl;
-  final String networkName;
+  final String inputMint;
+  final String? inputImageUrl;
+  final String outputMint;
+  final String? outputImageUrl;
+  final lw.Network? net;
 
-  const _SwapResultSheet({
-    required this.signature,
+  const _SwapReviewSheet({
     required this.inputSymbol,
     required this.outputSymbol,
     required this.inputAmount,
     required this.outputAmount,
-    required this.explorerUrl,
-    required this.networkName,
+    required this.inputMint,
+    required this.inputImageUrl,
+    required this.outputMint,
+    required this.outputImageUrl,
+    required this.net,
   });
 
-  /// Try a few launch modes so we don't silently no-op when the OS
-  /// doesn't have a default browser registered for [externalApplication].
-  /// Surface a snackbar on every failure path so testers see something.
-  Future<void> _openExplorer(BuildContext context, String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) {
-      logError('[swap._openExplorer] invalid explorer URL: $url');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Invalid explorer URL: $url')));
-      return;
-    }
-    Object? lastErr;
-    for (final mode in const [
-      LaunchMode.externalApplication,
-      LaunchMode.inAppBrowserView,
-      LaunchMode.platformDefault,
-    ]) {
-      try {
-        final ok = await launchUrl(uri, mode: mode);
-        if (ok) return;
-      } catch (e) {
-        lastErr = e;
-      }
-    }
-    logError('[swap._openExplorer] could not open $url: $lastErr');
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          lastErr == null
-              ? 'No app could open $url'
-              : 'Could not open explorer: $lastErr',
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 12,
+          bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: TibaneColors.borderHover,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('Review swap', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 6),
+            const Text(
+              'Please review the details before confirming this transaction.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 28),
+            _swapPairRow(
+              inputSymbol: inputSymbol,
+              inputAmount: inputAmount,
+              inputMint: inputMint,
+              inputImageUrl: inputImageUrl,
+              outputSymbol: outputSymbol,
+              outputAmount: outputAmount,
+              outputMint: outputMint,
+              outputImageUrl: outputImageUrl,
+              approxOutput: true,
+            ),
+            const SizedBox(height: 24),
+            if (net != null) _networkCard(net!),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: TibaneColors.textMuted,
+                      side: const BorderSide(color: TibaneColors.borderHover),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: TibaneColors.orange,
+                      foregroundColor: TibaneColors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      'Confirm',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
 
-  String _fmtAmount(double v) {
-    if (v == 0) return '0';
-    if (v >= 1) {
-      // Up to 6 decimals, strip trailing zeros.
-      var s = v.toStringAsFixed(6);
-      s = s.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
-      return s;
-    }
-    // Small numbers: more precision.
-    var s = v.toStringAsFixed(8);
-    s = s.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
-    return s;
+  Widget _networkCard(lw.Network net) {
+    final logoAsset = networkLogoAsset(net);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: TibaneColors.darker,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: TibaneColors.border),
+      ),
+      child: Row(
+        children: [
+          if (logoAsset != null)
+            Image.asset(
+              logoAsset,
+              width: 32,
+              height: 32,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const Icon(
+                Icons.public,
+                size: 28,
+                color: TibaneColors.textMuted,
+              ),
+            )
+          else
+            const Icon(Icons.public, size: 28, color: TibaneColors.textMuted),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Network',
+                  style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  net.name,
+                  style: const TextStyle(
+                    color: TibaneColors.text,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
+}
+
+/// Full-screen confirmation shown after a swap lands: a success mark, the
+/// two-token in → out summary, the transaction id, an explorer link, and a
+/// back-to-home button.
+class _SwapSuccessScreen extends StatelessWidget {
+  final String signature;
+  final String inputSymbol;
+  final String outputSymbol;
+  final double inputAmount;
+  final double outputAmount;
+  final String inputMint;
+  final String? inputImageUrl;
+  final String outputMint;
+  final String? outputImageUrl;
+  final lw.Network? net;
+
+  const _SwapSuccessScreen({
+    required this.signature,
+    required this.inputSymbol,
+    required this.outputSymbol,
+    required this.inputAmount,
+    required this.outputAmount,
+    required this.inputMint,
+    required this.inputImageUrl,
+    required this.outputMint,
+    required this.outputImageUrl,
+    required this.net,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final shortSig = signature.length > 16
-        ? '${signature.substring(0, 8)}…${signature.substring(signature.length - 8)}'
-        : signature;
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+    final url = explorerTxUrl(net, signature);
+    final exName = net == null ? null : explorerNameFor(net!.type, net!.chainId);
+    return Scaffold(
+      backgroundColor: TibaneColors.black,
+      appBar: AppBar(title: const Text('Swap')),
+      body: SafeArea(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: TibaneColors.border,
-                  borderRadius: BorderRadius.circular(2),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 36),
+                    txSuccessMark(),
+                    const SizedBox(height: 28),
+                    const Text(
+                      'Swap successful',
+                      style: TextStyle(
+                        color: TibaneColors.text,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Your swap was completed successfully.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: TibaneColors.textMuted,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    _swapPairRow(
+                      inputSymbol: inputSymbol,
+                      inputAmount: inputAmount,
+                      inputMint: inputMint,
+                      inputImageUrl: inputImageUrl,
+                      outputSymbol: outputSymbol,
+                      outputAmount: outputAmount,
+                      outputMint: outputMint,
+                      outputImageUrl: outputImageUrl,
+                    ),
+                    const SizedBox(height: 32),
+                    txReceiptCard(
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Transaction ID',
+                      value: shortenTxHash(signature) ?? '(unavailable)',
+                      onTap: signature.isEmpty
+                          ? null
+                          : () => copyWithToast(
+                              context,
+                              signature,
+                              'Transaction ID',
+                            ),
+                    ),
+                    if (url != null) ...[
+                      const SizedBox(height: 16),
+                      txExplorerLink(
+                        onTap: () => openExplorerUrl(context, url),
+                        label: exName != null
+                            ? 'View transaction on $exName'
+                            : 'View transaction on explorer',
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 24),
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: TibaneColors.cyan.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.check,
-                color: TibaneColors.cyan,
-                size: 36,
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Swap submitted',
-              style: TextStyle(
-                color: TibaneColors.text,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Balance will update once the tx confirms on-chain.',
-              style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: TibaneColors.darker,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: TibaneColors.border),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'YOU PAID',
-                          style: monoStyle(
-                            fontSize: 9,
-                            color: TibaneColors.textDim,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _fmtAmount(inputAmount),
-                          style: const TextStyle(
-                            color: TibaneColors.text,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        Text(
-                          inputSymbol,
-                          style: monoStyle(
-                            fontSize: 11,
-                            color: TibaneColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(
-                    Icons.arrow_forward,
-                    color: TibaneColors.textDim,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          'YOU GET',
-                          style: monoStyle(
-                            fontSize: 9,
-                            color: TibaneColors.textDim,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '~${_fmtAmount(outputAmount)}',
-                          style: const TextStyle(
-                            color: TibaneColors.cyan,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        Text(
-                          outputSymbol,
-                          style: monoStyle(
-                            fontSize: 11,
-                            color: TibaneColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: TibaneColors.darker,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: TibaneColors.border),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.receipt_long_outlined,
-                    color: TibaneColors.textMuted,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'SIGNATURE',
-                          style: monoStyle(
-                            fontSize: 9,
-                            color: TibaneColors.textDim,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          shortSig,
-                          style: monoStyle(
-                            fontSize: 12,
-                            color: TibaneColors.text,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Copy',
-                    icon: const Icon(Icons.copy, size: 16),
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: signature));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Signature copied'),
-                          duration: Duration(seconds: 1),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (explorerUrl != null) ...[
-              OutlinedButton.icon(
-                onPressed: () => _openExplorer(context, explorerUrl!),
-                icon: const Icon(Icons.open_in_new, size: 16),
-                label: Text(
-                  networkName.isNotEmpty
-                      ? 'View on $networkName explorer'
-                      : 'View on explorer',
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: TibaneColors.text,
-                  side: const BorderSide(color: TibaneColors.borderHover),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  minimumSize: const Size.fromHeight(0),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(),
-              style: FilledButton.styleFrom(
-                backgroundColor: TibaneColors.orange,
-                foregroundColor: TibaneColors.black,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                minimumSize: const Size.fromHeight(0),
-              ),
-              child: const Text(
-                'Done',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+              child: txBackToHomeButton(context),
             ),
           ],
         ),
