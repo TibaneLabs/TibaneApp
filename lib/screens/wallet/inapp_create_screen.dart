@@ -28,8 +28,6 @@ enum _Step { identifier, code, password, creating }
 
 enum _IdMode { email, phone }
 
-enum _CurveChoice { ed25519, secp256k1, both }
-
 class _InAppCreateScreenState extends State<InAppCreateScreen> {
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = PhoneController(
@@ -42,7 +40,6 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
 
   _Step _step = _Step.identifier;
   _IdMode _mode = _IdMode.email;
-  _CurveChoice _curve = _CurveChoice.ed25519;
   bool _busy = false;
   String? _error;
   double? _progress;
@@ -190,17 +187,12 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
     });
 
     final wallet = context.read<WalletService>();
-    final curves = switch (_curve) {
-      _CurveChoice.ed25519 => const ['ed25519'],
-      _CurveChoice.secp256k1 => const ['secp256k1'],
-      _CurveChoice.both => const ['ed25519', 'secp256k1'],
-    };
     try {
       await for (final fraction in wallet.libwallet.create(
         name: name,
         password: pw,
         remoteKey: remoteKey,
-        curves: curves,
+        curves: const ['ed25519', 'secp256k1'],
       )) {
         if (!mounted) return;
         setState(() => _progress = fraction);
@@ -424,33 +416,12 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
         ),
         const SizedBox(height: 20),
         const Text(
-          'Curves',
-          style: TextStyle(color: TibaneColors.textDim, fontSize: 12),
+          'Solana + Ethereum accounts are created together in one keygen '
+          'ceremony (no second verification code). Plan for the secp256k1 step '
+          'to dominate the time (often a minute or more on mobile); keep the '
+          'app open.',
+          style: TextStyle(color: TibaneColors.textMuted, fontSize: 12),
         ),
-        const SizedBox(height: 6),
-        SegmentedButton<_CurveChoice>(
-          segments: const [
-            ButtonSegment(value: _CurveChoice.ed25519, label: Text('Solana')),
-            ButtonSegment(
-              value: _CurveChoice.secp256k1,
-              label: Text('EVM/BTC'),
-            ),
-            ButtonSegment(value: _CurveChoice.both, label: Text('Both')),
-          ],
-          selected: {_curve},
-          onSelectionChanged: creating
-              ? null
-              : (s) => setState(() => _curve = s.first),
-        ),
-        const SizedBox(height: 4),
-        Text(switch (_curve) {
-          _CurveChoice.ed25519 =>
-            'ed25519 wallet — Solana account only. Fastest to generate (a few seconds).',
-          _CurveChoice.secp256k1 =>
-            'secp256k1 wallet — Ethereum / Bitcoin family. The keygen ceremony takes substantially longer than ed25519 (often a minute or more on mobile) because secp256k1 TSS requires expensive Paillier-key generation.',
-          _CurveChoice.both =>
-            'Both curves created in one keygen ceremony — Solana + Ethereum, no second verification code. Plan for the secp256k1 step to dominate the time (often a minute or more on mobile); keep the app open.',
-        }, style: const TextStyle(color: TibaneColors.textMuted, fontSize: 12)),
         if (_error != null) ...[
           const SizedBox(height: 12),
           Text(_error!, style: const TextStyle(color: TibaneColors.error)),
