@@ -472,7 +472,7 @@ class _TokenLogo extends StatelessWidget {
           u,
           width: 36,
           height: 36,
-          errorBuilder: (_, __, ___) => _fallback(),
+          errorBuilder: (_, _, _) => _fallback(),
         ),
       );
     }

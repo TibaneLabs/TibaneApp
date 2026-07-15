@@ -960,8 +960,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       Uint8List.fromList(txBytes),
       auth.keys,
     );
-    if (signedBytes == null)
+    if (signedBytes == null) {
       throw Exception('Transaction signing was rejected');
+    }
     final signedBase64 = base64Encode(signedBytes);
     return _jupiter.executeSwap(
       signedTransactionBase64: signedBase64,

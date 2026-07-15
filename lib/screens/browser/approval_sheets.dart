@@ -489,7 +489,7 @@ Future<bool> showWatchAssetSheet(
                 req.image,
                 width: 40,
                 height: 40,
-                errorBuilder: (_, __, ___) => const _AssetIconFallback(),
+                errorBuilder: (_, _, _) => const _AssetIconFallback(),
               ),
             )
           else
@@ -664,28 +664,37 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
           if (pickerMode) ...[
             _SectionLabel(context.l10n.browserApprovalPickNetwork),
             const SizedBox(height: 6),
-            for (final n in req.candidateNetworks)
-              RadioListTile<String>(
-                value: n.id,
-                groupValue: _pickedNetwork?.id,
-                onChanged: (id) {
-                  setState(() {
-                    _pickedNetwork = req.candidateNetworks.firstWhere(
-                      (x) => x.id == id,
-                    );
-                  });
-                },
-                title: Text(
-                  n.name,
-                  style: const TextStyle(color: TibaneColors.text),
-                ),
-                subtitle: Text(
-                  'chainId ${n.chainId}',
-                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
-                ),
-                activeColor: TibaneColors.orange,
-                dense: true,
+            RadioGroup<String>(
+              groupValue: _pickedNetwork?.id,
+              onChanged: (id) {
+                setState(() {
+                  _pickedNetwork = req.candidateNetworks.firstWhere(
+                    (x) => x.id == id,
+                  );
+                });
+              },
+              child: Column(
+                children: [
+                  for (final n in req.candidateNetworks)
+                    RadioListTile<String>(
+                      value: n.id,
+                      title: Text(
+                        n.name,
+                        style: const TextStyle(color: TibaneColors.text),
+                      ),
+                      subtitle: Text(
+                        'chainId ${n.chainId}',
+                        style: monoStyle(
+                          fontSize: 11,
+                          color: TibaneColors.textMuted,
+                        ),
+                      ),
+                      activeColor: TibaneColors.orange,
+                      dense: true,
+                    ),
+                ],
               ),
+            ),
           ] else ...[
             _KeyValue(context.l10n.browserApprovalSwitchTo, req.targetNetwork!.name),
             const SizedBox(height: 8),
@@ -701,29 +710,38 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
             const SizedBox(height: 12),
             _SectionLabel(context.l10n.browserApprovalPickAccount),
             const SizedBox(height: 6),
-            for (final a in req.candidateAccounts)
-              RadioListTile<String>(
-                value: a.id,
-                groupValue: _pickedAccount?.id,
-                onChanged: (id) {
-                  setState(() {
-                    _pickedAccount = req.candidateAccounts.firstWhere(
-                      (x) => x.id == id,
-                    );
-                  });
-                },
-                title: Text(
-                  a.name.isEmpty ? a.type : a.name,
-                  style: const TextStyle(color: TibaneColors.text),
-                ),
-                subtitle: Text(
-                  a.address,
-                  overflow: TextOverflow.ellipsis,
-                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
-                ),
-                activeColor: TibaneColors.orange,
-                dense: true,
+            RadioGroup<String>(
+              groupValue: _pickedAccount?.id,
+              onChanged: (id) {
+                setState(() {
+                  _pickedAccount = req.candidateAccounts.firstWhere(
+                    (x) => x.id == id,
+                  );
+                });
+              },
+              child: Column(
+                children: [
+                  for (final a in req.candidateAccounts)
+                    RadioListTile<String>(
+                      value: a.id,
+                      title: Text(
+                        a.name.isEmpty ? a.type : a.name,
+                        style: const TextStyle(color: TibaneColors.text),
+                      ),
+                      subtitle: Text(
+                        a.address,
+                        overflow: TextOverflow.ellipsis,
+                        style: monoStyle(
+                          fontSize: 11,
+                          color: TibaneColors.textMuted,
+                        ),
+                      ),
+                      activeColor: TibaneColors.orange,
+                      dense: true,
+                    ),
+                ],
               ),
+            ),
           ] else if (_pickedAccount != null) ...[
             const SizedBox(height: 8),
             _KeyValue(context.l10n.browserApprovalAccount, _pickedAccount!.address),

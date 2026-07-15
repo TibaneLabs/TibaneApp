@@ -191,8 +191,9 @@ class JupiterService {
 
       // Sort by USD value descending, then by balance
       holdings.sort((a, b) {
-        if (a.valueUsd != null && b.valueUsd != null)
+        if (a.valueUsd != null && b.valueUsd != null) {
           return b.valueUsd!.compareTo(a.valueUsd!);
+        }
         if (a.valueUsd != null) return -1;
         if (b.valueUsd != null) return 1;
         return b.uiBalance.compareTo(a.uiBalance);
