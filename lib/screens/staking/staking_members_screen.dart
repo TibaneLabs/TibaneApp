@@ -6,6 +6,7 @@ import '../../models/staking_pool.dart';
 import '../../services/rpc_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../l10n/l10n.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
 
@@ -110,6 +111,7 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
@@ -135,7 +137,7 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
               ),
             Expanded(
               child: Text(
-                '${pool.tokenSymbol ?? 'Pool'} Members',
+                l10n.stakingMembersTitle(pool.tokenSymbol ?? l10n.stakingPoolLabel),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -171,7 +173,7 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
                   const SizedBox(height: 16),
                   OutlinedButton(
                     onPressed: _loadMembers,
-                    child: const Text('Retry'),
+                    child: Text(l10n.actionRetry),
                   ),
                 ],
               ),
@@ -181,12 +183,13 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
   }
 
   Widget _buildContent() {
+    final l10n = context.l10n;
     final members = _members;
     if (members == null || members.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
-          'No members found',
-          style: TextStyle(color: TibaneColors.textMuted),
+          l10n.stakingNoMembersFound,
+          style: const TextStyle(color: TibaneColors.textMuted),
         ),
       );
     }
@@ -200,7 +203,7 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
             children: [
               Expanded(
                 child: StatCard(
-                  label: 'Total Staked',
+                  label: l10n.stakingTotalStaked,
                   value: formatTokenAmount(
                     pool.totalStaked,
                     pool.tokenDecimals,
@@ -211,7 +214,7 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: StatCard(
-                  label: 'Members',
+                  label: l10n.stakingMembers,
                   value: '${members.length}',
                   icon: Icons.people,
                 ),
@@ -219,7 +222,7 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: StatCard(
-                  label: 'Tau',
+                  label: l10n.stakingTau,
                   value: pool.tauFormatted,
                   icon: Icons.timer,
                 ),
@@ -236,13 +239,13 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
-                  'Address',
+                  l10n.labelAddress,
                   style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
                 ),
               ),
-              _sortChip('Amount', _SortField.amount),
-              _sortChip('Wt%', _SortField.weight),
-              _sortChip('Pending', _SortField.pending),
+              _sortChip(l10n.stakingAmount, _SortField.amount),
+              _sortChip(l10n.stakingWeightPct, _SortField.weight),
+              _sortChip(l10n.stakingPending, _SortField.pending),
             ],
           ),
         ),
@@ -265,7 +268,7 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
                   onTap: () {
                     Clipboard.setData(ClipboardData(text: m.owner));
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Address copied')),
+                      SnackBar(content: Text(context.l10n.addressCopied)),
                     );
                   },
                 );

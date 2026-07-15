@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/clawdwallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -79,7 +80,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'ACTIVITY',
+                context.l10n.clawdActivitySectionLabel,
                 style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
               ),
             ),
@@ -111,7 +112,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 const Icon(Icons.cloud_off_outlined, color: TibaneColors.error),
                 const SizedBox(height: 10),
                 Text(
-                  'Could not load activity',
+                  context.l10n.clawdActivityLoadError,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 6),
@@ -142,15 +143,14 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  'No activity yet',
+                  context.l10n.clawdActivityEmpty,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  'When the agent attempts a transfer, the request and its '
-                  'outcome will appear here.',
+                Text(
+                  context.l10n.clawdActivityEmptyHint,
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+                  style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
                 ),
               ],
             ),

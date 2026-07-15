@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
@@ -56,9 +57,10 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
   }
 
   Future<void> _export() async {
+    final l10n = context.l10n;
     final pw = _pwCtrl.text;
     if (pw.isEmpty) {
-      setState(() => _error = 'Enter your wallet password');
+      setState(() => _error = l10n.exportEnterPassword);
       return;
     }
     setState(() {
@@ -123,7 +125,7 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
     } catch (e) {
       logError('[InAppExport._share] share backup error: $e');
       if (!mounted) return;
-      await _showErrorDialog('Could not share backup', WalletError.from(e).message);
+      await _showErrorDialog(context.l10n.exportShareErrorTitle, WalletError.from(e).message);
     } finally {
       // Scrub the temp file regardless of share outcome.
       if (file != null) {
@@ -144,17 +146,17 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
     } catch (e) {
       logError('[InAppExport._copy] clipboard error: $e');
       if (!mounted) return;
+      final l10n = context.l10n;
       await _showErrorDialog(
-        'Clipboard rejected the backup',
-        'Some devices block large payloads from the clipboard. '
-            'Use the Share button instead. (${WalletError.from(e).message})',
+        l10n.exportClipboardErrorTitle,
+        l10n.exportClipboardErrorBody(WalletError.from(e).message),
       );
       return;
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Backup copied to clipboard')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(context.l10n.exportCopiedSnack)),
+    );
   }
 
   Future<void> _showErrorDialog(String title, String body) {
@@ -167,7 +169,7 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('OK'),
+            child: Text(ctx.l10n.actionOk),
           ),
         ],
       ),
@@ -183,9 +185,10 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Export wallet')),
+      appBar: AppBar(title: Text(l10n.exportWallet)),
       body: SafeArea(
         child: _json == null
             ? KeyboardSafeForm(child: _buildPassword())
@@ -198,14 +201,13 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
   }
 
   Widget _buildPassword() {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text(
-          'Confirm your wallet password to display the encrypted backup. '
-          'Keep this backup secret — anyone with it plus your password '
-          'can restore your wallet.',
-          style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+        Text(
+          l10n.exportPasswordHint,
+          style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         const SizedBox(height: 24),
         TextField(
@@ -213,7 +215,7 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
           obscureText: true,
           enabled: !_busy,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Password'),
+          decoration: InputDecoration(labelText: l10n.labelPassword),
         ),
         if (_error != null) ...[
           const SizedBox(height: 12),
@@ -228,7 +230,7 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
           child: Text(
-            _busy ? 'Exporting…' : 'Show backup',
+            _busy ? l10n.exportExporting : l10n.exportShowBackupButton,
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
@@ -237,14 +239,13 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
   }
 
   Widget _buildJson() {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text(
-          'Save this backup to a safe place (cloud drive, password manager, '
-          'encrypted note). To restore, open it from the import flow on '
-          'this or another device and enter the same password.',
-          style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+        Text(
+          l10n.exportJsonHint,
+          style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         const SizedBox(height: 16),
         Expanded(
@@ -268,7 +269,7 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
           key: _shareButtonKey,
           onPressed: _sharing ? null : _share,
           icon: const Icon(Icons.ios_share, size: 18),
-          label: Text(_sharing ? 'Preparing…' : 'Share backup file'),
+          label: Text(_sharing ? l10n.exportPreparing : l10n.exportShareButton),
           style: FilledButton.styleFrom(
             backgroundColor: TibaneColors.orange,
             foregroundColor: TibaneColors.black,
@@ -279,7 +280,7 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
         OutlinedButton.icon(
           onPressed: _sharing ? null : _copy,
           icon: const Icon(Icons.copy, size: 18),
-          label: const Text('Copy to clipboard'),
+          label: Text(l10n.exportCopyButton),
           style: OutlinedButton.styleFrom(
             foregroundColor: TibaneColors.text,
             side: const BorderSide(color: TibaneColors.borderHover),
@@ -287,10 +288,9 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
           ),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'Copy may not work for large backups on some Android devices — '
-          'prefer Share.',
-          style: TextStyle(color: TibaneColors.textDim, fontSize: 11),
+        Text(
+          l10n.exportCopyWarning,
+          style: const TextStyle(color: TibaneColors.textDim, fontSize: 11),
           textAlign: TextAlign.center,
         ),
       ],

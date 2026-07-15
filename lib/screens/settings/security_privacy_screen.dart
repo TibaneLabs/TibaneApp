@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -26,13 +27,14 @@ class SecurityPrivacyScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final wallet = context.watch<WalletService>();
     final inapp = wallet.kind == WalletKind.inapp;
     final hasInappWallet = inapp && wallet.libwallet.hasWallet;
 
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Security & Privacy')),
+      appBar: AppBar(title: Text(l10n.settingsSecurityPrivacyTitle)),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
@@ -41,43 +43,37 @@ class SecurityPrivacyScreen extends StatelessWidget {
               if (hasInappWallet) ...[
                 SettingsTile(
                   icon: Icons.password_outlined,
-                  title: 'Change password',
-                  subtitle: "Set a new password. You'll need your current one.",
+                  title: l10n.securityChangePasswordTitle,
+                  subtitle: l10n.securityChangePasswordSubtitle,
                   onTap: () => _changePassword(context, wallet),
                 ),
                 const SizedBox(height: 6),
                 SettingsTile(
                   icon: Icons.refresh,
-                  title: "Reset this device's key",
-                  subtitle: 'Replace the signing key stored on this phone. '
-                      'Use if this device may be compromised.',
+                  title: l10n.securityResetDeviceKeyTitle,
+                  subtitle: l10n.securityResetDeviceKeySubtitle,
                   onTap: () => _rotateDeviceShare(context, wallet),
                 ),
                 const SizedBox(height: 6),
                 SettingsTile(
                   icon: Icons.sms_outlined,
-                  title: 'Reset 2FA key',
-                  subtitle: 'Replace your email / SMS recovery key. '
-                      'Use if your 2FA may be compromised.',
+                  title: l10n.securityReset2faTitle,
+                  subtitle: l10n.securityReset2faSubtitle,
                   onTap: () => _rotateRemoteKey(context, wallet),
                 ),
                 const SizedBox(height: 6),
                 SettingsTile(
                   icon: Icons.healing_outlined,
-                  title: 'Set up signing on this device',
-                  subtitle:
-                      "Restore this wallet's signing key here using 2FA — needed "
-                      'on a new phone or after reinstalling.',
+                  title: l10n.securitySetUpSigningTitle,
+                  subtitle: l10n.securitySetUpSigningSubtitle,
                   onTap: () => _recoverDeviceShare(context, wallet),
                 ),
               ] else ...[
                 TibaneCard(
                   padding: const EdgeInsets.all(16),
-                  child: const Text(
-                    'Security options are managed by your external wallet. '
-                    'Switch to or create an in-app wallet to see password, key, '
-                    'and 2FA controls here.',
-                    style: TextStyle(color: TibaneColors.textMuted),
+                  child: Text(
+                    l10n.securityExternalWalletNotice,
+                    style: const TextStyle(color: TibaneColors.textMuted),
                   ),
                 ),
               ],
@@ -89,8 +85,8 @@ class SecurityPrivacyScreen extends StatelessWidget {
               // restore needs none).
               SettingsTile(
                 icon: Icons.cloud_outlined,
-                title: 'Cloud backup',
-                subtitle: 'Auto-backup via iCloud Backup / Google Auto Backup',
+                title: l10n.securityCloudBackupTitle,
+                subtitle: l10n.securityCloudBackupSubtitle,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const CloudBackupScreen()),
                 ),
@@ -159,12 +155,13 @@ class SecurityPrivacyScreen extends StatelessWidget {
     );
     if (result == null) return;
     if (!context.mounted) return;
+    final l10n = context.l10n;
     final messenger = ScaffoldMessenger.of(context);
     // A reshare re-splits the wallet secret, so the RemoteKey share must be
     // re-pushed under a fresh, active session — minting it sends a 2FA code.
     final session = await _withProgress(
       context,
-      'Sending verification code…',
+      l10n.securitySendingCode,
       () => wallet.libwallet.startRemoteKeyReshare(),
     );
     if (!context.mounted) return;
@@ -181,7 +178,7 @@ class SecurityPrivacyScreen extends StatelessWidget {
     if (!context.mounted) return;
     final ok = await _withProgress(
       context,
-      'Changing password…',
+      l10n.securityChangingPassword,
       () => wallet.libwallet.changePassword(
         sessionToken: session.session,
         code: code,
@@ -192,7 +189,7 @@ class SecurityPrivacyScreen extends StatelessWidget {
     if (!context.mounted) return;
     if (ok) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Password changed')),
+        SnackBar(content: Text(l10n.securityPasswordChanged)),
       );
     } else {
       logError('[SecurityPrivacy._changePassword] failed: ${wallet.libwallet.error}');
@@ -204,27 +201,26 @@ class SecurityPrivacyScreen extends StatelessWidget {
     BuildContext context,
     WalletService wallet,
   ) async {
+    final l10n = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
-        title: const Text('Rotate 2FA share?'),
-        content: const Text(
-          'This sends a fresh verification code to the email or phone tied '
-          'to this wallet and reshares the remote TSS key. Use it if you '
-          'suspect the 2FA channel has been compromised.',
-          style: TextStyle(color: TibaneColors.textMuted),
+        title: Text(l10n.securityRotate2faDialogTitle),
+        content: Text(
+          l10n.securityRotate2faDialogBody,
+          style: const TextStyle(color: TibaneColors.textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Start',
-              style: TextStyle(color: TibaneColors.orange),
+            child: Text(
+              l10n.securityRotate2faStart,
+              style: const TextStyle(color: TibaneColors.orange),
             ),
           ),
         ],
@@ -253,7 +249,7 @@ class SecurityPrivacyScreen extends StatelessWidget {
     if (!context.mounted) return;
     if (ok) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('2FA share rotated')),
+        SnackBar(content: Text(l10n.security2faShareRotated)),
       );
     } else {
       logError('[SecurityPrivacy._rotateRemoteKey] reshare failed: ${wallet.libwallet.error}');
@@ -281,27 +277,26 @@ class SecurityPrivacyScreen extends StatelessWidget {
     BuildContext context,
     WalletService wallet,
   ) async {
+    final l10n = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
-        title: const Text('Rotate device share?'),
-        content: const Text(
-          'This invalidates the TSS share stored on this device and replaces '
-          'it with a fresh one. Use it if you suspect the device has been '
-          'compromised.',
-          style: TextStyle(color: TibaneColors.textMuted),
+        title: Text(l10n.securityRotateDeviceDialogTitle),
+        content: Text(
+          l10n.securityRotateDeviceDialogBody,
+          style: const TextStyle(color: TibaneColors.textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Rotate',
-              style: TextStyle(color: TibaneColors.orange),
+            child: Text(
+              l10n.securityRotateDeviceAction,
+              style: const TextStyle(color: TibaneColors.orange),
             ),
           ),
         ],
@@ -314,14 +309,14 @@ class SecurityPrivacyScreen extends StatelessWidget {
     final creds = await collectManagementKeys(
       context,
       title: 'Rotate device share',
-      purpose: 'rotate this device’s key share',
+      purpose: "rotate this device's key share",
     );
     if (creds == null || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     // Rotation is a reshare → needs a fresh RemoteKey session (2FA code).
     final session = await _withProgress(
       context,
-      'Sending verification code…',
+      l10n.securitySendingCode,
       () => wallet.libwallet.startRemoteKeyReshare(),
     );
     if (!context.mounted) return;
@@ -338,7 +333,7 @@ class SecurityPrivacyScreen extends StatelessWidget {
     if (!context.mounted) return;
     final ok = await _withProgress(
       context,
-      'Rotating device share…',
+      l10n.securityRotatingDeviceShare,
       () => wallet.libwallet.rotateDeviceShare(
         sessionToken: session.session,
         code: code,
@@ -349,7 +344,7 @@ class SecurityPrivacyScreen extends StatelessWidget {
     if (!context.mounted) return;
     if (ok) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Device share rotated')),
+        SnackBar(content: Text(l10n.securityDeviceShareRotated)),
       );
     } else {
       logError('[SecurityPrivacy._rotateDeviceShare] rotate failed: ${wallet.libwallet.error}');
@@ -387,22 +382,23 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
   }
 
   void _submit() {
+    final l10n = context.l10n;
     final oldPw = _oldCtrl.text;
     final newPw = _newCtrl.text;
     final confirm = _confirmCtrl.text;
     if (oldPw.isEmpty) {
       logError('[SecurityPrivacy._ChangePasswordDialog] validation error: current password empty');
-      setState(() => _error = 'Enter the current password');
+      setState(() => _error = l10n.securityPwEnterCurrent);
       return;
     }
     if (newPw.length < 8) {
       logError('[SecurityPrivacy._ChangePasswordDialog] validation error: new password too short');
-      setState(() => _error = 'New password must be at least 8 characters');
+      setState(() => _error = l10n.securityPwTooShort);
       return;
     }
     if (newPw != confirm) {
       logError('[SecurityPrivacy._ChangePasswordDialog] validation error: new passwords do not match');
-      setState(() => _error = 'New passwords do not match');
+      setState(() => _error = l10n.securityPwNoMatch);
       return;
     }
     Navigator.of(context).pop(_PasswordChange(oldPw, newPw));
@@ -410,29 +406,30 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AlertDialog(
       backgroundColor: TibaneColors.card,
-      title: const Text('Change password'),
+      title: Text(l10n.securityChangePasswordTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
             controller: _oldCtrl,
             obscureText: true,
-            decoration: const InputDecoration(labelText: 'Current password'),
+            decoration: InputDecoration(labelText: l10n.securityPwCurrentLabel),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _newCtrl,
             obscureText: true,
-            decoration: const InputDecoration(labelText: 'New password'),
+            decoration: InputDecoration(labelText: l10n.securityPwNewLabel),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _confirmCtrl,
             obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Confirm new password',
+            decoration: InputDecoration(
+              labelText: l10n.securityPwConfirmLabel,
             ),
           ),
           if (_error != null) ...[
@@ -444,13 +441,13 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.actionCancel),
         ),
         TextButton(
           onPressed: _submit,
-          child: const Text(
-            'Change',
-            style: TextStyle(color: TibaneColors.orange),
+          child: Text(
+            l10n.securityPwChangeAction,
+            style: const TextStyle(color: TibaneColors.orange),
           ),
         ),
       ],
@@ -478,15 +475,16 @@ class _CodeEntryDialogState extends State<_CodeEntryDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AlertDialog(
       backgroundColor: TibaneColors.card,
-      title: const Text('Enter verification code'),
+      title: Text(l10n.securityCodeEntryTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Check your email or SMS for the ${widget.length}-digit code.',
+            l10n.securityCodeEntryBody(widget.length),
             style: const TextStyle(color: TibaneColors.textMuted),
           ),
           const SizedBox(height: 12),
@@ -498,7 +496,7 @@ class _CodeEntryDialogState extends State<_CodeEntryDialog> {
               LengthLimitingTextInputFormatter(widget.length),
             ],
             autofocus: true,
-            decoration: const InputDecoration(labelText: 'Code'),
+            decoration: InputDecoration(labelText: l10n.securityCodeLabel),
             style: monoStyle(fontSize: 18),
           ),
         ],
@@ -506,13 +504,13 @@ class _CodeEntryDialogState extends State<_CodeEntryDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(l10n.actionCancel),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context, _ctrl.text.trim()),
-          child: const Text(
-            'Verify',
-            style: TextStyle(color: TibaneColors.orange),
+          child: Text(
+            l10n.securityCodeVerify,
+            style: const TextStyle(color: TibaneColors.orange),
           ),
         ),
       ],

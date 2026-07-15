@@ -15,6 +15,7 @@ import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
 import '../widgets/wallet_error_display.dart';
 import 'wallet/widgets/authorize_and_sign.dart';
+import '../l10n/l10n.dart';
 import '../utils/log.dart';
 import '../utils/wallet_error.dart';
 
@@ -152,7 +153,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
       final sig = sigs.first;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Config created: ${sig.substring(0, 8)}...')),
+          SnackBar(content: Text(context.l10n.feeShareConfigCreated(sig.substring(0, 8)))),
         );
       }
     } catch (e) {
@@ -202,7 +203,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Fees distributed: ${sig.substring(0, 8)}...'),
+            content: Text(context.l10n.feeShareFeesDistributed(sig.substring(0, 8))),
           ),
         );
       }
@@ -245,7 +246,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
       final sig = sigs.first;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Shares updated: ${sig.substring(0, 8)}...')),
+          SnackBar(content: Text(context.l10n.feeShareSharesUpdated(sig.substring(0, 8)))),
         );
       }
     } catch (e) {
@@ -291,7 +292,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Authority transferred: ${sig.substring(0, 8)}...'),
+            content: Text(context.l10n.feeShareAuthorityTransferred(sig.substring(0, 8))),
           ),
         );
         _newAdminController.clear();
@@ -311,25 +312,26 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
     if (!wallet.isConnected || !_isAdmin) return;
 
     // Confirm revocation
+    final l10n = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
-        title: const Text('Revoke Authority?'),
-        content: const Text(
-          'This action is irreversible. The fee sharing configuration will become immutable.',
-          style: TextStyle(color: TibaneColors.textMuted),
+        title: Text(l10n.feeShareRevokeTitle),
+        content: Text(
+          l10n.feeShareRevokeBody,
+          style: const TextStyle(color: TibaneColors.textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Revoke',
-              style: TextStyle(color: TibaneColors.error),
+            child: Text(
+              l10n.feeShareRevokeButton,
+              style: const TextStyle(color: TibaneColors.error),
             ),
           ),
         ],
@@ -363,7 +365,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Authority revoked: ${sig.substring(0, 8)}...'),
+            content: Text(context.l10n.feeShareAuthorityRevoked(sig.substring(0, 8))),
           ),
         );
       }
@@ -395,6 +397,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final wallet = context.watch<WalletService>();
 
     return Scaffold(
@@ -406,7 +409,9 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
           icon: const Icon(Icons.arrow_back),
         ),
         title: Text(
-          widget.tokenName != null ? '${widget.tokenName} Fees' : 'Fee Sharing',
+          widget.tokenName != null
+              ? l10n.feeShareTitleToken(widget.tokenName!)
+              : l10n.feeShareTitle,
         ),
         actions: [
           IconButton(
@@ -438,7 +443,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
                   const SizedBox(height: 16),
                   OutlinedButton(
                     onPressed: _loadConfig,
-                    child: const Text('Retry'),
+                    child: Text(l10n.actionRetry),
                   ),
                 ],
               ),
@@ -458,6 +463,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
   }
 
   Widget _buildNoConfig(WalletService wallet) {
+    final l10n = context.l10n;
     return Column(
       children: [
         TibaneCard(
@@ -466,7 +472,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
               const Icon(Icons.settings, size: 40, color: TibaneColors.textDim),
               const SizedBox(height: 12),
               Text(
-                'No fee sharing config exists for this token',
+                l10n.feeShareNoConfig,
                 style: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
@@ -474,7 +480,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Anyone can create a fee sharing config for a pump.fun token.',
+                l10n.feeShareNoConfigHint,
                 style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
                 textAlign: TextAlign.center,
               ),
@@ -484,22 +490,23 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         const SizedBox(height: 16),
         if (wallet.isConnected)
           GradientButton(
-            label: 'Create Config',
+            label: l10n.feeShareCreateConfig,
             icon: Icons.add,
             loading: _executing,
             expanded: true,
             onPressed: _createConfig,
           )
         else
-          const Text(
-            'Connect wallet to create config',
-            style: TextStyle(color: TibaneColors.textMuted),
+          Text(
+            l10n.feeShareConnectWallet,
+            style: const TextStyle(color: TibaneColors.textMuted),
           ),
       ],
     );
   }
 
   Widget _buildConfig(WalletService wallet) {
+    final l10n = context.l10n;
     final config = _config!;
 
     return Column(
@@ -507,27 +514,27 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
       children: [
         // Config info
         Text(
-          'CONFIG',
+          l10n.feeShareSectionConfig,
           style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 12),
         TibaneCard(
           child: Column(
             children: [
-              _InfoRow(label: 'Mint', value: shortenAddress(config.mint)),
+              _InfoRow(label: l10n.labelMint, value: shortenAddress(config.mint)),
               _InfoRow(
-                label: 'Admin',
+                label: l10n.feeShareLabelAdmin,
                 value: config.adminRevoked
-                    ? 'Revoked'
+                    ? l10n.feeShareAdminRevoked
                     : shortenAddress(config.admin),
               ),
               _InfoRow(
-                label: 'Status',
+                label: l10n.feeShareLabelStatus,
                 value: config.status == 0
-                    ? 'Active'
-                    : 'Status ${config.status}',
+                    ? l10n.feeShareStatusActive
+                    : l10n.feeShareStatusOther('${config.status}'),
               ),
-              _InfoRow(label: 'Version', value: '${config.version}'),
+              _InfoRow(label: l10n.feeShareLabelVersion, value: '${config.version}'),
             ],
           ),
         ),
@@ -542,7 +549,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
                 if (_creatorVaultBalance > BigInt.zero)
                   Expanded(
                     child: StatCard(
-                      label: 'Creator Vault',
+                      label: l10n.feeShareCreatorVault,
                       value: '${formatSol(_creatorVaultBalance)} SOL',
                       valueColor: TibaneColors.gold,
                       icon: Icons.account_balance,
@@ -554,7 +561,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
                 if (_pumpswapVaultBalance > BigInt.zero)
                   Expanded(
                     child: StatCard(
-                      label: 'PumpSwap Vault',
+                      label: l10n.feeSharePumpSwapVault,
                       value: '${formatSol(_pumpswapVaultBalance)} SOL',
                       valueColor: TibaneColors.gold,
                       icon: Icons.swap_horiz,
@@ -566,14 +573,14 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
 
         // Shareholders
         Text(
-          'SHAREHOLDERS',
+          l10n.feeShareSectionShareholders,
           style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 12),
         if (config.shareholders.isEmpty)
           TibaneCard(
             child: Text(
-              'No shareholders configured',
+              l10n.feeShareNoShareholders,
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
@@ -610,7 +617,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
                                 ),
                               );
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Address copied')),
+                                SnackBar(content: Text(l10n.addressCopied)),
                               );
                             },
                             child: Text(
@@ -650,13 +657,13 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
 
         // Permissionless actions (anyone can do these)
         Text(
-          'ACTIONS',
+          l10n.feeShareSectionActions,
           style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 12),
         if (wallet.isConnected && config.shareholders.isNotEmpty)
           GradientButton(
-            label: 'Distribute Fees',
+            label: l10n.feeShareDistributeFees,
             icon: Icons.payments,
             loading: _executing,
             expanded: true,
@@ -667,7 +674,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
         // Admin actions
         if (_isAdmin) ...[
           Text(
-            'ADMIN',
+            l10n.sectionAdmin,
             style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
           ),
           const SizedBox(height: 12),
@@ -677,9 +684,9 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Update Shares',
-                  style: TextStyle(
+                Text(
+                  l10n.feeShareUpdateShares,
+                  style: const TextStyle(
                     color: TibaneColors.text,
                     fontWeight: FontWeight.w600,
                   ),
@@ -730,8 +737,8 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
                       flex: 3,
                       child: TextField(
                         controller: _newShareholderController,
-                        decoration: const InputDecoration(
-                          hintText: 'Address',
+                        decoration: InputDecoration(
+                          hintText: l10n.labelAddress,
                           isDense: true,
                         ),
                         style: monoStyle(fontSize: 12),
@@ -766,7 +773,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
                 ),
                 const SizedBox(height: 12),
                 SecondaryButton(
-                  label: 'Save Shares',
+                  label: l10n.feeShareSaveShares,
                   icon: Icons.save,
                   expanded: true,
                   onPressed: _executing ? null : _updateShares,
@@ -781,9 +788,9 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Transfer Authority',
-                  style: TextStyle(
+                Text(
+                  l10n.feeShareTransferAuthority,
+                  style: const TextStyle(
                     color: TibaneColors.text,
                     fontWeight: FontWeight.w600,
                   ),
@@ -791,14 +798,14 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _newAdminController,
-                  decoration: const InputDecoration(
-                    hintText: 'New admin address',
+                  decoration: InputDecoration(
+                    hintText: l10n.feeShareNewAdminHint,
                   ),
                   style: monoStyle(fontSize: 12),
                 ),
                 const SizedBox(height: 12),
                 SecondaryButton(
-                  label: 'Transfer',
+                  label: l10n.feeShareTransferButton,
                   icon: Icons.swap_horiz,
                   expanded: true,
                   onPressed: _executing ? null : _transferAuthority,
@@ -810,7 +817,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
 
           // Revoke authority
           SecondaryButton(
-            label: 'Revoke Authority (Irreversible)',
+            label: l10n.feeShareRevokeAuthorityButton,
             icon: Icons.block,
             expanded: true,
             onPressed: _executing ? null : _revokeAuthority,

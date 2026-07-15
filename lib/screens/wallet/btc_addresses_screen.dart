@@ -4,6 +4,7 @@ import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -128,15 +129,15 @@ class _BtcAddressesScreenState extends State<BtcAddressesScreen> {
     return _next?.path;
   }
 
-  String? get _displayedLabel {
+  String? _getDisplayedLabel(AppLocalizations l10n) {
     final sel = _selectedFormatKind;
     if (sel == null) {
       // Default — pull the human name from formats if available.
       final formats = _formats?.formats ?? const [];
       for (final f in formats) {
-        if (f.isDefault) return '${f.name} (best)';
+        if (f.isDefault) return '${f.name} (${l10n.btcAddrBest})';
       }
-      return 'Default';
+      return l10n.btcAddrFormatDefault;
     }
     final formats = _formats?.formats ?? const [];
     for (final f in formats) {
@@ -153,9 +154,10 @@ class _BtcAddressesScreenState extends State<BtcAddressesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Bitcoin addresses')),
+      appBar: AppBar(title: Text(l10n.btcAddrTitle)),
       body: SafeArea(
         child: Builder(
           builder: (context) {
@@ -186,7 +188,7 @@ class _BtcAddressesScreenState extends State<BtcAddressesScreen> {
                     _AddressCard(
                       address: _displayedAddress!,
                       path: _displayedPath ?? '',
-                      label: _displayedLabel ?? '',
+                      label: _getDisplayedLabel(l10n) ?? '',
                       rotating: _rotating,
                       onRotate: _selectedFormatKind == null ? _rotate : null,
                     ),
@@ -200,32 +202,21 @@ class _BtcAddressesScreenState extends State<BtcAddressesScreen> {
                     ),
                   if (_isNonSegwitSelected && _hasSegwitFormats) ...[
                     const SizedBox(height: 12),
-                    _WarningCard(
-                      text:
-                          'Receiving on a legacy address will cost more in '
-                          'fees when you later spend the funds. Prefer the '
-                          'default (SegWit) format unless the sender explicitly '
-                          'requires legacy.',
-                    ),
+                    _WarningCard(text: l10n.btcAddrLegacyWarning),
                   ],
                   if (_selectedFormatKind != null) ...[
                     const SizedBox(height: 12),
-                    _InfoCard(
-                      text:
-                          'This is the root receive address (m/0/0) rendered '
-                          'in an alternate format. Return to the default to '
-                          'use a fresh, rotated address.',
-                    ),
+                    _InfoCard(text: l10n.btcAddrAltFormatInfo),
                   ],
                   const SizedBox(height: 24),
                   if (_listing != null && _listing!.receive.isNotEmpty) ...[
-                    _SectionLabel('Receive history (m/0/*)'),
+                    _SectionLabel(l10n.btcAddrReceiveHistory),
                     const SizedBox(height: 8),
                     ..._listing!.receive.map((a) => _HdRow(addr: a)),
                     const SizedBox(height: 16),
                   ],
                   if (_listing != null && _listing!.change.isNotEmpty) ...[
-                    _SectionLabel('Change (m/1/*)'),
+                    _SectionLabel(l10n.btcAddrChangeHistory),
                     const SizedBox(height: 8),
                     ..._listing!.change.map((a) => _HdRow(addr: a)),
                   ],
@@ -256,6 +247,7 @@ class _AddressCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return TibaneCard(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -284,9 +276,9 @@ class _AddressCard extends StatelessWidget {
               await Clipboard.setData(ClipboardData(text: address));
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Address copied'),
-                  duration: Duration(seconds: 1),
+                SnackBar(
+                  content: Text(l10n.addressCopied),
+                  duration: const Duration(seconds: 1),
                 ),
               );
             },
@@ -317,7 +309,7 @@ class _AddressCard extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: rotating ? null : onRotate,
               icon: const Icon(Icons.refresh, size: 16),
-              label: Text(rotating ? 'Rotating…' : 'Get a fresh one'),
+              label: Text(rotating ? l10n.btcAddrRotating : l10n.btcAddrGetFresh),
             ),
           ],
         ],
@@ -339,17 +331,18 @@ class _FormatPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionLabel('Format'),
+        _SectionLabel(l10n.btcAddrFormatLabel),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: [
             _Chip(
-              label: 'Default',
+              label: l10n.btcAddrFormatDefault,
               selected: selectedKind == null,
               onTap: () => onSelect(null),
             ),
@@ -504,6 +497,7 @@ class _HdRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final preview = addr.address.length > 14
         ? '${addr.address.substring(0, 8)}…${addr.address.substring(addr.address.length - 6)}'
         : addr.address;
@@ -525,7 +519,7 @@ class _HdRow extends StatelessWidget {
                 children: [
                   Text(preview, style: monoStyle(fontSize: 12)),
                   Text(
-                    '${addr.path}${addr.clean ? ' · unused' : ''}',
+                    '${addr.path}${addr.clean ? ' · ${l10n.btcAddrUnused}' : ''}',
                     style: monoStyle(
                       fontSize: 10,
                       color: TibaneColors.textMuted,
@@ -535,14 +529,14 @@ class _HdRow extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: 'Copy',
+              tooltip: l10n.actionCopy,
               icon: const Icon(Icons.copy, size: 16),
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: addr.address));
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Address copied'),
-                    duration: Duration(seconds: 1),
+                  SnackBar(
+                    content: Text(l10n.addressCopied),
+                    duration: const Duration(seconds: 1),
                   ),
                 );
               },

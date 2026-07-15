@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import 'btc_addresses_screen.dart';
@@ -53,10 +54,11 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     if (_loadingType) {
       return Scaffold(
         backgroundColor: TibaneColors.black,
-        appBar: AppBar(title: const Text('Receive')),
+        appBar: AppBar(title: Text(l10n.receiveTitle)),
         body: const Center(
           child: CircularProgressIndicator(color: TibaneColors.orange),
         ),
@@ -69,13 +71,13 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     final wallet = context.watch<WalletService>();
     final addr = wallet.publicKey ?? '';
     final label = switch (_type) {
-      'ethereum' => 'Your EVM address',
-      'solana' => 'Your Solana address',
-      _ => 'Your address',
+      'ethereum' => l10n.receiveAddressLabelEvm,
+      'solana' => l10n.receiveAddressLabelSolana,
+      _ => l10n.receiveAddressLabel,
     };
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Receive')),
+      appBar: AppBar(title: Text(l10n.receiveTitle)),
       body: SafeArea(
         child: Center(
           child: Padding(
@@ -107,9 +109,9 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                     await Clipboard.setData(ClipboardData(text: addr));
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Address copied'),
-                        duration: Duration(seconds: 1),
+                      SnackBar(
+                        content: Text(l10n.addressCopied),
+                        duration: const Duration(seconds: 1),
                       ),
                     );
                   },

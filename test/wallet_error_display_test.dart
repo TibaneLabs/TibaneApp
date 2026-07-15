@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libwallet/libwallet.dart' show LibwalletException;
+import 'package:tibaneapp/l10n/gen/app_localizations.dart';
 import 'package:tibaneapp/widgets/wallet_error_display.dart';
 
 /// Widget tests for the [WalletError] display helpers — friendly message shown,
@@ -106,6 +107,8 @@ void main() {
 /// Pump a screen with a button that fires [showWalletError] for [error].
 Future<void> _pumpTrigger(WidgetTester tester, Object error) {
   return tester.pumpWidget(MaterialApp(
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
     home: Scaffold(
       body: Builder(
         builder: (context) => TextButton(
@@ -119,6 +122,9 @@ Future<void> _pumpTrigger(WidgetTester tester, Object error) {
 
 /// Pump [child] inside a scaffold so cards render with a Material ancestor.
 Future<void> _pumpCard(WidgetTester tester, Widget child) {
-  return tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: SingleChildScrollView(child: child))));
+  return tester.pumpWidget(MaterialApp(
+    localizationsDelegates: AppLocalizations.localizationsDelegates,
+    supportedLocales: AppLocalizations.supportedLocales,
+    home: Scaffold(body: SingleChildScrollView(child: child)),
+  ));
 }

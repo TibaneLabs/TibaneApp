@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/l10n.dart';
 import '../theme/tibane_theme.dart';
 import 'cat_logo.dart';
 import 'network_chip.dart';
@@ -28,7 +29,7 @@ class TibaneAppBar extends StatelessWidget implements PreferredSizeWidget {
           const CatLogo(size: 28),
           const SizedBox(width: 10),
           Text(
-            'Tibane',
+            context.l10n.appTitle,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w700,
               letterSpacing: -0.5,

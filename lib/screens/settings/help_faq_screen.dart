@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/l10n.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 
@@ -7,27 +8,62 @@ import '../../widgets/tibane_card.dart';
 /// moving a wallet to a new phone, passwords/2FA, and why signing prompts each
 /// time — matching how the MPC wallet actually behaves (single device-key slot,
 /// backups exclude the device key, device transfer vs restore, etc.).
-///
-/// English-only inline literals per the app convention (D15).
 class HelpFaqScreen extends StatelessWidget {
   const HelpFaqScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final faqGroups = [
+      _FaqGroup(
+        title: l10n.helpFaqBackupsGroup,
+        icon: Icons.backup_outlined,
+        items: [
+          _Faq(l10n.helpFaqBackupHowQ, l10n.helpFaqBackupHowA),
+          _Faq(l10n.helpFaqRestoreHowQ, l10n.helpFaqRestoreHowA),
+          _Faq(l10n.helpFaqRestoredCantSendQ, l10n.helpFaqRestoredCantSendA),
+        ],
+      ),
+      _FaqGroup(
+        title: l10n.helpFaqMovingPhoneGroup,
+        icon: Icons.phonelink_setup_outlined,
+        items: [
+          _Faq(l10n.helpFaqMoveWalletQ, l10n.helpFaqMoveWalletA),
+          _Faq(l10n.helpFaqTwoPhonesQ, l10n.helpFaqTwoPhonesA),
+          _Faq(l10n.helpFaqShareErrorQ, l10n.helpFaqShareErrorA),
+        ],
+      ),
+      _FaqGroup(
+        title: l10n.helpFaqPassword2faGroup,
+        icon: Icons.password_outlined,
+        items: [
+          _Faq(l10n.helpFaqChangePasswordQ, l10n.helpFaqChangePasswordA),
+          _Faq(l10n.helpFaqForgotPasswordQ, l10n.helpFaqForgotPasswordA),
+          _Faq(l10n.helpFaqWhat2faQ, l10n.helpFaqWhat2faA),
+        ],
+      ),
+      _FaqGroup(
+        title: l10n.helpFaqSigningSecurityGroup,
+        icon: Icons.verified_user_outlined,
+        items: [
+          _Faq(l10n.helpFaqWhySignEveryTimeQ, l10n.helpFaqWhySignEveryTimeA),
+        ],
+      ),
+    ];
+
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Help & FAQ')),
+      appBar: AppBar(title: Text(l10n.helpFaqTitle)),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            const Text(
-              'Common questions about backing up, moving to a new phone, and '
-              'how your keys work.',
-              style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+            Text(
+              l10n.helpFaqIntro,
+              style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
             ),
             const SizedBox(height: 20),
-            for (final group in _faqGroups) ...[
+            for (final group in faqGroups) ...[
               _GroupHeader(icon: group.icon, title: group.title),
               const SizedBox(height: 8),
               TibaneCard(
@@ -68,98 +104,12 @@ class _FaqGroup {
   final String title;
   final IconData icon;
   final List<_Faq> items;
-  const _FaqGroup(this.title, this.icon, this.items);
+  const _FaqGroup({
+    required this.title,
+    required this.icon,
+    required this.items,
+  });
 }
-
-const List<_FaqGroup> _faqGroups = [
-  _FaqGroup('Backups', Icons.backup_outlined, [
-    _Faq(
-      'How do I back up my wallet?',
-      'Open your wallet, go to its details, and tap Export to save a backup '
-          'file. Keep it somewhere safe and private. When your phone\'s system '
-          'backup is on (iCloud on iPhone, Google on Android), the app also '
-          'keeps an automatic copy there.\n\n'
-          'Anyone who has your backup file AND your password can access your '
-          'funds — treat both like cash.',
-    ),
-    _Faq(
-      'How do I restore from a backup?',
-      'When adding a wallet, choose Import wallet → Tibane backup, open your '
-          'backup file (or paste the JSON), and enter the wallet\'s password. '
-          'When it finishes, tap "Set up now" to create this phone\'s signing '
-          'key with a 2FA code.',
-    ),
-    _Faq(
-      "I restored from a backup file but I can't send — why?",
-      'A backup file never contains a signing key (it\'s device-only for '
-          'security), so a restore alone can\'t sign. Finish with "Set up this '
-          'device": a quick 2FA verification creates a signing key on this '
-          'phone. Until then, sending is blocked — if you try to send you\'ll '
-          'see a "Set up" shortcut that takes you there.\n\n'
-          '(Moving with "Transfer to new device" instead brings the signing key '
-          'with it, so that path needs no extra setup.)',
-    ),
-  ]),
-  _FaqGroup('Moving to a new phone', Icons.phonelink_setup_outlined, [
-    _Faq(
-      'How do I move my wallet to a new phone?',
-      'If you still have the old phone, use Transfer to new device — it\'s the '
-          'smoothest way. On the old phone open the wallet and tap "Transfer to '
-          'new device" to show a QR code; on the new phone choose "Receive from '
-          'another device" and scan it, then enter the password. The signing key '
-          'travels securely between the phones, so no 2FA code is needed.\n\n'
-          'If you only have a backup file, restore it on the new phone and then '
-          '"Set up this device".',
-    ),
-    _Faq(
-      'Can I use the same wallet on two phones at the same time?',
-      'A wallet\'s signing key lives on one phone at a time. When you '
-          '"Set up this device" on a new phone, that phone becomes the wallet\'s '
-          'signing device and the previous phone will need to be set up again '
-          'before it can sign. Plan to sign from one phone.',
-    ),
-    _Faq(
-      'My backup file gives an error about a "share" or "party key".',
-      'That backup is out of date. Every time a wallet is set up on a device '
-          'its keys are refreshed, which makes older backup files stale. Export '
-          'a FRESH backup from the phone that currently works, then import that '
-          'one. Don\'t use "Repair 2FA key" with an old file — it can push a '
-          'stale key and break the phone that\'s working.',
-    ),
-  ]),
-  _FaqGroup('Password & 2FA', Icons.password_outlined, [
-    _Faq(
-      'How do I change my password?',
-      'Go to Settings → Security & Privacy → Change password. You\'ll confirm '
-          'the change with a 2FA code.',
-    ),
-    _Faq(
-      'I forgot my password.',
-      'Open the wallet\'s details (or Security & Privacy) and choose '
-          '"Forgot password? Reset via 2FA". Verify with a 2FA code and set a '
-          'new password.',
-    ),
-    _Faq(
-      'What is the 2FA key, and what does "Repair 2FA key" do?',
-      'Your 2FA key is a recovery key tied to your email or phone number. It\'s '
-          'used to recover or repair a wallet — not for everyday signing. If '
-          'setting up a restored wallet gets stuck ("participant stopped '
-          'responding"), your 2FA key may be out of sync; "Repair 2FA key" '
-          're-syncs it from your backup so setup can finish. Only repair from '
-          'the phone whose wallet currently works.',
-    ),
-  ]),
-  _FaqGroup('Signing & security', Icons.verified_user_outlined, [
-    _Faq(
-      'Why does every send ask for my password and fingerprint/face?',
-      'Your wallet is protected by three keys, and any two are needed to '
-          'approve a transaction: this phone\'s key (unlocked with your '
-          'fingerprint or face) plus your password. There is no "unlock once" — '
-          'every transaction is approved on its own, so a lost or stolen phone '
-          'can\'t sign without your password.',
-    ),
-  ]),
-];
 
 class _GroupHeader extends StatelessWidget {
   final IconData icon;

@@ -3,6 +3,7 @@ import 'package:libwallet/libwallet.dart' show VersionInfo;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/l10n.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/cat_logo.dart';
@@ -45,6 +46,7 @@ class _AboutScreenState extends State<AboutScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -70,7 +72,7 @@ class _AboutScreenState extends State<AboutScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Building on Solana',
+                  l10n.aboutHeroTagline,
                   style: serifStyle(
                     fontSize: 18,
                     color: TibaneColors.textMuted,
@@ -87,17 +89,14 @@ class _AboutScreenState extends State<AboutScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'The Story',
+                  l10n.aboutStoryTitle,
                   style: Theme.of(
                     context,
                   ).textTheme.titleMedium?.copyWith(color: TibaneColors.text),
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Tibane Labs is named after Tibane, a beloved cat who lived from the '
-                  '1990s until 2019. Tibane was the grandmother\'s cat of Mark Karpeles, '
-                  'and the inspiration behind the company name "Tibanne" — the entity '
-                  'that once operated Mt.Gox.',
+                  l10n.aboutStoryParagraph1,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: TibaneColors.textMuted,
                     height: 1.7,
@@ -105,9 +104,7 @@ class _AboutScreenState extends State<AboutScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Today, Tibane Labs develops open-source tools and infrastructure '
-                  'for the Solana ecosystem, including time-weighted staking pools, '
-                  'a token incinerator, and analytics tools.',
+                  l10n.aboutStoryParagraph2,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: TibaneColors.textMuted,
                     height: 1.7,
@@ -147,11 +144,11 @@ class _AboutScreenState extends State<AboutScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                _DetailRow(label: 'Launch', value: 'Fair launch on pump.fun'),
-                _DetailRow(label: 'Supply', value: '1B tokens (30M burned)'),
-                _DetailRow(label: 'Presale', value: 'None'),
-                _DetailRow(label: 'Team allocation', value: 'None'),
-                _DetailRow(label: 'Staking', value: '~10% in staking pool'),
+                _DetailRow(label: l10n.aboutTokenLaunchLabel, value: l10n.homeFairLaunch),
+                _DetailRow(label: l10n.aboutTokenSupplyLabel, value: l10n.aboutTokenSupplyValue),
+                _DetailRow(label: l10n.aboutTokenPresaleLabel, value: l10n.commonNone),
+                _DetailRow(label: l10n.aboutTokenTeamAllocLabel, value: l10n.commonNone),
+                _DetailRow(label: l10n.homeStakingTitle, value: l10n.aboutTokenStakingValue),
               ],
             ),
           ),
@@ -159,26 +156,26 @@ class _AboutScreenState extends State<AboutScreen> {
 
           // Links
           Text(
-            'LINKS',
+            l10n.aboutLinksSection,
             style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
           ),
           const SizedBox(height: 12),
           _LinkCard(
             icon: Icons.language,
-            label: 'Website',
+            label: l10n.aboutLinkWebsite,
             url: 'https://tibane.net',
           ),
           const SizedBox(height: 8),
           _LinkCard(
             icon: Icons.chat,
-            label: 'Twitter / X',
+            label: l10n.aboutLinkTwitter,
             url: 'https://x.com/TibaneLabs',
           ),
           const SizedBox(height: 32),
 
           // Diagnostics
           Text(
-            'DIAGNOSTICS',
+            l10n.aboutDiagnosticsSection,
             style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
           ),
           const SizedBox(height: 12),
@@ -190,12 +187,12 @@ class _AboutScreenState extends State<AboutScreen> {
             child: Column(
               children: [
                 Text(
-                  'Built on Solana',
+                  l10n.aboutBuiltOnSolana,
                   style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '2026 Karpeles Lab Inc',
+                  l10n.aboutCopyright,
                   style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
                 ),
               ],
@@ -289,6 +286,7 @@ class _VersionInfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return TibaneCard(
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -298,7 +296,7 @@ class _VersionInfoCard extends StatelessWidget {
             'libwallet',
             info?.version.isNotEmpty == true
                 ? info!.version
-                : (error != null ? 'unavailable' : 'loading…'),
+                : (error != null ? l10n.aboutDiagUnavailable : l10n.aboutDiagLoading),
           ),
           if (info != null && info!.gitTag.isNotEmpty) _kv('git', info!.gitTag),
           if (info != null && info!.dateTag.isNotEmpty)

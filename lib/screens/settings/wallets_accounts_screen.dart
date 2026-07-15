@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/l10n.dart';
 import '../../theme/tibane_theme.dart';
 import '../contacts/contacts_screen.dart';
 import '../settings_screen.dart' show SettingsTile;
@@ -20,9 +21,10 @@ class WalletsAccountsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Wallets & Accounts')),
+      appBar: AppBar(title: Text(l10n.settingsWalletsAccountsTitle)),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
@@ -30,8 +32,8 @@ class WalletsAccountsScreen extends StatelessWidget {
             children: [
               SettingsTile(
                 icon: Icons.account_circle_outlined,
-                title: 'Manage accounts',
-                subtitle: 'Chain accounts derived from your wallets',
+                title: l10n.walletsAccountsManageAccountsTitle,
+                subtitle: l10n.walletsAccountsManageAccountsSubtitle,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const AccountsManagementScreen(),
@@ -41,8 +43,8 @@ class WalletsAccountsScreen extends StatelessWidget {
               const SizedBox(height: 6),
               SettingsTile(
                 icon: Icons.shield_outlined,
-                title: 'Manage wallets',
-                subtitle: 'Create, back up, or remove on-device wallets',
+                title: l10n.walletsAccountsManageWalletsTitle,
+                subtitle: l10n.walletsAccountsManageWalletsSubtitle,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const WalletsManagementScreen(),
@@ -52,8 +54,8 @@ class WalletsAccountsScreen extends StatelessWidget {
               const SizedBox(height: 6),
               SettingsTile(
                 icon: Icons.qr_code_scanner,
-                title: 'Receive wallet from another device',
-                subtitle: 'Scan a QR to move a wallet from your old phone',
+                title: l10n.walletsAccountsReceiveFromDeviceTitle,
+                subtitle: l10n.walletsAccountsReceiveFromDeviceSubtitle,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const DeviceTransferReceiveScreen(),
@@ -63,8 +65,8 @@ class WalletsAccountsScreen extends StatelessWidget {
               const SizedBox(height: 6),
               SettingsTile(
                 icon: Icons.hub_outlined,
-                title: 'Networks',
-                subtitle: 'Pick the active blockchain network',
+                title: l10n.networksTitle,
+                subtitle: l10n.walletsAccountsNetworksSubtitle,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const NetworksScreen()),
                 ),
@@ -72,8 +74,8 @@ class WalletsAccountsScreen extends StatelessWidget {
               const SizedBox(height: 6),
               SettingsTile(
                 icon: Icons.token_outlined,
-                title: 'Tokens',
-                subtitle: 'Add custom tokens or pick from the curated list',
+                title: l10n.tokensTitle,
+                subtitle: l10n.walletsAccountsTokensSubtitle,
                 onTap: () => Navigator.of(
                   context,
                 ).push(MaterialPageRoute(builder: (_) => const TokensScreen())),
@@ -81,8 +83,8 @@ class WalletsAccountsScreen extends StatelessWidget {
               const SizedBox(height: 6),
               SettingsTile(
                 icon: Icons.collections_outlined,
-                title: 'NFTs',
-                subtitle: 'View NFTs held on the active network',
+                title: l10n.walletsAccountsNftsTitle,
+                subtitle: l10n.walletsAccountsNftsSubtitle,
                 onTap: () => Navigator.of(
                   context,
                 ).push(MaterialPageRoute(builder: (_) => const NftsScreen())),
@@ -90,8 +92,8 @@ class WalletsAccountsScreen extends StatelessWidget {
               const SizedBox(height: 6),
               SettingsTile(
                 icon: Icons.people_outline,
-                title: 'Contacts',
-                subtitle: 'Saved addresses for sends and swaps',
+                title: l10n.contactsTitle,
+                subtitle: l10n.walletsAccountsContactsSubtitle,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const ContactsScreen()),
                 ),
@@ -99,8 +101,8 @@ class WalletsAccountsScreen extends StatelessWidget {
               const SizedBox(height: 6),
               SettingsTile(
                 icon: Icons.upload_outlined,
-                title: 'Import wallet',
-                subtitle: 'Seed phrase or encrypted backup file',
+                title: l10n.walletsAccountsImportWalletTitle,
+                subtitle: l10n.walletsAccountsImportWalletSubtitle,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const InAppImportScreen()),
                 ),
@@ -108,8 +110,8 @@ class WalletsAccountsScreen extends StatelessWidget {
               const SizedBox(height: 6),
               SettingsTile(
                 icon: Icons.download_outlined,
-                title: 'Export in-app wallet',
-                subtitle: 'Encrypted backup file (share or save to disk)',
+                title: l10n.walletsAccountsExportWalletTitle,
+                subtitle: l10n.walletsAccountsExportWalletSubtitle,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const InAppExportScreen()),
                 ),

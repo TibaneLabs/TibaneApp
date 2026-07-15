@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/browser_preferences.dart';
 import '../../services/uk_compliance_service.dart';
 import '../../theme/tibane_theme.dart';
@@ -36,16 +37,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _initialised = true;
     }
 
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Browser')),
+      appBar: AppBar(title: Text(l10n.browserTitle)),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _SectionLabel('Start page'),
+              _SectionLabel(l10n.browserStartPage),
               const SizedBox(height: 8),
               TibaneCard(
                 child: Padding(
@@ -74,22 +76,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               _startPageCtrl.text = kDefaultBrowserStartPage;
                               prefs.setStartPage(kDefaultBrowserStartPage);
                             },
-                            child: const Text('Reset to default'),
+                            child: Text(l10n.browserSettingsResetToDefault),
                           ),
                           TextButton(
                             onPressed: () =>
                                 prefs.setStartPage(_startPageCtrl.text),
-                            child: const Text('Save'),
+                            child: Text(l10n.actionSave),
                           ),
                         ],
                       ),
                       if (uk.isUk)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 4),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
                           child: Text(
-                            'UK region: the browser ignores this setting and '
-                            'opens a neutral search engine, per FCA compliance.',
-                            style: TextStyle(
+                            l10n.browserSettingsUkNotice,
+                            style: const TextStyle(
                               color: TibaneColors.textMuted,
                               fontSize: 12,
                             ),
@@ -100,15 +101,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              _SectionLabel('Favorites'),
+              _SectionLabel(l10n.browserFavorites),
               const SizedBox(height: 8),
               if (prefs.favorites.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                   child: Text(
-                    'No favorites yet. Tap the star inside the URL bar to '
-                    'add the current page.',
-                    style: TextStyle(
+                    l10n.browserSettingsNoFavorites,
+                    style: const TextStyle(
                       color: TibaneColors.textMuted,
                       fontSize: 13,
                     ),
@@ -183,7 +183,7 @@ class _FavoriteRow extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: 'Remove',
+            tooltip: context.l10n.actionRemove,
             icon: const Icon(Icons.close, size: 18),
             onPressed: onRemove,
             color: TibaneColors.textDim,

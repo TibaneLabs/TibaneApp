@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/l10n.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/tibane_card.dart';
@@ -29,23 +30,24 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final wallet = context.watch<WalletService>();
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionLabel('Active account'),
+          _SectionLabel(l10n.settingsActiveAccount),
           const SizedBox(height: 10),
           _ActiveWalletCard(wallet: wallet),
           const SizedBox(height: 24),
 
-          _SectionLabel('Settings'),
+          _SectionLabel(l10n.settingsSection),
           const SizedBox(height: 10),
           SettingsTile(
             icon: Icons.account_balance_wallet_outlined,
-            title: 'Wallets & Accounts',
-            subtitle: 'Accounts, networks, tokens, NFTs, contacts',
+            title: l10n.settingsWalletsAccountsTitle,
+            subtitle: l10n.settingsWalletsAccountsSubtitle,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const WalletsAccountsScreen()),
             ),
@@ -53,8 +55,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 6),
           SettingsTile(
             icon: Icons.lock_outline,
-            title: 'Security & Privacy',
-            subtitle: 'Password, biometrics, TSS shares, backups',
+            title: l10n.settingsSecurityPrivacyTitle,
+            subtitle: l10n.settingsSecurityPrivacySubtitle,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const SecurityPrivacyScreen()),
             ),
@@ -62,8 +64,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 6),
           SettingsTile(
             icon: Icons.link,
-            title: 'Connections',
-            subtitle: 'WalletConnect, connected sites, agents',
+            title: l10n.settingsConnectionsTitle,
+            subtitle: l10n.settingsConnectionsSubtitle,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const ConnectionsScreen()),
             ),
@@ -71,8 +73,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 6),
           SettingsTile(
             icon: Icons.public,
-            title: 'Browser',
-            subtitle: 'Start page, favorites',
+            title: l10n.browserTitle,
+            subtitle: l10n.settingsBrowserSubtitle,
             onTap: () => Navigator.of(
               context,
             ).push(MaterialPageRoute(builder: (_) => const BrowserScreen())),
@@ -80,8 +82,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 6),
           SettingsTile(
             icon: Icons.tune,
-            title: 'General',
-            subtitle: 'Region, about',
+            title: l10n.settingsGeneralTitle,
+            subtitle: l10n.settingsGeneralSubtitle,
             onTap: () => Navigator.of(
               context,
             ).push(MaterialPageRoute(builder: (_) => const GeneralScreen())),
@@ -89,8 +91,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 6),
           SettingsTile(
             icon: Icons.help_outline,
-            title: 'Help & FAQ',
-            subtitle: 'Backups, moving phones, passwords & 2FA',
+            title: l10n.helpFaqTitle,
+            subtitle: l10n.settingsHelpFaqSubtitle,
             onTap: () => Navigator.of(
               context,
             ).push(MaterialPageRoute(builder: (_) => const HelpFaqScreen())),
@@ -102,7 +104,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
             SettingsTile(
               icon: Icons.logout_outlined,
-              title: 'Disconnect',
+              title: l10n.actionDisconnect,
               destructive: true,
               onTap: () => _confirmDisconnect(context, wallet),
             ),
@@ -116,25 +118,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     BuildContext context,
     WalletService wallet,
   ) async {
+    final l10n = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
-        title: const Text('Disconnect wallet?'),
-        content: const Text(
-          'You can reconnect by tapping the wallet button at the top.',
-          style: TextStyle(color: TibaneColors.textMuted),
+        title: Text(l10n.settingsDisconnectDialogTitle),
+        content: Text(
+          l10n.settingsDisconnectDialogBody,
+          style: const TextStyle(color: TibaneColors.textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Disconnect',
-              style: TextStyle(color: TibaneColors.error),
+            child: Text(
+              l10n.actionDisconnect,
+              style: const TextStyle(color: TibaneColors.error),
             ),
           ),
         ],
@@ -169,16 +172,17 @@ class _ActiveWalletCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     if (!wallet.isConnected) {
       return TibaneCard(
         child: Row(
           children: [
             const Icon(Icons.lock_outline, color: TibaneColors.textMuted),
             const SizedBox(width: 12),
-            const Expanded(
+            Expanded(
               child: Text(
-                'No wallet connected',
-                style: TextStyle(color: TibaneColors.textMuted),
+                l10n.settingsNoWalletConnected,
+                style: const TextStyle(color: TibaneColors.textMuted),
               ),
             ),
           ],
@@ -186,7 +190,9 @@ class _ActiveWalletCard extends StatelessWidget {
       );
     }
 
-    final kindLabel = wallet.kind == WalletKind.inapp ? 'In-app' : 'External';
+    final kindLabel = wallet.kind == WalletKind.inapp
+        ? l10n.settingsWalletKindInapp
+        : l10n.settingsWalletKindExternal;
     final address = wallet.publicKey ?? '';
     final shortAddress = address.length > 14
         ? '${address.substring(0, 6)}...${address.substring(address.length - 6)}'
@@ -222,7 +228,7 @@ class _ActiveWalletCard extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      wallet.walletName ?? 'Wallet',
+                      wallet.walletName ?? l10n.labelWallet,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     Text(
@@ -239,7 +245,7 @@ class _ActiveWalletCard extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            'SOLANA ADDRESS',
+            l10n.settingsSolanaAddressLabel,
             style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
           ),
           const SizedBox(height: 6),
@@ -252,14 +258,14 @@ class _ActiveWalletCard extends StatelessWidget {
                 ),
               ),
               IconButton(
-                tooltip: 'Copy',
+                tooltip: l10n.actionCopy,
                 icon: const Icon(Icons.copy, size: 16),
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: address));
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Address copied'),
-                      duration: Duration(seconds: 1),
+                    SnackBar(
+                      content: Text(l10n.addressCopied),
+                      duration: const Duration(seconds: 1),
                     ),
                   );
                 },

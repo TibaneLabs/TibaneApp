@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/solana_constants.dart';
+import '../l10n/l10n.dart';
 import '../screens/wallet/inapp_create_screen.dart';
 import '../screens/wallet/widgets/account_switcher_sheet.dart';
 import '../services/wallet/unified_account.dart';
@@ -19,6 +20,7 @@ class WalletButton extends StatelessWidget {
     return Consumer<WalletService>(
       builder: (context, wallet, _) {
         if (wallet.isConnecting) {
+          final l10n = context.l10n;
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
@@ -26,10 +28,10 @@ class WalletButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: TibaneColors.border),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SizedBox(
+                const SizedBox(
                   width: 14,
                   height: 14,
                   child: CircularProgressIndicator(
@@ -37,10 +39,10 @@ class WalletButton extends StatelessWidget {
                     color: TibaneColors.orange,
                   ),
                 ),
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
                 Text(
-                  'Connecting...',
-                  style: TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+                  l10n.walletButtonConnecting,
+                  style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
                 ),
               ],
             ),
@@ -64,26 +66,27 @@ class _ConnectButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Material(
       color: TibaneColors.orange,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: () => _showConnectDialog(context),
         borderRadius: BorderRadius.circular(8),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
+              const Icon(
                 Icons.account_balance_wallet_outlined,
                 size: 16,
                 color: TibaneColors.black,
               ),
-              SizedBox(width: 6),
+              const SizedBox(width: 6),
               Text(
-                'Connect',
-                style: TextStyle(
+                l10n.actionConnect,
+                style: const TextStyle(
                   color: TibaneColors.black,
                   fontWeight: FontWeight.w600,
                   fontSize: 13,
@@ -121,13 +124,14 @@ class _ConnectButton extends StatelessWidget {
   /// (native `NO_WALLET`). Captures the messenger before the sheet closes.
   Future<void> _connectExternal(BuildContext sheetContext) async {
     final messenger = ScaffoldMessenger.of(sheetContext);
+    final l10n = sheetContext.l10n;
     Navigator.pop(sheetContext);
     final ok = await wallet.connectMwa();
     if (!ok) {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            wallet.mwa.error ?? 'No compatible wallet app is installed.',
+            wallet.mwa.error ?? l10n.walletButtonNoWalletInstalled,
           ),
         ),
       );
@@ -141,64 +145,67 @@ class _ConnectButton extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: TibaneColors.textDim,
-                borderRadius: BorderRadius.circular(2),
+      builder: (context) {
+        final l10n = context.l10n;
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: TibaneColors.textDim,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Connect Wallet',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Connect your Solana wallet to use Tibane tools',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            if (Platform.isAndroid) ...[
+              const SizedBox(height: 20),
+              Text(
+                l10n.walletButtonConnectTitle,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.walletButtonConnectSubtitle,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              if (Platform.isAndroid) ...[
+                _WalletOption(
+                  name: l10n.walletButtonSeedVaultName,
+                  subtitle: l10n.walletButtonSeedVaultSubtitle,
+                  icon: Icons.security,
+                  onTap: () => _connectExternal(context),
+                ),
+                const SizedBox(height: 12),
+                _WalletOption(
+                  name: l10n.walletButtonOtherWalletName,
+                  subtitle: l10n.walletButtonOtherWalletSubtitle,
+                  icon: Icons.wallet,
+                  onTap: () => _connectExternal(context),
+                ),
+                const SizedBox(height: 12),
+              ],
               _WalletOption(
-                name: 'Seed Vault',
-                subtitle: 'Seeker native wallet',
-                icon: Icons.security,
-                onTap: () => _connectExternal(context),
+                name: l10n.walletButtonInAppWalletName,
+                subtitle: wallet.libwallet.hasWallet
+                    ? l10n.walletButtonInAppWalletUnlock
+                    : l10n.walletButtonInAppWalletCreate,
+                icon: Icons.shield_outlined,
+                onTap: () {
+                  Navigator.pop(context);
+                  _openInAppFlow(context, wallet);
+                },
               ),
-              const SizedBox(height: 12),
-              _WalletOption(
-                name: 'Other Wallet',
-                subtitle: 'Phantom, Solflare, etc.',
-                icon: Icons.wallet,
-                onTap: () => _connectExternal(context),
-              ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
             ],
-            _WalletOption(
-              name: 'In-app wallet',
-              subtitle: wallet.libwallet.hasWallet
-                  ? 'Unlock your Tibane wallet'
-                  : 'Create a new MPC wallet',
-              icon: Icons.shield_outlined,
-              onTap: () {
-                Navigator.pop(context);
-                _openInAppFlow(context, wallet);
-              },
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/l10n.dart';
 import '../services/uk_compliance_service.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
@@ -74,7 +75,7 @@ class _HeroSection extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                'Research, development and tools\nfor the Solana ecosystem',
+                context.l10n.homeHeroSubtitle,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: TibaneColors.textMuted,
@@ -101,7 +102,7 @@ class _HeroSection extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'LIVE ON SOLANA',
+                    context.l10n.homeLiveOnSolana,
                     style: monoStyle(fontSize: 10, color: TibaneColors.cyan),
                   ),
                 ],
@@ -127,14 +128,14 @@ class _ToolsSection extends StatelessWidget {
     // chain gating). Swap + Token info are chain-neutral and stay.
     final solana = context.watch<WalletService>().solanaFeaturesEnabled;
 
+    final l10n = context.l10n;
     final cards = <Widget>[
       if (solana)
         FeatureCard(
           icon: Icons.local_fire_department,
           title: 'Incinerator',
-          description:
-              'Burn unwanted tokens, NFTs, and domains. Reclaim SOL from closed accounts.',
-          badge: 'LIVE',
+          description: l10n.homeIncineratorDescription,
+          badge: l10n.homeBadgeLive,
           badgeColor: TibaneColors.cyan,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
@@ -151,16 +152,15 @@ class _ToolsSection extends StatelessWidget {
       if (!isUk && solana)
         FeatureCard(
           icon: Icons.account_balance,
-          title: 'Staking',
-          description:
-              'Time-weighted staking pools with exponential decay rewards.',
-          badge: 'LIVE',
+          title: l10n.homeStakingTitle,
+          description: l10n.homeStakingDescription,
+          badge: l10n.homeBadgeLive,
           badgeColor: TibaneColors.cyan,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => Scaffold(
                 backgroundColor: TibaneColors.black,
-                appBar: AppBar(title: const Text('Staking pools')),
+                appBar: AppBar(title: Text(l10n.homeStakingPoolsTitle)),
                 body: const SafeArea(child: StakingPoolsScreen()),
               ),
             ),
@@ -169,18 +169,17 @@ class _ToolsSection extends StatelessWidget {
       if (!isUk)
         FeatureCard(
           icon: Icons.swap_horiz,
-          title: 'Swap',
-          description: 'Swap tokens across Solana and EVM chains with minimal fees.',
-          badge: 'LIVE',
+          title: l10n.homeSwapTitle,
+          description: l10n.homeSwapDescription,
+          badge: l10n.homeBadgeLive,
           badgeColor: TibaneColors.cyan,
           onTap: () => onNavigate(1),
         ),
       FeatureCard(
         icon: Icons.analytics_outlined,
-        title: 'Token info & Favorites',
-        description:
-            'Real-time token analytics, holder distribution, and transaction history.',
-        badge: 'LIVE',
+        title: l10n.homeTokenInfoTitle,
+        description: l10n.homeTokenInfoDescription,
+        badge: l10n.homeBadgeLive,
         badgeColor: TibaneColors.cyan,
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const TokenFavoritesScreen()),
@@ -194,7 +193,7 @@ class _ToolsSection extends StatelessWidget {
         Row(
           children: [
             Text(
-              'TOOLS',
+              context.l10n.homeToolsSection,
               style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
             ),
             const SizedBox(width: 8),
@@ -246,7 +245,7 @@ class _AboutSection extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      'Fair launch on pump.fun',
+                      context.l10n.homeFairLaunch,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: TibaneColors.textMuted,
                       ),
@@ -258,8 +257,7 @@ class _AboutSection extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            'Named after Tibane, a cat who lived from the 1990s to 2019 '
-            'and inspired the company name Tibanne.',
+            context.l10n.homeAboutDescription,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: TibaneColors.textMuted,
               height: 1.5,

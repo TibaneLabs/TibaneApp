@@ -4,6 +4,7 @@ import 'package:libwallet/libwallet.dart' show WcSession;
 import 'package:provider/provider.dart';
 
 import '../../constants/solana_constants.dart';
+import '../../l10n/l10n.dart';
 import '../../main.dart' show rootNavigatorKey;
 import '../../services/wallet/walletconnect_bridge.dart';
 import '../../services/wallet_service.dart';
@@ -114,7 +115,7 @@ class _WalletConnectSessionsScreenState
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Clipboard is empty')));
+      ).showSnackBar(SnackBar(content: Text(context.l10n.wcSessionsClipboardEmpty)));
       return;
     }
     _uriCtrl.text = text;
@@ -127,7 +128,7 @@ class _WalletConnectSessionsScreenState
     if (bridge == null || uri.isEmpty) return;
     if (!uri.startsWith('wc:')) {
       logError('[WalletConnectSessions._pair] invalid URI: must start with "wc:"');
-      setState(() => _error = 'URI must start with "wc:"');
+      setState(() => _error = context.l10n.wcSessionsUriError);
       return;
     }
     setState(() {
@@ -149,36 +150,34 @@ class _WalletConnectSessionsScreenState
     });
     if (topic != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Pairing in progress — wait for the dApp to send a '
-            'session proposal',
-          ),
+        SnackBar(
+          content: Text(context.l10n.wcSessionsPairingInProgress),
         ),
       );
     }
   }
 
   Future<void> _disconnect(WcSession s) async {
+    final l10n = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
-        title: const Text('Disconnect session?'),
+        title: Text(l10n.wcSessionsDisconnectTitle),
         content: Text(
-          'Disconnect from "${s.peerName.isNotEmpty ? s.peerName : s.topic}"?',
+          l10n.wcSessionsDisconnectConfirm(s.peerName.isNotEmpty ? s.peerName : s.topic),
           style: const TextStyle(color: TibaneColors.textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Disconnect',
-              style: TextStyle(color: TibaneColors.error),
+            child: Text(
+              l10n.actionDisconnect,
+              style: const TextStyle(color: TibaneColors.error),
             ),
           ),
         ],
@@ -199,7 +198,7 @@ class _WalletConnectSessionsScreenState
         title: const Text('WalletConnect'),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: context.l10n.actionRefresh,
             onPressed: _refresh,
             icon: const Icon(Icons.refresh),
           ),
@@ -213,11 +212,8 @@ class _WalletConnectSessionsScreenState
               if (notConfigured)
                 _Banner(
                   icon: Icons.warning_amber_outlined,
-                  title: 'No project id configured',
-                  body:
-                      'Set `walletConnectProjectId` in lib/constants/solana_'
-                      'constants.dart to a project id from cloud.walletconnect'
-                      '.com to enable pairing.',
+                  title: context.l10n.wcSessionsNoProjectId,
+                  body: context.l10n.wcSessionsNoProjectIdBody,
                 )
               else if (bridge == null)
                 const Center(
@@ -233,10 +229,10 @@ class _WalletConnectSessionsScreenState
                   children: [
                     _Banner(
                       icon: Icons.power_settings_new,
-                      title: 'Relay offline',
+                      title: context.l10n.wcSessionsRelayOffline,
                       body:
                           bridge.error ??
-                          'Start the relay to begin pairing with dApps.',
+                          context.l10n.wcSessionsRelayOfflineBody,
                     ),
                     const SizedBox(height: 12),
                     FilledButton.icon(
@@ -250,20 +246,20 @@ class _WalletConnectSessionsScreenState
                         ),
                       ),
                       icon: const Icon(Icons.play_arrow),
-                      label: Text(_starting ? 'Starting…' : 'Start relay'),
+                      label: Text(_starting ? context.l10n.wcSessionsStarting : context.l10n.wcSessionsStartRelay),
                     ),
                   ],
                 )
               else ...[
-                _SectionLabel('Pair with a dApp'),
+                _SectionLabel(context.l10n.wcSessionsPairSection),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _uriCtrl,
                   autocorrect: false,
                   decoration: InputDecoration(
-                    labelText: 'wc:… URI',
+                    labelText: context.l10n.wcSessionsUriLabel,
                     suffixIcon: IconButton(
-                      tooltip: 'Paste from clipboard',
+                      tooltip: context.l10n.wcSessionsPasteTooltip,
                       icon: const Icon(Icons.paste, size: 18),
                       onPressed: _pasteAndPair,
                     ),
@@ -281,7 +277,7 @@ class _WalletConnectSessionsScreenState
                           foregroundColor: TibaneColors.black,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        child: Text(_pairing ? 'Pairing…' : 'Pair'),
+                        child: Text(_pairing ? context.l10n.wcSessionsPairing : context.l10n.wcSessionsPair),
                       ),
                     ),
                   ],
@@ -294,7 +290,7 @@ class _WalletConnectSessionsScreenState
                   ),
                 ],
                 const SizedBox(height: 20),
-                _SectionLabel('Sessions'),
+                _SectionLabel(context.l10n.wcSessionsSessionsSection),
                 const SizedBox(height: 8),
                 if (_loading)
                   const Center(
@@ -309,8 +305,8 @@ class _WalletConnectSessionsScreenState
                   Padding(
                     padding: const EdgeInsets.all(20),
                     child: Text(
-                      'No active sessions.',
-                      style: TextStyle(color: TibaneColors.textMuted),
+                      context.l10n.wcSessionsEmpty,
+                      style: const TextStyle(color: TibaneColors.textMuted),
                     ),
                   )
                 else
@@ -434,7 +430,7 @@ class _SessionRow extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: 'Disconnect',
+            tooltip: context.l10n.actionDisconnect,
             icon: const Icon(Icons.close, size: 18),
             color: TibaneColors.error,
             onPressed: onDisconnect,

@@ -22,6 +22,7 @@ import '../utils/amount.dart';
 import '../utils/log.dart';
 import '../utils/wallet_error.dart';
 import '../widgets/wallet_error_display.dart';
+import '../l10n/l10n.dart';
 
 class IncineratorScreen extends StatefulWidget {
   const IncineratorScreen({super.key});
@@ -276,26 +277,27 @@ class _IncineratorScreenState extends State<IncineratorScreen>
   }
 
   Future<void> _burnSelected() async {
+    final l10n = context.l10n;
     // Confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
-        title: const Text('Confirm Burn'),
+        title: Text(l10n.incineratorConfirmBurnTitle),
         content: Text(
-          'Burn $_selectedCount selected item${_selectedCount == 1 ? '' : 's'}? This cannot be undone.',
+          l10n.incineratorConfirmBurnBody(_selectedCount),
           style: const TextStyle(color: TibaneColors.textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Burn',
-              style: TextStyle(color: TibaneColors.error),
+            child: Text(
+              l10n.incineratorBurnButton,
+              style: const TextStyle(color: TibaneColors.error),
             ),
           ),
         ],
@@ -317,18 +319,19 @@ class _IncineratorScreenState extends State<IncineratorScreen>
   }
 
   Future<void> _partialBurn(TokenAccount account) async {
+    final l10n = context.l10n;
     final controller = TextEditingController();
     final confirmed = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
-        title: Text('Burn ${account.displayName}'),
+        title: Text(l10n.incineratorPartialBurnTitle(account.displayName)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Balance: ${formatTokenAmount(account.amount, account.decimals)}',
+              l10n.commonBalanceLabel(formatTokenAmount(account.amount, account.decimals)),
               style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
             ),
             const SizedBox(height: 12),
@@ -337,7 +340,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              decoration: const InputDecoration(hintText: 'Amount to burn'),
+              decoration: InputDecoration(hintText: l10n.incineratorAmountHint),
               autofocus: true,
             ),
             const SizedBox(height: 8),
@@ -358,13 +361,13 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text(
-              'Burn',
-              style: TextStyle(color: TibaneColors.error),
+            child: Text(
+              l10n.incineratorBurnButton,
+              style: const TextStyle(color: TibaneColors.error),
             ),
           ),
         ],
@@ -412,7 +415,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       final sig = sigs.first;
       if (sig != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Burned: ${sig.substring(0, 8)}...')),
+          SnackBar(content: Text(context.l10n.incineratorBurnedSig(sig.substring(0, 8)))),
         );
         await _rpc.confirmTransaction(sig);
         if (!mounted) return;
@@ -566,7 +569,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       if (successCount > 0) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Burned $successCount items')));
+        ).showSnackBar(SnackBar(content: Text(context.l10n.incineratorBurnedItems(successCount))));
         _clearSelection();
       } else if (wallet.error != null) {
         logError('[Incinerator._directBurn] wallet error: ${wallet.error}');
@@ -770,7 +773,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       if (signatures.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Burned ${signatures.length} batches via relay'),
+            content: Text(context.l10n.incineratorBurnedBatches(signatures.length)),
           ),
         );
         _clearSelection();
@@ -796,6 +799,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final wallet = context.watch<WalletService>();
     final anyLoading = _loadingTokens || _loadingNfts || _loadingDomains;
 
@@ -824,11 +828,11 @@ class _IncineratorScreenState extends State<IncineratorScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Incinerator',
+                      l10n.incineratorTitle,
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     Text(
-                      'Burn tokens, NFTs & domains',
+                      l10n.incineratorSubtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: TibaneColors.textMuted,
                       ),
@@ -865,14 +869,14 @@ class _IncineratorScreenState extends State<IncineratorScreen>
             tabs: [
               Tab(
                 text: _loadingTokens
-                    ? 'Tokens ...'
-                    : 'Tokens (${_tokenAccounts.length})',
+                    ? l10n.incineratorTabTokensLoading
+                    : l10n.incineratorTabTokens(_tokenAccounts.length),
               ),
-              Tab(text: _loadingNfts ? 'NFTs ...' : 'NFTs (${_nfts.length})'),
+              Tab(text: _loadingNfts ? l10n.incineratorTabNftsLoading : l10n.incineratorTabNfts(_nfts.length)),
               Tab(
                 text: _loadingDomains
-                    ? 'Domains ...'
-                    : 'Domains (${_domains.length})',
+                    ? l10n.incineratorTabDomainsLoading
+                    : l10n.incineratorTabDomains(_domains.length),
               ),
             ],
           ),
@@ -976,7 +980,7 @@ class _NotConnectedView extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'Connect your wallet to view your tokens',
+              context.l10n.incineratorConnectWallet,
               style: Theme.of(
                 context,
               ).textTheme.bodyLarge?.copyWith(color: TibaneColors.textMuted),
@@ -1015,7 +1019,7 @@ class _ErrorView extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
+            OutlinedButton(onPressed: onRetry, child: Text(context.l10n.actionRetry)),
           ],
         ),
       ),
@@ -1041,13 +1045,13 @@ class _TokensList extends StatelessWidget {
     if (accounts.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        children: const [
+        children: [
           SizedBox(
             height: 240,
             child: Center(
               child: Text(
-                'No token accounts found',
-                style: TextStyle(color: TibaneColors.textMuted),
+                context.l10n.incineratorNoTokenAccounts,
+                style: const TextStyle(color: TibaneColors.textMuted),
               ),
             ),
           ),
@@ -1055,6 +1059,7 @@ class _TokensList extends StatelessWidget {
       );
     }
 
+    final l10n = context.l10n;
     final emptyAccounts = accounts.where((a) => a.isEmpty).toList();
     final nonEmptyAccounts = accounts.where((a) => !a.isEmpty).toList();
 
@@ -1075,12 +1080,12 @@ class _TokensList extends StatelessWidget {
               activeColor: TibaneColors.orange,
             ),
             Text(
-              '${accounts.length} accounts',
+              l10n.incineratorAccountCount(accounts.length),
               style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
             ),
             const Spacer(),
             Text(
-              '${emptyAccounts.length} empty',
+              l10n.incineratorEmptyCount(emptyAccounts.length),
               style: monoStyle(fontSize: 12, color: TibaneColors.textDim),
             ),
           ],
@@ -1090,7 +1095,7 @@ class _TokensList extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
-              'EMPTY ACCOUNTS',
+              l10n.incineratorSectionEmpty,
               style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
             ),
           ),
@@ -1103,7 +1108,7 @@ class _TokensList extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
-              'TOKENS',
+              l10n.incineratorSectionTokens,
               style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
             ),
           ),
@@ -1174,7 +1179,7 @@ class _TokenAccountTile extends StatelessWidget {
                     ),
                     Text(
                       account.isEmpty
-                          ? 'Empty account'
+                          ? context.l10n.incineratorEmptyAccount
                           : formatTokenAmount(account.amount, account.decimals),
                       style: monoStyle(
                         fontSize: 11,
@@ -1246,13 +1251,13 @@ class _NftsList extends StatelessWidget {
     if (nfts.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        children: const [
+        children: [
           SizedBox(
             height: 240,
             child: Center(
               child: Text(
-                'No NFTs found',
-                style: TextStyle(color: TibaneColors.textMuted),
+                context.l10n.incineratorNoNfts,
+                style: const TextStyle(color: TibaneColors.textMuted),
               ),
             ),
           ),
@@ -1260,6 +1265,7 @@ class _NftsList extends StatelessWidget {
       );
     }
 
+    final l10n = context.l10n;
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1277,12 +1283,12 @@ class _NftsList extends StatelessWidget {
               activeColor: TibaneColors.orange,
             ),
             Text(
-              '${nfts.length} NFTs',
+              l10n.incineratorNftCount(nfts.length),
               style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
             ),
             const Spacer(),
             Text(
-              '${nfts.where((n) => n.compressed).length} compressed',
+              l10n.incineratorCompressedCount(nfts.where((n) => n.compressed).length),
               style: monoStyle(fontSize: 12, color: TibaneColors.textDim),
             ),
           ],
@@ -1427,13 +1433,13 @@ class _DomainsList extends StatelessWidget {
     if (domains.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        children: const [
+        children: [
           SizedBox(
             height: 240,
             child: Center(
               child: Text(
-                'No domains found',
-                style: TextStyle(color: TibaneColors.textMuted),
+                context.l10n.incineratorNoDomains,
+                style: const TextStyle(color: TibaneColors.textMuted),
               ),
             ),
           ),
@@ -1441,6 +1447,7 @@ class _DomainsList extends StatelessWidget {
       );
     }
 
+    final l10n = context.l10n;
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       physics: const AlwaysScrollableScrollPhysics(),
@@ -1458,7 +1465,7 @@ class _DomainsList extends StatelessWidget {
               activeColor: TibaneColors.orange,
             ),
             Text(
-              '${domains.length} domains',
+              l10n.incineratorDomainCount(domains.length),
               style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
             ),
           ],
@@ -1558,6 +1565,7 @@ class _BottomBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
       decoration: const BoxDecoration(
@@ -1578,14 +1586,14 @@ class _BottomBar extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        '$selectedCount selected',
+                        l10n.incineratorSelectedCount(selectedCount),
                         style: const TextStyle(
                           color: TibaneColors.text,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       Text(
-                        'Reclaim ${formatSol(reclaimableSol)} SOL',
+                        l10n.incineratorReclaimSol(formatSol(reclaimableSol)),
                         style: monoStyle(
                           fontSize: 12,
                           color: TibaneColors.gold,
@@ -1601,7 +1609,7 @@ class _BottomBar extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Sponsored',
+                          l10n.incineratorSponsored,
                           style: monoStyle(
                             fontSize: 11,
                             color: TibaneColors.textMuted,
@@ -1631,8 +1639,8 @@ class _BottomBar extends StatelessWidget {
                 children: [
                   Text(
                     tipPercent.round() == 0
-                        ? 'Tip: Minimum'
-                        : 'Tip: ${tipPercent.round()}%',
+                        ? l10n.incineratorTipMinimum
+                        : l10n.incineratorTipPercent(tipPercent.round()),
                     style: monoStyle(
                       fontSize: 11,
                       color: TibaneColors.textMuted,
@@ -1681,7 +1689,7 @@ class _BottomBar extends StatelessWidget {
             ],
             // Burn button
             GradientButton(
-              label: sponsoredMode ? 'Sponsored Burn' : 'Burn',
+              label: sponsoredMode ? l10n.incineratorSponsoredBurn : l10n.incineratorBurnButton,
               icon: Icons.local_fire_department,
               loading: burning,
               expanded: true,

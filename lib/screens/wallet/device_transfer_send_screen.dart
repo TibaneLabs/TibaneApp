@@ -5,6 +5,7 @@ import 'package:libwallet/libwallet.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet/libwallet_backend.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
@@ -100,7 +101,7 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
             '$r (${backend.error})');
         setState(() {
           _phase = _Phase.error;
-          _message = 'Could not open the wallet to transfer it.';
+          _message = context.l10n.deviceSendErrOpenWallet;
         });
         return;
       }
@@ -112,8 +113,7 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
           '${widget.walletId} — needs 2FA recovery');
       setState(() {
         _phase = _Phase.error;
-        _message = "Could not read this wallet's device key. Recover it via "
-            '2FA, then try again.';
+        _message = context.l10n.deviceSendErrReadKey;
       });
       return;
     }
@@ -202,14 +202,13 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
 
   /// Yes/No prompt to switch to and/or unlock the wallet before transferring.
   Future<bool> _confirmPrepareDialog(DeviceTransferSendRoute route) async {
+    final l10n = context.l10n;
     final name = (widget.walletName != null && widget.walletName!.isNotEmpty)
-        ? '“${widget.walletName}”'
-        : 'this wallet';
+        ? '”${widget.walletName}”'
+        : l10n.commonThisWallet;
     final body = route == DeviceTransferSendRoute.switchFirst
-        ? 'To transfer $name to another device, it needs to be the active '
-            'wallet and unlocked. Switch to it and unlock it now?'
-        : 'To transfer $name to another device, it needs to be unlocked '
-            'first. Unlock it now?';
+        ? l10n.deviceSendPrepareSwitchBody(name)
+        : l10n.deviceSendPrepareUnlockBody(name);
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -217,16 +216,16 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
         backgroundColor: TibaneColors.card,
         title: Text(
           route == DeviceTransferSendRoute.switchFirst
-              ? 'Switch & unlock wallet?'
-              : 'Unlock wallet?',
+              ? l10n.deviceSendPrepareSwitchTitle
+              : l10n.deviceSendPrepareUnlockTitle,
         ),
         content: Text(body),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text(
-              'No',
-              style: TextStyle(color: TibaneColors.textMuted),
+            child: Text(
+              l10n.deviceSendNo,
+              style: const TextStyle(color: TibaneColors.textMuted),
             ),
           ),
           FilledButton(
@@ -235,7 +234,7 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
               backgroundColor: TibaneColors.orange,
               foregroundColor: TibaneColors.black,
             ),
-            child: const Text('Yes'),
+            child: Text(l10n.deviceSendYes),
           ),
         ],
       ),
@@ -244,25 +243,25 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
   }
 
   Future<bool> _confirmSendDialog(String? fingerprint) async {
+    final l10n = context.l10n;
     final hasFp = fingerprint != null && fingerprint.isNotEmpty;
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
-        title: const Text('Send wallet to new device?'),
+        title: Text(l10n.deviceSendConfirmTitle),
         content: Text(
-          'A device just connected to this transfer.'
-          '${hasFp ? '\n\nDevice code: $fingerprint' : ''}\n\n'
-          'Only approve if this is your own new device. It will receive a '
-          'full copy of this wallet, including its device key.',
+          '${l10n.deviceSendConfirmBody}'
+          '${hasFp ? '\n\n${l10n.deviceSendDeviceCode(fingerprint)}' : ''}\n\n'
+          '${l10n.deviceSendConfirmWarning}',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: TibaneColors.textMuted),
+            child: Text(
+              l10n.actionCancel,
+              style: const TextStyle(color: TibaneColors.textMuted),
             ),
           ),
           FilledButton(
@@ -271,7 +270,7 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
               backgroundColor: TibaneColors.orange,
               foregroundColor: TibaneColors.black,
             ),
-            child: const Text('Approve'),
+            child: Text(l10n.actionApprove),
           ),
         ],
       ),
@@ -300,34 +299,35 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Transfer to new device')),
+      appBar: AppBar(title: Text(l10n.deviceSendTitle)),
       body: SafeArea(
         child: switch (_phase) {
           _Phase.starting => _centered(
             const CircularProgressIndicator(color: TibaneColors.orange),
-            'Preparing transfer…',
+            l10n.deviceSendPreparing,
           ),
           _Phase.showing => _buildShowing(),
           _Phase.expired => _buildSimple(
             Icons.timer_off_outlined,
-            'This transfer code expired.',
+            l10n.deviceSendExpired,
             showRetry: true,
           ),
           _Phase.confirming => _centered(
             const CircularProgressIndicator(color: TibaneColors.orange),
-            'Sending wallet to the new device…',
+            l10n.deviceSendSending,
           ),
           _Phase.done => _buildDone(),
           _Phase.declined => _buildSimple(
             Icons.cancel_outlined,
-            'Transfer cancelled.',
+            l10n.deviceSendDeclined,
             showRetry: true,
           ),
           _Phase.error => _buildSimple(
             Icons.error_outline,
-            _message ?? 'Transfer failed',
+            _message ?? l10n.transferFailed,
             showRetry: true,
           ),
         },
@@ -336,17 +336,17 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
   }
 
   Widget _buildShowing() {
+    final l10n = context.l10n;
     final code = _session?.pairingCode ?? '';
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'On your new device, open Wallets & Accounts → "Receive wallet '
-            'from another device", then scan this code.',
+          Text(
+            l10n.deviceSendInstruction,
             textAlign: TextAlign.center,
-            style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+            style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
           ),
           const SizedBox(height: 20),
           Center(
@@ -366,7 +366,7 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Expires in $_countdownText',
+            l10n.deviceSendExpiresIn(_countdownText),
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: TibaneColors.text,
@@ -374,11 +374,10 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Keep this screen open. You’ll be asked to approve once the other '
-            'device connects.',
+          Text(
+            l10n.deviceSendKeepOpen,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: TibaneColors.textDim,
               fontSize: 12,
               height: 1.4,
@@ -390,6 +389,7 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
   }
 
   Widget _buildDone() {
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -402,21 +402,20 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
             size: 56,
           ),
           const SizedBox(height: 16),
-          const Text(
-            'Wallet sent',
+          Text(
+            l10n.deviceSendDoneTitle,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: TibaneColors.text,
               fontSize: 18,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 12),
-          const Text(
-            'Your new device received the wallet. Enter the wallet password '
-            'on that device to finish setting it up.',
+          Text(
+            l10n.deviceSendDoneBody,
             textAlign: TextAlign.center,
-            style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+            style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
           ),
           const SizedBox(height: 28),
           FilledButton(
@@ -426,9 +425,9 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
               foregroundColor: TibaneColors.black,
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
-            child: const Text(
-              'Done',
-              style: TextStyle(fontWeight: FontWeight.w600),
+            child: Text(
+              l10n.actionDone,
+              style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -437,6 +436,7 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
   }
 
   Widget _buildSimple(IconData icon, String message, {bool showRetry = false}) {
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -459,17 +459,17 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
                 foregroundColor: TibaneColors.black,
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
-              child: const Text(
-                'Generate new code',
-                style: TextStyle(fontWeight: FontWeight.w600),
+              child: Text(
+                l10n.deviceSendGenerateCode,
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
           const SizedBox(height: 8),
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text(
-              'Close',
-              style: TextStyle(color: TibaneColors.textMuted),
+            child: Text(
+              l10n.actionClose,
+              style: const TextStyle(color: TibaneColors.textMuted),
             ),
           ),
         ],

@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../constants/solana_constants.dart';
+import '../../l10n/l10n.dart';
 import '../../services/balances_store.dart';
 import '../../services/jupiter_service.dart';
 import '../../services/wallet/send_asset.dart';
@@ -380,7 +381,7 @@ class _SendScreenState extends State<SendScreen> {
       if (_addrCtrl.text.trim() != name) return;
       setState(() {
         _resolvingName = null;
-        _resolveError = 'Could not resolve $name';
+        _resolveError = context.l10n.sendResolveNameError(name);
       });
     }
   }
@@ -421,12 +422,12 @@ class _SendScreenState extends State<SendScreen> {
         ? _resolvedAddress!
         : typed;
     if (addr.length < 32) {
-      setState(() => _error = 'Enter a valid recipient address');
+      setState(() => _error = context.l10n.sendInvalidRecipient);
       return;
     }
     final amountFloat = parseAmount(_amountCtrl.text);
     if (amountFloat == null || amountFloat <= 0) {
-      setState(() => _error = 'Enter a valid amount');
+      setState(() => _error = context.l10n.sendInvalidAmount);
       return;
     }
     final scale = BigInt.from(10).pow(_decimals);
@@ -610,6 +611,7 @@ class _SendScreenState extends State<SendScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final wallet = context.watch<WalletService>();
     final store = context.watch<BalancesStore>();
     // Solana SPL rows come from the shared store; non-Solana tokens are the
@@ -623,7 +625,7 @@ class _SendScreenState extends State<SendScreen> {
         : null;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: Text('Send $_symbol')),
+      appBar: AppBar(title: Text(l10n.sendTitle(_symbol))),
       body: SafeArea(
         child: GestureDetector(
           // Tap outside any input to dismiss the iOS numeric keyboard.
@@ -646,9 +648,9 @@ class _SendScreenState extends State<SendScreen> {
                   enabled: !_sending,
                   autocorrect: false,
                   decoration: InputDecoration(
-                    labelText: 'Recipient address or name',
+                    labelText: l10n.sendRecipientLabel,
                     labelStyle: const TextStyle(color: TibaneColors.textMuted),
-                    helperText: 'Solana address, .sol name, or .eth name',
+                    helperText: l10n.sendRecipientHelper,
                     suffixIcon: IconButton(
                       icon: const Icon(Icons.paste, size: 18),
                       onPressed: _sending
@@ -677,7 +679,7 @@ class _SendScreenState extends State<SendScreen> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'Resolving $_resolvingName…',
+                        l10n.sendResolvingName(_resolvingName!),
                         style: const TextStyle(
                           color: TibaneColors.textMuted,
                           fontSize: 12,
@@ -725,11 +727,11 @@ class _SendScreenState extends State<SendScreen> {
                     decimal: true,
                   ),
                   decoration: InputDecoration(
-                    labelText: 'Amount ($_symbol)',
+                    labelText: l10n.sendAmountLabel(_symbol),
                     labelStyle: const TextStyle(color: TibaneColors.textMuted),
                     suffixIcon: TextButton(
                       onPressed: _sending ? null : _setMax,
-                      child: const Text('MAX', style: TextStyle(fontSize: 12)),
+                      child: Text(l10n.sendMax, style: const TextStyle(fontSize: 12)),
                     ),
                   ),
                 ),
@@ -738,7 +740,7 @@ class _SendScreenState extends State<SendScreen> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: Text(
-                      'Balance: ${_fmtBalance(selectedBalance)} $_symbol',
+                      l10n.sendBalanceLabel(_fmtBalance(selectedBalance), _symbol),
                       style: const TextStyle(
                         color: TibaneColors.textMuted,
                         fontSize: 12,
@@ -778,7 +780,7 @@ class _SendScreenState extends State<SendScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   child: Text(
-                    _sending ? 'Sending...' : 'Send',
+                    _sending ? l10n.sendSending : l10n.sendButton,
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
@@ -828,6 +830,7 @@ class _SendReviewSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final blocking =
         sim.willRevert || sim.warnings.any((w) => w.severity == 'block');
     final amountText = '${formatSendAmountGrouped(amountUi, decimals)} $symbol';
@@ -853,14 +856,14 @@ class _SendReviewSheet extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             Text(
-              'Review send',
+              l10n.sendReviewTitle,
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 6),
-            const Text(
-              'Please review the details before confirming this transaction.',
+            Text(
+              l10n.sendReviewSubtitle,
               textAlign: TextAlign.center,
-              style: TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+              style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
             ),
             const SizedBox(height: 28),
             // Token logo with a soft brand glow.
@@ -894,12 +897,12 @@ class _SendReviewSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'To',
-              style: TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+            Text(
+              l10n.labelTo,
+              style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
             ),
             const SizedBox(height: 8),
-            _recipientPill(recipientName ?? 'Recipient'),
+            _recipientPill(recipientName ?? l10n.sendRecipientPill),
             const SizedBox(height: 10),
             Text(
               to,
@@ -907,14 +910,13 @@ class _SendReviewSheet extends StatelessWidget {
               style: monoStyle(fontSize: 13, color: TibaneColors.text),
             ),
             const SizedBox(height: 22),
-            if (net != null) _networkCard(net!),
+            if (net != null) _networkCard(net!, l10n),
             if (sim.willRevert) ...[
               const SizedBox(height: 14),
               _warning(
                 TibaneColors.error,
                 Icons.error_outline,
-                'Simulation predicts this will fail: '
-                '${sim.revertReason ?? "unknown error"}',
+                l10n.sendSimWillFail(sim.revertReason ?? l10n.sendUnknownError),
               ),
             ],
             for (final w in sim.warnings) ...[
@@ -945,7 +947,7 @@ class _SendReviewSheet extends StatelessWidget {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    child: const Text('Cancel'),
+                    child: Text(l10n.actionCancel),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -963,7 +965,7 @@ class _SendReviewSheet extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      blocking ? 'Cannot send' : 'Confirm',
+                      blocking ? l10n.sendCannotSend : l10n.actionConfirm,
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -995,7 +997,7 @@ class _SendReviewSheet extends StatelessWidget {
     );
   }
 
-  Widget _networkCard(Network net) {
+  Widget _networkCard(Network net, AppLocalizations l10n) {
     final logoAsset = networkLogoAsset(net);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1018,7 +1020,7 @@ class _SendReviewSheet extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Network',
+                  l10n.labelNetwork,
                   style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
                 ),
                 const SizedBox(height: 2),
@@ -1083,33 +1085,36 @@ class _SendSuccessScreen extends StatelessWidget {
     required this.net,
   });
 
-  String _receiptText() {
-    final b = StringBuffer('Sent $amountLabel\nTo: $toAddress');
-    if (txHash != null) b.write('\nTransaction: $txHash');
+  String _receiptText(AppLocalizations l10n) {
+    final b = StringBuffer(
+      '${l10n.sendReceiptSent(amountLabel)}\n${l10n.sendReceiptTo(toAddress)}',
+    );
+    if (txHash != null) b.write('\n${l10n.sendReceiptTransaction(txHash!)}');
     final url = explorerTxUrl(net, txHash);
     if (url != null) b.write('\n$url');
     return b.toString();
   }
 
-  Future<void> _share(BuildContext context) async {
+  Future<void> _share(BuildContext context, AppLocalizations l10n) async {
     try {
-      await SharePlus.instance.share(ShareParams(text: _receiptText()));
+      await SharePlus.instance.share(ShareParams(text: _receiptText(l10n)));
     } catch (e) {
       logError('[SendSuccess._share] share error: $e');
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open the share sheet')),
+        SnackBar(content: Text(l10n.sendShareFailed)),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final url = explorerTxUrl(net, txHash);
     final exName = net == null ? null : explorerNameFor(net!.type, net!.chainId);
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: Text('Send $symbol')),
+      appBar: AppBar(title: Text(l10n.sendTitle(symbol))),
       body: SafeArea(
         child: Column(
           children: [
@@ -1121,9 +1126,9 @@ class _SendSuccessScreen extends StatelessWidget {
                     const SizedBox(height: 36),
                     txSuccessMark(),
                     const SizedBox(height: 28),
-                    const Text(
-                      'Send successful',
-                      style: TextStyle(
+                    Text(
+                      l10n.sendSuccessTitle,
+                      style: const TextStyle(
                         color: TibaneColors.text,
                         fontSize: 26,
                         fontWeight: FontWeight.w700,
@@ -1132,7 +1137,7 @@ class _SendSuccessScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Your $symbol transfer was completed.',
+                      l10n.sendSuccessSubtitle(symbol),
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: TibaneColors.textMuted,
@@ -1142,53 +1147,53 @@ class _SendSuccessScreen extends StatelessWidget {
                     const SizedBox(height: 32),
                     txReceiptCard(
                       icon: Icons.north_east,
-                      label: 'From',
+                      label: l10n.labelFrom,
                       value: fromAddress ?? '—',
                       onTap: fromAddress == null
                           ? null
                           : () => copyWithToast(
                               context,
                               fromAddress!,
-                              'Address',
+                              l10n.labelAddress,
                             ),
                     ),
                     const SizedBox(height: 12),
                     txReceiptCard(
                       icon: Icons.south_west,
-                      label: 'To',
+                      label: l10n.labelTo,
                       value: toAddress,
-                      onTap: () => copyWithToast(context, toAddress, 'Address'),
+                      onTap: () => copyWithToast(context, toAddress, l10n.labelAddress),
                     ),
                     const SizedBox(height: 12),
                     txReceiptCard(
                       icon: Icons.receipt_long_outlined,
-                      label: 'Transaction',
-                      value: shortenTxHash(txHash) ?? '(unavailable)',
+                      label: l10n.labelTransaction,
+                      value: shortenTxHash(txHash) ?? l10n.sendTxUnavailable,
                       onTap: txHash == null
                           ? null
                           : () => copyWithToast(
                               context,
                               txHash!,
-                              'Transaction ID',
+                              l10n.labelTransactionId,
                             ),
                       trailing: url == null
                           ? null
                           : txExplorerLink(
                               onTap: () => openExplorerUrl(context, url),
                               label: exName != null
-                                  ? 'View on $exName'
-                                  : 'View on explorer',
+                                  ? l10n.viewOnExplorerNamed(exName)
+                                  : l10n.viewOnExplorer,
                             ),
                     ),
                     const SizedBox(height: 20),
                     if (txHash != null)
                       TextButton.icon(
-                        onPressed: () => _share(context),
+                        onPressed: () => _share(context, l10n),
                         icon: const Icon(Icons.ios_share, size: 16),
                         style: TextButton.styleFrom(
                           foregroundColor: TibaneColors.textMuted,
                         ),
-                        label: const Text('Share receipt'),
+                        label: Text(l10n.sendShareReceipt),
                       ),
                   ],
                 ),
@@ -1196,7 +1201,7 @@ class _SendSuccessScreen extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-              child: txBackToHomeButton(context),
+              child: txBackToHomeButton(context, label: l10n.backToHome),
             ),
           ],
         ),
@@ -1224,6 +1229,7 @@ class _TokenSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     // Solana native uses wsolMint so the bundled sol.png logo wins; other
     // chains pass '' and fall back to the symbol placeholder.
     return TibaneCard(
@@ -1243,7 +1249,7 @@ class _TokenSelector extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'TOKEN',
+                  l10n.sendTokenSectionLabel,
                   style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
                 ),
                 const SizedBox(height: 2),
@@ -1328,7 +1334,7 @@ class _SendTokenPicker extends StatelessWidget {
             child: Row(
               children: [
                 Text(
-                  'Select token to send',
+                  context.l10n.sendSelectToken,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const Spacer(),

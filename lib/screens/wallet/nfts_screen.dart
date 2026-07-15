@@ -3,6 +3,7 @@ import 'package:libwallet/libwallet.dart' show Nft, NftAttribute, NftListing;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -61,13 +62,14 @@ class _NftsScreenState extends State<NftsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
-        title: const Text('NFTs'),
+        title: Text(l10n.nftsTitle),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: l10n.actionRefresh,
             onPressed: _load,
             icon: const Icon(Icons.refresh),
           ),
@@ -108,14 +110,17 @@ class _NftsScreenState extends State<NftsScreen> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'No NFTs on ${_listing?.network.name ?? "this network"}',
+                        l10n.nftsEmpty(
+                          (_listing != null && _listing!.network.name.isNotEmpty)
+                              ? _listing!.network.name
+                              : l10n.commonThisNetwork,
+                        ),
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Switch networks via the chip in the app bar to look '
-                        'on another chain.',
-                        style: TextStyle(color: TibaneColors.textMuted),
+                      Text(
+                        l10n.nftsSwitchHint,
+                        style: const TextStyle(color: TibaneColors.textMuted),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -274,6 +279,7 @@ class NftDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
@@ -317,9 +323,9 @@ class NftDetailScreen extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 20),
-            _kv('Contract', _shorten(nft.contractAddress)),
-            if (nft.tokenId.isNotEmpty) _kv('Token ID', nft.tokenId),
-            if (nft.network.isNotEmpty) _kv('Network', nft.network),
+            _kv(l10n.labelContract, _shorten(nft.contractAddress)),
+            if (nft.tokenId.isNotEmpty) _kv(l10n.nftsDetailTokenId, nft.tokenId),
+            if (nft.network.isNotEmpty) _kv(l10n.labelNetwork, nft.network),
             if (nft.externalUrl != null && nft.externalUrl!.isNotEmpty) ...[
               const SizedBox(height: 12),
               OutlinedButton.icon(
@@ -328,13 +334,13 @@ class NftDetailScreen extends StatelessWidget {
                   mode: LaunchMode.externalApplication,
                 ),
                 icon: const Icon(Icons.open_in_new, size: 16),
-                label: const Text('View externally'),
+                label: Text(l10n.nftsViewExternally),
               ),
             ],
             if (nft.attributes.isNotEmpty) ...[
               const SizedBox(height: 20),
               Text(
-                'TRAITS',
+                l10n.nftsTraitsLabel.toUpperCase(),
                 style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
               ),
               const SizedBox(height: 8),

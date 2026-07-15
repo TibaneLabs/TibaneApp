@@ -11,38 +11,38 @@ void main() {
     test('rejects names shorter than the minimum', () {
       final r = WalletDetailsScreen.validateWalletName('ab');
       expect(r.name, isNull);
-      expect(r.error, isNotNull);
+      expect(r.errorCode, isNotNull);
     });
 
     test('accepts a name at exactly the minimum length', () {
       final r = WalletDetailsScreen.validateWalletName('abc');
       expect(r.name, 'abc');
-      expect(r.error, isNull);
+      expect(r.errorCode, isNull);
     });
 
     test('trims leading/trailing whitespace before validating', () {
       final r = WalletDetailsScreen.validateWalletName('  My Wallet  ');
       expect(r.name, 'My Wallet');
-      expect(r.error, isNull);
+      expect(r.errorCode, isNull);
     });
 
     test('rejects when only whitespace padding pads the length', () {
       final r = WalletDetailsScreen.validateWalletName('  a  ');
       expect(r.name, isNull);
-      expect(r.error, isNotNull);
+      expect(r.errorCode, isNotNull);
     });
 
     test('rejects an all-whitespace name', () {
       final r = WalletDetailsScreen.validateWalletName('        ');
       expect(r.name, isNull);
-      expect(r.error, isNotNull);
+      expect(r.errorCode, isNotNull);
     });
 
     test('accepts a name at exactly the maximum length', () {
       final name = 'a' * WalletDetailsScreen.kNameMaxLength;
       final r = WalletDetailsScreen.validateWalletName(name);
       expect(r.name, name);
-      expect(r.error, isNull);
+      expect(r.errorCode, isNull);
     });
 
     test('rejects a name one over the maximum length', () {
@@ -50,7 +50,7 @@ void main() {
         'a' * (WalletDetailsScreen.kNameMaxLength + 1),
       );
       expect(r.name, isNull);
-      expect(r.error, isNotNull);
+      expect(r.errorCode, isNotNull);
     });
 
     test('measures length after trimming (padding around a max-length name)',
@@ -58,13 +58,13 @@ void main() {
       final content = 'a' * WalletDetailsScreen.kNameMaxLength;
       final r = WalletDetailsScreen.validateWalletName('   $content   ');
       expect(r.name, content);
-      expect(r.error, isNull);
+      expect(r.errorCode, isNull);
     });
 
     test('preserves internal whitespace', () {
       final r = WalletDetailsScreen.validateWalletName('My  Cool  Wallet');
       expect(r.name, 'My  Cool  Wallet');
-      expect(r.error, isNull);
+      expect(r.errorCode, isNull);
     });
   });
 }
