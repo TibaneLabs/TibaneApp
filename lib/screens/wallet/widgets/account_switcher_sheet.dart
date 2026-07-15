@@ -12,6 +12,7 @@ import '../../../theme/tibane_theme.dart';
 import '../../../widgets/network_chip.dart';
 import '../../../widgets/wallet_error_display.dart';
 import '../inapp_export_screen.dart';
+import '../../../utils/context_extensions.dart';
 
 /// Open the account switcher (Atonline-parity §4.1/§4.2, Phase 4b-2): the unified
 /// list of in-app accounts (across all wallets) + the connected MWA account,
@@ -41,7 +42,7 @@ Future<void> _switchAccount(
   UnifiedAccount account,
 ) async {
   final nav = Navigator.of(context);
-  final messenger = ScaffoldMessenger.of(context);
+  final messenger = context.messenger;
   final net = wallet.libwallet.currentNetwork;
   String? networkId;
   if (net == null || !accountMatchesNetwork(account, net.type)) {
@@ -119,7 +120,7 @@ Future<Network?> _showNetworkConnectSheet(
               const SizedBox(height: 16),
               Text(
                 l10n.accountSwitcherSelectNetwork(chainLabel(account.chain)),
-                style: Theme.of(ctx).textTheme.titleLarge,
+                style: ctx.textTheme.titleLarge,
               ),
               const SizedBox(height: 4),
               Text(
@@ -189,7 +190,7 @@ class AccountSwitcherSheet extends StatelessWidget {
                 Stack(
                   alignment: Alignment.center,
                   children: [
-                    Text(l10n.accountsTitle, style: Theme.of(context).textTheme.titleLarge),
+                    Text(l10n.accountsTitle, style: context.textTheme.titleLarge),
                     const Align(
                       alignment: Alignment.centerRight,
                       child: NetworkChip(iconOnly: true),
@@ -225,7 +226,7 @@ class AccountSwitcherSheet extends StatelessWidget {
                     onTap: () async {
                       // Capture before the sheet closes so the error can still
                       // be shown on the parent screen.
-                      final messenger = ScaffoldMessenger.of(context);
+                      final messenger = context.messenger;
                       Navigator.pop(context);
                       final ok = await wallet.connectMwa();
                       if (!ok) {
@@ -246,7 +247,7 @@ class AccountSwitcherSheet extends StatelessWidget {
                     icon: Icons.copy,
                     label: l10n.accountSwitcherCopyAddress,
                     onTap: () async {
-                      final messenger = ScaffoldMessenger.of(context);
+                      final messenger = context.messenger;
                       await Clipboard.setData(
                         ClipboardData(text: current.address),
                       );

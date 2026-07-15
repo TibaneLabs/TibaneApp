@@ -10,6 +10,7 @@ import '../../widgets/tibane_card.dart';
 import '../../widgets/wallet_error_display.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// Token CRUD + discovery for the active network. Lists tokens already
 /// registered with libwallet (Token API), shows the curated registry as a
@@ -87,7 +88,7 @@ class _TokensScreenState extends State<TokensScreen> {
     if (address == null || address.isEmpty) return;
     if (_chainKey.isEmpty) return;
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
+    final messenger = context.messenger;
     final l10n = context.l10n;
     showDialog<void>(
       context: context,
@@ -134,7 +135,7 @@ class _TokensScreenState extends State<TokensScreen> {
   }
 
   Future<void> _addCurated(CuratedToken c) async {
-    final messenger = ScaffoldMessenger.of(context);
+    final messenger = context.messenger;
     final l10n = context.l10n;
     try {
       final wallet = context.read<WalletService>();

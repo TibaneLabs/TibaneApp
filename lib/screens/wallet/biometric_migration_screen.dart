@@ -7,6 +7,7 @@ import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
 import '../../widgets/gradient_button.dart';
+import '../../utils/context_extensions.dart';
 
 /// Mandatory one-time screen (Atonline-parity Phase 3 / D7) that re-secures
 /// existing wallets' StoreKey behind biometric. Shown by `TibaneShell` before
@@ -76,7 +77,7 @@ class _BiometricMigrationScreenState extends State<BiometricMigrationScreen> {
                 Text(
                   l10n.bioMigTitle,
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall,
+                  style: context.textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 12),
                 Text(

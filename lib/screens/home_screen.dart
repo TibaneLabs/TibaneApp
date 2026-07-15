@@ -11,6 +11,7 @@ import '../widgets/tibane_card.dart';
 import 'incinerator_screen.dart';
 import 'staking/staking_pools_screen.dart';
 import 'token_favorites_screen.dart';
+import '../utils/context_extensions.dart';
 
 class HomeScreen extends StatelessWidget {
   final void Function(int) onNavigate;
@@ -66,7 +67,7 @@ class _HeroSection extends StatelessWidget {
                     TibaneColors.brandGradient.createShader(bounds),
                 child: Text(
                   'Tibane Labs',
-                  style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                  style: context.textTheme.displaySmall?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
                     letterSpacing: -1,
@@ -77,7 +78,7 @@ class _HeroSection extends StatelessWidget {
               Text(
                 context.l10n.homeHeroSubtitle,
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                style: context.textTheme.bodyLarge?.copyWith(
                   color: TibaneColors.textMuted,
                   height: 1.5,
                 ),
@@ -240,13 +241,13 @@ class _AboutSection extends StatelessWidget {
                   children: [
                     Text(
                       'Tibane Thecat',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      style: context.textTheme.titleMedium?.copyWith(
                         color: TibaneColors.gold,
                       ),
                     ),
                     Text(
                       context.l10n.homeFairLaunch,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      style: context.textTheme.bodySmall?.copyWith(
                         color: TibaneColors.textMuted,
                       ),
                     ),
@@ -258,7 +259,7 @@ class _AboutSection extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             context.l10n.homeAboutDescription,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            style: context.textTheme.bodyMedium?.copyWith(
               color: TibaneColors.textMuted,
               height: 1.5,
             ),

@@ -18,6 +18,7 @@ import 'wallet/widgets/authorize_and_sign.dart';
 import '../l10n/l10n.dart';
 import '../utils/log.dart';
 import '../utils/wallet_error.dart';
+import '../utils/context_extensions.dart';
 
 class FeeSharingScreen extends StatefulWidget {
   final String mint;
@@ -152,7 +153,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
       if (sigs == null) return; // cancelled / not authorized
       final sig = sigs.first;
       if (sig != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        context.showSnackBar(
           SnackBar(content: Text(context.l10n.feeShareConfigCreated(sig.substring(0, 8)))),
         );
       }
@@ -201,7 +202,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
       if (sigs == null) return; // cancelled / not authorized
       final sig = sigs.first;
       if (sig != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        context.showSnackBar(
           SnackBar(
             content: Text(context.l10n.feeShareFeesDistributed(sig.substring(0, 8))),
           ),
@@ -245,7 +246,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
       if (sigs == null) return; // cancelled / not authorized
       final sig = sigs.first;
       if (sig != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        context.showSnackBar(
           SnackBar(content: Text(context.l10n.feeShareSharesUpdated(sig.substring(0, 8)))),
         );
       }
@@ -290,7 +291,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
       if (sigs == null) return; // cancelled / not authorized
       final sig = sigs.first;
       if (sig != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        context.showSnackBar(
           SnackBar(
             content: Text(context.l10n.feeShareAuthorityTransferred(sig.substring(0, 8))),
           ),
@@ -363,7 +364,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
       if (sigs == null) return; // cancelled / not authorized
       final sig = sigs.first;
       if (sig != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        context.showSnackBar(
           SnackBar(
             content: Text(context.l10n.feeShareAuthorityRevoked(sig.substring(0, 8))),
           ),
@@ -473,9 +474,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
               const SizedBox(height: 12),
               Text(
                 l10n.feeShareNoConfig,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
+                style: context.textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
@@ -581,9 +580,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
           TibaneCard(
             child: Text(
               l10n.feeShareNoShareholders,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
+              style: context.textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
             ),
           )
         else
@@ -616,7 +613,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
                                   text: config.shareholders[i].address,
                                 ),
                               );
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              context.showSnackBar(
                                 SnackBar(content: Text(l10n.addressCopied)),
                               );
                             },

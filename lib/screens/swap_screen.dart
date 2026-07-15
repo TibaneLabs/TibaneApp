@@ -31,6 +31,7 @@ import '../utils/log.dart';
 import '../utils/wallet_error.dart';
 import '../widgets/wallet_error_display.dart';
 import '../l10n/l10n.dart';
+import '../utils/context_extensions.dart';
 
 class SwapScreen extends StatefulWidget {
   /// Optional input mint to pre-select once holdings finish loading. Pass
@@ -288,7 +289,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       if (pick == null) {
         if (!mounted) return;
         setState(() => _switchingNetwork = false);
-        ScaffoldMessenger.of(context).showSnackBar(
+        context.showSnackBar(
           SnackBar(content: Text(context.l10n.swapNoSolanaMainnet)),
         );
         return;
@@ -671,7 +672,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         // swap.
         if (!quote.isExecutable) {
           final l10n = context.l10n;
-          ScaffoldMessenger.of(context).showSnackBar(
+          context.showSnackBar(
             SnackBar(
               content: Text(
                 quote.statusMessage.isNotEmpty
@@ -1165,7 +1166,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     return GestureDetector(
       // Tap anywhere outside the amount field to dismiss the iOS
       // numeric keyboard (which has no Done key by default).
-      onTap: () => FocusScope.of(context).unfocus(),
+      onTap: () => context.unfocus(),
       behavior: HitTestBehavior.translucent,
       child: RefreshIndicator(
         onRefresh: _loadHoldings,
@@ -1190,7 +1191,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                         const SizedBox(height: 16),
                         Text(
                           l10n.swapConnectWallet,
-                          style: Theme.of(context).textTheme.bodyLarge,
+                          style: context.textTheme.bodyLarge,
                         ),
                       ],
                     ),
@@ -1419,7 +1420,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
             controller: _amountController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textInputAction: TextInputAction.done,
-            onSubmitted: (_) => FocusScope.of(context).unfocus(),
+            onSubmitted: (_) => context.unfocus(),
             style: monoStyle(fontSize: 20),
             decoration: InputDecoration(
               hintText: '0.00',
@@ -1886,7 +1887,7 @@ class _InputTokenPicker extends StatelessWidget {
               children: [
                 Text(
                   context.l10n.swapSelectInputToken,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: context.textTheme.titleMedium,
                 ),
                 const Spacer(),
                 IconButton(
@@ -2002,7 +2003,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
           .resolveTokenByAddress(mint);
       if (!mounted) return;
       if (meta == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        context.showSnackBar(
           SnackBar(content: Text(context.l10n.swapTokenNotFoundOnNetwork)),
         );
         return;
@@ -2021,9 +2022,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
       final meta = await rpc.getAsset(mint);
       if (!mounted) return;
       if (meta == null) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(context.l10n.tokenNotFound)));
+        context.showSnackBar(SnackBar(content: Text(context.l10n.tokenNotFound)));
         return;
       }
       widget.onSelect(
@@ -2072,7 +2071,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
               children: [
                 Text(
                   l10n.swapSelectOutputToken,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: context.textTheme.titleMedium,
                 ),
                 const Spacer(),
                 IconButton(
@@ -2333,7 +2332,7 @@ class _SwapReviewSheet extends StatelessWidget {
           left: 20,
           right: 20,
           top: 12,
-          bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
+          bottom: 20 + context.keyboardInset,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -2347,7 +2346,7 @@ class _SwapReviewSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            Text(l10n.swapReviewTitle, style: Theme.of(context).textTheme.titleLarge),
+            Text(l10n.swapReviewTitle, style: context.textTheme.titleLarge),
             const SizedBox(height: 6),
             Text(
               l10n.swapReviewSubtitle,
@@ -2595,7 +2594,7 @@ class _SwapUnavailableInRegion extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               context.l10n.swapUkUnavailableTitle,
-              style: Theme.of(context).textTheme.titleMedium,
+              style: context.textTheme.titleMedium,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),

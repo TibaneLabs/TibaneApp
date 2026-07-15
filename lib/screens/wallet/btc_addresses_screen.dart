@@ -10,6 +10,7 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// Receive / address-management screen for Bitcoin-family accounts. Shows
 /// the next clean receive address in the account's default (best) script
@@ -275,7 +276,7 @@ class _AddressCard extends StatelessWidget {
             onTap: () async {
               await Clipboard.setData(ClipboardData(text: address));
               if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
+              context.showSnackBar(
                 SnackBar(
                   content: Text(l10n.addressCopied),
                   duration: const Duration(seconds: 1),
@@ -533,7 +534,7 @@ class _HdRow extends StatelessWidget {
               icon: const Icon(Icons.copy, size: 16),
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: addr.address));
-                ScaffoldMessenger.of(context).showSnackBar(
+                context.showSnackBar(
                   SnackBar(
                     content: Text(l10n.addressCopied),
                     duration: const Duration(seconds: 1),

@@ -9,6 +9,7 @@ import '../../widgets/tibane_card.dart';
 import '../../widgets/wallet_error_display.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// Lists every dApp the user has granted EIP-1193 (window.ethereum /
 /// window.solana) access to via the in-app browser. Each row exposes a
@@ -156,7 +157,7 @@ class _Web3ConnectionsScreenState extends State<Web3ConnectionsScreen> {
                       const SizedBox(height: 16),
                       Text(
                         l10n.web3Empty,
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: context.textTheme.titleMedium,
                       ),
                       const SizedBox(height: 4),
                       Text(

@@ -10,6 +10,7 @@ import '../../../services/wallet/signing.dart';
 import '../../../services/wallet_service.dart';
 import '../inapp_unlock_screen.dart';
 import 'sign_sheet.dart';
+import '../../../utils/context_extensions.dart';
 
 /// Per-transaction authorize-and-sign helpers (Atonline-parity §4.3).
 ///
@@ -25,7 +26,7 @@ bool useSignSheet(WalletService wallet) =>
 
 void _toast(BuildContext context, String message) {
   debugPrint('[authorizeAndSign] $message');
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  context.showSnackBar(SnackBar(content: Text(message)));
 }
 
 /// A toast whose action routes straight into device-key setup — used when the
@@ -34,7 +35,7 @@ void _toast(BuildContext context, String message) {
 void _promptSetUp(BuildContext context, String walletId, String message) {
   final l10n = context.l10n;
   debugPrint('[authorizeAndSign] $message');
-  ScaffoldMessenger.of(context).showSnackBar(
+  context.showSnackBar(
     SnackBar(
       content: Text(message),
       duration: const Duration(seconds: 6),

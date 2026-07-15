@@ -24,6 +24,7 @@ import 'wallet/receive_screen.dart';
 import 'wallet/send_screen.dart';
 import '../utils/log.dart';
 import '../utils/wallet_error.dart';
+import '../utils/context_extensions.dart';
 
 /// Read-only analytics view for a single SPL token: metadata, supply,
 /// market cap, top holders, recent transactions, optional staking-pool
@@ -411,7 +412,7 @@ class _TokenHeader extends StatelessWidget {
                         token.name ??
                             context.l10n.tokenDetailUnknownToken,
                         maxLines: 1,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        style: context.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -628,7 +629,7 @@ class _SupplySection extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           onTap: () {
             Clipboard.setData(ClipboardData(text: token.mint));
-            ScaffoldMessenger.of(context).showSnackBar(
+            context.showSnackBar(
               SnackBar(content: Text(l10n.tokenDetailMintAddressCopied)),
             );
           },

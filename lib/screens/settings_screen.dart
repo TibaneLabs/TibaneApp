@@ -13,6 +13,7 @@ import 'settings/help_faq_screen.dart';
 import 'settings/security_privacy_screen.dart';
 import 'settings/wallets_accounts_screen.dart';
 import 'wallet/wallet_details_screen.dart';
+import '../utils/context_extensions.dart';
 
 /// Top-level Settings screen. Shows the active-wallet card, four
 /// drill-down categories (Wallets & Accounts / Security & Privacy /
@@ -229,7 +230,7 @@ class _ActiveWalletCard extends StatelessWidget {
                   children: [
                     Text(
                       wallet.walletName ?? l10n.labelWallet,
-                      style: Theme.of(context).textTheme.titleMedium,
+                      style: context.textTheme.titleMedium,
                     ),
                     Text(
                       kindLabel,
@@ -262,7 +263,7 @@ class _ActiveWalletCard extends StatelessWidget {
                 icon: const Icon(Icons.copy, size: 16),
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: address));
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  context.showSnackBar(
                     SnackBar(
                       content: Text(l10n.addressCopied),
                       duration: const Duration(seconds: 1),

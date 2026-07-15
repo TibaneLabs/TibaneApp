@@ -8,6 +8,7 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// Polled activity feed for a single ClawdWallet.
 ///
@@ -113,7 +114,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 const SizedBox(height: 10),
                 Text(
                   context.l10n.clawdActivityLoadError,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: context.textTheme.titleMedium,
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -144,7 +145,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 const SizedBox(height: 14),
                 Text(
                   context.l10n.clawdActivityEmpty,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: context.textTheme.titleMedium,
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -247,7 +248,7 @@ class _ActivityRow extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Text(_description(), style: Theme.of(context).textTheme.titleMedium),
+          Text(_description(), style: context.textTheme.titleMedium),
           if (effects.amount != null || effects.recipient != null) ...[
             const SizedBox(height: 10),
             Row(

@@ -23,6 +23,7 @@ import 'widgets/authorize_and_sign.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// Per-unit USD price for a token holding: the direct [priceUsd] when present,
 /// else the fiat total ÷ balance (for chains that only report a value total),
@@ -629,7 +630,7 @@ class _SendScreenState extends State<SendScreen> {
       body: SafeArea(
         child: GestureDetector(
           // Tap outside any input to dismiss the iOS numeric keyboard.
-          onTap: () => FocusScope.of(context).unfocus(),
+          onTap: () => context.unfocus(),
           behavior: HitTestBehavior.translucent,
           child: KeyboardSafeForm(
             child: Column(
@@ -841,7 +842,7 @@ class _SendReviewSheet extends StatelessWidget {
           left: 20,
           right: 20,
           top: 12,
-          bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
+          bottom: 20 + context.keyboardInset,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -857,7 +858,7 @@ class _SendReviewSheet extends StatelessWidget {
             const SizedBox(height: 20),
             Text(
               l10n.sendReviewTitle,
-              style: Theme.of(context).textTheme.titleLarge,
+              style: context.textTheme.titleLarge,
             ),
             const SizedBox(height: 6),
             Text(
@@ -1101,7 +1102,7 @@ class _SendSuccessScreen extends StatelessWidget {
     } catch (e) {
       logError('[SendSuccess._share] share error: $e');
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      context.showSnackBar(
         SnackBar(content: Text(l10n.sendShareFailed)),
       );
     }
@@ -1335,7 +1336,7 @@ class _SendTokenPicker extends StatelessWidget {
               children: [
                 Text(
                   context.l10n.sendSelectToken,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: context.textTheme.titleMedium,
                 ),
                 const Spacer(),
                 IconButton(

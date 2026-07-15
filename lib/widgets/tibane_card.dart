@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/tibane_theme.dart';
+import '../utils/context_extensions.dart';
 
 /// A card matching the tibane.net card style
 class TibaneCard extends StatelessWidget {
@@ -108,14 +109,12 @@ class FeatureCard extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             title,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(color: TibaneColors.text),
+            style: context.textTheme.titleMedium?.copyWith(color: TibaneColors.text),
           ),
           const SizedBox(height: 8),
           Text(
             description,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            style: context.textTheme.bodyMedium?.copyWith(
               color: TibaneColors.textMuted,
               height: 1.5,
             ),
@@ -174,7 +173,7 @@ class StatCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            style: context.textTheme.titleLarge?.copyWith(
               color: valueColor ?? TibaneColors.text,
               fontWeight: FontWeight.w700,
             ),
@@ -183,9 +182,7 @@ class StatCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               subtitle!,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: TibaneColors.textMuted),
+              style: context.textTheme.bodySmall?.copyWith(color: TibaneColors.textMuted),
             ),
           ],
         ],

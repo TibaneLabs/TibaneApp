@@ -10,6 +10,7 @@ import '../../widgets/tibane_card.dart';
 import '../../widgets/wallet_error_display.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// Contacts CRUD — backed by libwallet's `Contact` API. List → tap to
 /// edit, swipe / button to delete, FAB to add. Recipient autocomplete in
@@ -167,7 +168,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                       const SizedBox(height: 16),
                       Text(
                         l10n.contactsEmpty,
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: context.textTheme.titleMedium,
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -255,7 +256,7 @@ class _ContactRow extends StatelessWidget {
             icon: const Icon(Icons.copy, size: 16),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: addr));
-              ScaffoldMessenger.of(context).showSnackBar(
+              context.showSnackBar(
                 SnackBar(
                   content: Text(context.l10n.addressCopied),
                   duration: const Duration(seconds: 1),

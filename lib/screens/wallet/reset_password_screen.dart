@@ -6,6 +6,7 @@ import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// Reset a wallet's password WITHOUT the old one, using 2FA. Launched from the
 /// wallet detail screen. Uses the on-device StoreKey share + a 2FA-validated
@@ -116,7 +117,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       await wallet.useLibwallet();
       if (!mounted) return;
       final l10nInner = context.l10n;
-      ScaffoldMessenger.of(context).showSnackBar(
+      context.showSnackBar(
         SnackBar(content: Text(l10nInner.resetPwSuccess)),
       );
       Navigator.of(context).pop(true);

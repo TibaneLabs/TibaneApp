@@ -14,6 +14,7 @@ import '../wallet/inapp_unlock_screen.dart';
 import '../wallet/widgets/authorize_and_sign.dart' show collectManagementKeys;
 import '../../utils/log.dart';
 import '../../widgets/wallet_error_display.dart';
+import '../../utils/context_extensions.dart';
 
 /// Sub-screen reached from Settings → "Security & Privacy". Hosts the
 /// biometric toggle, password change, TSS share rotations, and cloud
@@ -156,7 +157,7 @@ class SecurityPrivacyScreen extends StatelessWidget {
     if (result == null) return;
     if (!context.mounted) return;
     final l10n = context.l10n;
-    final messenger = ScaffoldMessenger.of(context);
+    final messenger = context.messenger;
     // A reshare re-splits the wallet secret, so the RemoteKey share must be
     // re-pushed under a fresh, active session — minting it sends a 2FA code.
     final session = await _withProgress(
@@ -228,7 +229,7 @@ class SecurityPrivacyScreen extends StatelessWidget {
     );
     if (confirmed != true) return;
     if (!context.mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
+    final messenger = context.messenger;
     final session = await wallet.libwallet.startRemoteKeyReshare();
     if (session == null) {
       logError('[SecurityPrivacy._rotateRemoteKey] reshare start failed: ${wallet.libwallet.error}');
@@ -312,7 +313,7 @@ class SecurityPrivacyScreen extends StatelessWidget {
       purpose: "rotate this device's key share",
     );
     if (creds == null || !context.mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
+    final messenger = context.messenger;
     // Rotation is a reshare → needs a fresh RemoteKey session (2FA code).
     final session = await _withProgress(
       context,

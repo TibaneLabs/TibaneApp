@@ -13,6 +13,7 @@ import 'package:libwallet/libwallet.dart'
 
 import '../../l10n/l10n.dart';
 import '../../theme/tibane_theme.dart';
+import '../../utils/context_extensions.dart';
 
 Future<bool> showConnectSheet(
   BuildContext context, {
@@ -251,7 +252,7 @@ Future<bool?> _show(
         left: 20,
         right: 20,
         top: 20,
-        bottom: 20 + MediaQuery.of(ctx).viewInsets.bottom,
+        bottom: 20 + ctx.keyboardInset,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -268,7 +269,7 @@ Future<bool?> _show(
             ),
           ),
           const SizedBox(height: 16),
-          Text(title, style: Theme.of(ctx).textTheme.titleLarge),
+          Text(title, style: ctx.textTheme.titleLarge),
           const SizedBox(height: 4),
           Text(
             host,
@@ -630,7 +631,7 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
         left: 20,
         right: 20,
         top: 20,
-        bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
+        bottom: 20 + context.keyboardInset,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -649,7 +650,7 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
           const SizedBox(height: 16),
           Text(
             req.isNewNetwork ? context.l10n.browserApprovalAddAndSwitchTitle : context.l10n.browserApprovalSwitchNetworkTitle,
-            style: Theme.of(context).textTheme.titleLarge,
+            style: context.textTheme.titleLarge,
           ),
           const SizedBox(height: 4),
           Text(

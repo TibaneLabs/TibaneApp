@@ -5,6 +5,7 @@ import '../theme/tibane_theme.dart';
 import 'cat_logo.dart';
 import 'network_chip.dart';
 import 'wallet_button.dart';
+import '../utils/context_extensions.dart';
 
 /// The shared, Tibane-branded top bar (CatLogo + title + NetworkChip +
 /// WalletButton). Used as the [Scaffold.appBar] of each bottom-nav tab root, so
@@ -30,7 +31,7 @@ class TibaneAppBar extends StatelessWidget implements PreferredSizeWidget {
           const SizedBox(width: 10),
           Text(
             context.l10n.appTitle,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            style: context.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w700,
               letterSpacing: -0.5,
             ),

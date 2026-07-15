@@ -13,6 +13,7 @@ import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
 import '../../widgets/wallet_error_display.dart';
 import 'inapp_unlock_screen.dart';
+import '../../utils/context_extensions.dart';
 
 /// Restore an in-app wallet from a Tibane backup: pick the exported file
 /// (primary) or paste the backup JSON (fallback for small payloads), then
@@ -223,7 +224,7 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
         // surrounding ScrollView doesn't consume taps by default.
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => FocusScope.of(context).unfocus(),
+          onTap: () => context.unfocus(),
           // Outer column splits the screen into a scrollable body and a
           // pinned bottom bar so the Restore button is always reachable —
           // it stays just above the keyboard when one is open.

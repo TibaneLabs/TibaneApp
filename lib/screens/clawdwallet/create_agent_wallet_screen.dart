@@ -12,6 +12,7 @@ import '../../widgets/tibane_card.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// Form to provision a new ClawdWallet (agent-controlled MPC wallet).
 ///
@@ -104,7 +105,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    FocusScope.of(context).unfocus();
+    context.unfocus();
 
     final policy = <String, dynamic>{
       'per_tx_max_usd': parseAmount(_perTxCtrl.text) ?? 0,
@@ -195,7 +196,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                     Expanded(
                       child: Text(
                         context.l10n.clawdCreateSchemeTitle,
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: context.textTheme.titleMedium,
                       ),
                     ),
                   ],
@@ -359,7 +360,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
             const SizedBox(height: 24),
             Text(
               context.l10n.clawdCreateKeygenTitle,
-              style: Theme.of(context).textTheme.titleLarge,
+              style: context.textTheme.titleLarge,
             ),
             const SizedBox(height: 10),
             Text(
@@ -393,7 +394,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                     const SizedBox(width: 12),
                     Text(
                       context.l10n.clawdCreateDoneTitle,
-                      style: Theme.of(context).textTheme.titleLarge,
+                      style: context.textTheme.titleLarge,
                     ),
                   ],
                 ),
@@ -416,7 +417,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                         Clipboard.setData(
                           ClipboardData(text: _solanaAddress ?? ''),
                         );
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        context.showSnackBar(
                           SnackBar(
                             content: Text(context.l10n.addressCopied),
                             duration: const Duration(seconds: 1),
@@ -488,7 +489,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                     const SizedBox(width: 10),
                     Text(
                       context.l10n.clawdCreateKeygenFailed,
-                      style: Theme.of(context).textTheme.titleMedium,
+                      style: context.textTheme.titleMedium,
                     ),
                   ],
                 ),

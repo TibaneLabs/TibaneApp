@@ -4,6 +4,7 @@ import 'package:libwallet/libwallet.dart' show WcSessionProposal;
 import '../../l10n/l10n.dart';
 import '../../services/wallet/walletconnect_bridge.dart';
 import '../../theme/tibane_theme.dart';
+import '../../utils/context_extensions.dart';
 
 class WcSessionApproveResult {
   final List<String> accounts; // CAIP-10 strings
@@ -63,7 +64,7 @@ class _WcProposalSheetState extends State<_WcProposalSheet> {
           left: 20,
           right: 20,
           top: 16,
-          bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
+          bottom: 20 + context.keyboardInset,
         ),
         child: SingleChildScrollView(
           child: Column(
@@ -83,7 +84,7 @@ class _WcProposalSheetState extends State<_WcProposalSheet> {
               const SizedBox(height: 16),
               Text(
                 context.l10n.wcProposalTitle,
-                style: Theme.of(context).textTheme.titleMedium,
+                style: context.textTheme.titleMedium,
               ),
               const SizedBox(height: 12),
               _SectionLabel(context.l10n.wcProposalConnectingTo),

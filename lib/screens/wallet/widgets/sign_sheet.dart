@@ -6,6 +6,7 @@ import '../../../services/wallet/signing.dart';
 import '../../../theme/tibane_theme.dart';
 import '../../../utils/wallet_error.dart';
 import '../../../widgets/gradient_button.dart';
+import '../../../utils/context_extensions.dart';
 
 /// Per-transaction sign sheet (Atonline-parity Phase 1, §4.3).
 ///
@@ -184,7 +185,7 @@ class _SignSheetState extends State<_SignSheet> {
             const SizedBox(height: 20),
             Text(
               widget.title,
-              style: Theme.of(context).textTheme.titleLarge,
+              style: context.textTheme.titleLarge,
             ),
             const SizedBox(height: 6),
             Text(

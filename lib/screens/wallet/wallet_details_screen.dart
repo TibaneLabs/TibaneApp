@@ -13,6 +13,7 @@ import 'inapp_export_screen.dart';
 import 'reset_password_screen.dart';
 import 'share_labels.dart';
 import '../../utils/log.dart';
+import '../../utils/context_extensions.dart';
 
 /// Wallet detail view. When [walletId] is null, falls back to the
 /// active in-app wallet (legacy callers); otherwise shows the wallet
@@ -163,7 +164,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     final l10n = context.l10n;
     final ws = context.read<WalletService>();
     final name = wallet.name.isEmpty ? 'wallet' : wallet.name;
-    final messenger = ScaffoldMessenger.of(context);
+    final messenger = context.messenger;
     final target = accountForWallet(ws.accounts, wallet.id);
     if (target == null) {
       logError('[WalletDetails._use] no account found for ${wallet.id}');
@@ -240,7 +241,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     if (ok) {
       await _load();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      context.showSnackBar(
         SnackBar(content: Text(l10n.walletDetailsRenamed(newName))),
       );
     } else {
@@ -397,7 +398,7 @@ class _HeaderCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   wallet.name.isEmpty ? l10n.walletsMgmtUnnamed : wallet.name,
-                  style: Theme.of(context).textTheme.titleLarge,
+                  style: context.textTheme.titleLarge,
                 ),
               ),
               const SizedBox(width: 8),

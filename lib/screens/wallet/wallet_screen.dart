@@ -6,6 +6,7 @@ import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import 'inapp_create_screen.dart';
 import 'wallet_dashboard.dart';
+import '../../utils/context_extensions.dart';
 
 /// "Wallet" tab shown on non-Seeker devices. Read-only views (balances,
 /// recent activity) render even when the wallet is locked — unlocking is
@@ -62,7 +63,7 @@ class _Gate extends StatelessWidget {
             children: [
               Icon(icon, size: 56, color: TibaneColors.orange),
               const SizedBox(height: 20),
-              Text(title, style: Theme.of(context).textTheme.titleLarge),
+              Text(title, style: context.textTheme.titleLarge),
               const SizedBox(height: 8),
               Text(
                 subtitle,

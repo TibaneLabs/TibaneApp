@@ -5,6 +5,7 @@ import '../l10n/l10n.dart';
 import '../theme/tibane_theme.dart';
 import '../utils/log.dart';
 import '../utils/wallet_error.dart';
+import '../utils/context_extensions.dart';
 
 /// User-facing display helpers for [WalletError]. These are the single path
 /// screens should use to surface an error from a libwallet call — they map the
@@ -24,7 +25,7 @@ void showWalletError(BuildContext context, Object error) {
   logError('[WalletError] ${we.code ?? '-'}', error);
   if (we.silent || !context.mounted) return;
 
-  final messenger = ScaffoldMessenger.of(context);
+  final messenger = context.messenger;
   messenger.hideCurrentSnackBar();
   final l10n = context.l10n;
   messenger.showSnackBar(
@@ -228,7 +229,7 @@ class _RawDetail extends StatelessWidget {
                     onPressed: () async {
                       await Clipboard.setData(ClipboardData(text: raw));
                       if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      context.showSnackBar(
                         SnackBar(content: Text(l10n.walletErrorCopiedToClipboard)),
                       );
                     },

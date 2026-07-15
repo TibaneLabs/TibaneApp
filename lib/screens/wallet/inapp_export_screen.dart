@@ -13,6 +13,7 @@ import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
 import '../../widgets/keyboard_safe_form.dart';
+import '../../utils/context_extensions.dart';
 
 /// Two-step export flow: confirm password, then offer a native share sheet
 /// (primary) plus a clipboard fallback for the encrypted backup JSON.
@@ -154,7 +155,7 @@ class _InAppExportScreenState extends State<InAppExportScreen> {
       return;
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    context.showSnackBar(
       SnackBar(content: Text(context.l10n.exportCopiedSnack)),
     );
   }

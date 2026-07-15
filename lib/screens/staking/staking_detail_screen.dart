@@ -23,6 +23,7 @@ import '../../l10n/l10n.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 class StakingDetailScreen extends StatefulWidget {
   final StakingPool pool;
@@ -187,7 +188,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
           IconButton(
             onPressed: () {
               Clipboard.setData(ClipboardData(text: pool.address));
-              ScaffoldMessenger.of(context).showSnackBar(
+              context.showSnackBar(
                 SnackBar(content: Text(l10n.stakingPoolAddressCopied)),
               );
             },
@@ -297,7 +298,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
                       const SizedBox(height: 12),
                       Text(
                         l10n.stakingConnectToStake,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        style: context.textTheme.bodyMedium?.copyWith(
                           color: TibaneColors.textMuted,
                         ),
                       ),
@@ -419,7 +420,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
       if (sigs == null) return; // cancelled / not authorized
       final sig = sigs.first;
       if (sig != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        context.showSnackBar(
           SnackBar(
             content: Text('$action confirmed: ${sig.substring(0, 8)}...'),
           ),
@@ -480,7 +481,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
       if (sigs == null) return; // cancelled / not authorized
       final sig = sigs.first;
       if (sig != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        context.showSnackBar(
           SnackBar(
             content: Text('Settings updated: ${sig.substring(0, 8)}...'),
           ),
@@ -524,7 +525,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
           if (amount < pool.minStakeAmount) {
             if (mounted) {
               final l10n = context.l10n;
-              ScaffoldMessenger.of(context).showSnackBar(
+              context.showSnackBar(
                 SnackBar(
                   content: Text(
                     l10n.stakingBelowMinimum(
@@ -620,7 +621,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
       if (sigs == null) return; // cancelled / not authorized
       final sig = sigs.first;
       if (sig != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        context.showSnackBar(
           SnackBar(
             content: Text('$action confirmed: ${sig.substring(0, 8)}...'),
           ),
@@ -763,9 +764,7 @@ class _UserStakeSection extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               context.l10n.stakingNoStakeInPool,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
+              style: context.textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
             ),
           ],
         ),
@@ -1916,7 +1915,7 @@ class _InfoRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(4),
               onTap: () {
                 Clipboard.setData(ClipboardData(text: copyValue!));
-                ScaffoldMessenger.of(context).showSnackBar(
+                context.showSnackBar(
                   SnackBar(
                     content: Text(context.l10n.addressCopied),
                     duration: const Duration(seconds: 1),
