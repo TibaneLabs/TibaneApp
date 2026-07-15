@@ -28,6 +28,7 @@ import 'services/wallet_service.dart';
 import 'theme/tibane_theme.dart';
 import 'widgets/cat_logo.dart';
 import 'widgets/tibane_app_bar.dart';
+import 'utils/context_extensions.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -332,7 +333,7 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
         (widget.forceSeeker ?? (wallet.currentAccount?.isMwa ?? false)) && !isUk;
     // Hide the bottom nav while the keyboard is up so it doesn't float above
     // it — the bar lives on the shell Scaffold, outside the tab Navigators.
-    final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+    final keyboardOpen = context.keyboardInset > 0;
 
     return PopScope(
       // The tab Navigators sit below the root navigator, so a system back must

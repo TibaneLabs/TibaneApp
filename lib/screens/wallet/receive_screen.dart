@@ -7,6 +7,7 @@ import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import 'btc_addresses_screen.dart';
+import '../../utils/context_extensions.dart';
 
 class ReceiveScreen extends StatefulWidget {
   const ReceiveScreen({super.key});
@@ -108,7 +109,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                   onTap: () async {
                     await Clipboard.setData(ClipboardData(text: addr));
                     if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    context.showSnackBar(
                       SnackBar(
                         content: Text(l10n.addressCopied),
                         duration: const Duration(seconds: 1),

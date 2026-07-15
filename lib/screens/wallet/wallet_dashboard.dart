@@ -17,6 +17,7 @@ import '../swap_screen.dart';
 import '../token_detail_screen.dart';
 import 'receive_screen.dart';
 import 'send_screen.dart';
+import '../../utils/context_extensions.dart';
 
 class WalletDashboard extends StatefulWidget {
   const WalletDashboard({super.key});
@@ -81,7 +82,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                   children: [
                     Text(
                       '\$${totalUsd.toStringAsFixed(2)}',
-                      style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                      style: context.textTheme.displaySmall?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
                     ),

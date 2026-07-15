@@ -8,6 +8,7 @@ import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// Import an existing BIP-39 mnemonic from another wallet (Phantom,
 /// Backpack, MetaMask, etc.) and upgrade it into a full MPC wallet.
@@ -476,7 +477,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
           const SizedBox(height: 24),
           Text(
             message,
-            style: Theme.of(context).textTheme.titleMedium,
+            style: context.textTheme.titleMedium,
             textAlign: TextAlign.center,
           ),
         ],
@@ -495,7 +496,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
             const SizedBox(width: 12),
             Text(
               l10n.mnemonicDoneTitle,
-              style: Theme.of(context).textTheme.titleLarge,
+              style: context.textTheme.titleLarge,
             ),
           ],
         ),

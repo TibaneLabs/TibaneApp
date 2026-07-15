@@ -9,6 +9,7 @@ import '../../widgets/tibane_card.dart';
 import '../../l10n/l10n.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 class StakingMembersScreen extends StatefulWidget {
   final StakingPool pool;
@@ -267,7 +268,7 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
                   pool: pool,
                   onTap: () {
                     Clipboard.setData(ClipboardData(text: m.owner));
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    context.showSnackBar(
                       SnackBar(content: Text(context.l10n.addressCopied)),
                     );
                   },

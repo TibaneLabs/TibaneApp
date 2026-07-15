@@ -12,6 +12,7 @@ import 'share_labels.dart';
 import 'wallet_details_screen.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// Lists every libwallet wallet on this device. Each row taps into
 /// [WalletDetailsScreen]; FAB adds a new wallet via the existing create
@@ -167,7 +168,7 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
                       const SizedBox(height: 16),
                       Text(
                         l10n.walletsMgmtEmptyTitle,
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: context.textTheme.titleMedium,
                       ),
                       const SizedBox(height: 4),
                       Text(

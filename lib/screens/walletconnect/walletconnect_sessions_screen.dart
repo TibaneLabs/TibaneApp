@@ -13,6 +13,7 @@ import '../../widgets/tibane_card.dart';
 import '../../widgets/wallet_error_display.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// WalletConnect v2 hub. Lets the user start the relay (if not already
 /// running), paste a `wc:` URI to pair with a dApp, and view / disconnect
@@ -113,9 +114,7 @@ class _WalletConnectSessionsScreenState
     final text = data?.text?.trim();
     if (text == null || text.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(context.l10n.wcSessionsClipboardEmpty)));
+      context.showSnackBar(SnackBar(content: Text(context.l10n.wcSessionsClipboardEmpty)));
       return;
     }
     _uriCtrl.text = text;
@@ -149,7 +148,7 @@ class _WalletConnectSessionsScreenState
       }
     });
     if (topic != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      context.showSnackBar(
         SnackBar(
           content: Text(context.l10n.wcSessionsPairingInProgress),
         ),

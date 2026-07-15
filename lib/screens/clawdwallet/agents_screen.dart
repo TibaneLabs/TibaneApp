@@ -13,6 +13,7 @@ import 'create_agent_wallet_screen.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
 import '../../widgets/wallet_error_display.dart';
+import '../../utils/context_extensions.dart';
 
 /// USDC mainnet mint. Stage 1 demo flows transfer USDC.
 const _usdcMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
@@ -190,7 +191,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
                 const SizedBox(height: 10),
                 Text(
                   context.l10n.clawdAgentsLoadError,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: context.textTheme.titleMedium,
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -219,7 +220,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
           Center(
             child: Text(
               context.l10n.clawdAgentsEmpty,
-              style: Theme.of(context).textTheme.titleLarge,
+              style: context.textTheme.titleLarge,
             ),
           ),
           const SizedBox(height: 8),
@@ -322,7 +323,7 @@ class _AgentCard extends StatelessWidget {
                   children: [
                     Text(
                       name,
-                      style: Theme.of(context).textTheme.titleMedium,
+                      style: context.textTheme.titleMedium,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -331,7 +332,7 @@ class _AgentCard extends StatelessWidget {
                       onTap: () {
                         if (addr == null) return;
                         Clipboard.setData(ClipboardData(text: addr));
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        context.showSnackBar(
                           SnackBar(
                             content: Text(context.l10n.addressCopied),
                             duration: const Duration(seconds: 1),

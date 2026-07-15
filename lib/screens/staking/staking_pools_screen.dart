@@ -13,6 +13,7 @@ import 'staking_detail_screen.dart';
 import '../../l10n/l10n.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 class StakingPoolsScreen extends StatefulWidget {
   const StakingPoolsScreen({super.key});
@@ -128,7 +129,7 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
                   children: [
                     Text(
                       l10n.stakingPoolsTitle,
-                      style: Theme.of(context).textTheme.titleLarge,
+                      style: context.textTheme.titleLarge,
                     ),
                     Text(
                       l10n.stakingPoolsCount(_pools.length.toString()),
@@ -518,7 +519,7 @@ class _StakingUnavailableInRegion extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               l10n.stakingUnavailableTitle,
-              style: Theme.of(context).textTheme.titleMedium,
+              style: context.textTheme.titleMedium,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),

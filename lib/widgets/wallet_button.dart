@@ -10,6 +10,7 @@ import '../screens/wallet/widgets/account_switcher_sheet.dart';
 import '../services/wallet/unified_account.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
+import '../utils/context_extensions.dart';
 
 /// Wallet connect/disconnect button for the app bar
 class WalletButton extends StatelessWidget {
@@ -123,7 +124,7 @@ class _ConnectButton extends StatelessWidget {
   /// it fails — most importantly when no compatible wallet app is installed
   /// (native `NO_WALLET`). Captures the messenger before the sheet closes.
   Future<void> _connectExternal(BuildContext sheetContext) async {
-    final messenger = ScaffoldMessenger.of(sheetContext);
+    final messenger = sheetContext.messenger;
     final l10n = sheetContext.l10n;
     Navigator.pop(sheetContext);
     final ok = await wallet.connectMwa();
@@ -163,14 +164,12 @@ class _ConnectButton extends StatelessWidget {
               const SizedBox(height: 20),
               Text(
                 l10n.walletButtonConnectTitle,
-                style: Theme.of(context).textTheme.titleLarge,
+                style: context.textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
               Text(
                 l10n.walletButtonConnectSubtitle,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
+                style: context.textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),

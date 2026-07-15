@@ -10,6 +10,7 @@ import '../widgets/cat_logo.dart';
 import '../widgets/tibane_card.dart';
 import '../utils/log.dart';
 import '../utils/wallet_error.dart';
+import '../utils/context_extensions.dart';
 
 class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
@@ -64,7 +65,7 @@ class _AboutScreenState extends State<AboutScreen> {
                       TibaneColors.brandGradient.createShader(bounds),
                   child: Text(
                     'Tibane Labs',
-                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                    style: context.textTheme.headlineLarge?.copyWith(
                       color: Colors.white,
                       letterSpacing: -0.5,
                     ),
@@ -90,14 +91,14 @@ class _AboutScreenState extends State<AboutScreen> {
               children: [
                 Text(
                   l10n.aboutStoryTitle,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleMedium?.copyWith(color: TibaneColors.text),
+                  style: context.textTheme.titleMedium?.copyWith(
+                    color: TibaneColors.text,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Text(
                   l10n.aboutStoryParagraph1,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  style: context.textTheme.bodyMedium?.copyWith(
                     color: TibaneColors.textMuted,
                     height: 1.7,
                   ),
@@ -105,7 +106,7 @@ class _AboutScreenState extends State<AboutScreen> {
                 const SizedBox(height: 12),
                 Text(
                   l10n.aboutStoryParagraph2,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  style: context.textTheme.bodyMedium?.copyWith(
                     color: TibaneColors.textMuted,
                     height: 1.7,
                   ),
@@ -137,18 +138,33 @@ class _AboutScreenState extends State<AboutScreen> {
                     const SizedBox(width: 12),
                     Text(
                       'Tibane Thecat',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      style: context.textTheme.titleMedium?.copyWith(
                         color: TibaneColors.gold,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                _DetailRow(label: l10n.aboutTokenLaunchLabel, value: l10n.homeFairLaunch),
-                _DetailRow(label: l10n.aboutTokenSupplyLabel, value: l10n.aboutTokenSupplyValue),
-                _DetailRow(label: l10n.aboutTokenPresaleLabel, value: l10n.commonNone),
-                _DetailRow(label: l10n.aboutTokenTeamAllocLabel, value: l10n.commonNone),
-                _DetailRow(label: l10n.homeStakingTitle, value: l10n.aboutTokenStakingValue),
+                _DetailRow(
+                  label: l10n.aboutTokenLaunchLabel,
+                  value: l10n.homeFairLaunch,
+                ),
+                _DetailRow(
+                  label: l10n.aboutTokenSupplyLabel,
+                  value: l10n.aboutTokenSupplyValue,
+                ),
+                _DetailRow(
+                  label: l10n.aboutTokenPresaleLabel,
+                  value: l10n.commonNone,
+                ),
+                _DetailRow(
+                  label: l10n.aboutTokenTeamAllocLabel,
+                  value: l10n.commonNone,
+                ),
+                _DetailRow(
+                  label: l10n.homeStakingTitle,
+                  value: l10n.aboutTokenStakingValue,
+                ),
               ],
             ),
           ),
@@ -296,7 +312,9 @@ class _VersionInfoCard extends StatelessWidget {
             'libwallet',
             info?.version.isNotEmpty == true
                 ? info!.version
-                : (error != null ? l10n.aboutDiagUnavailable : l10n.aboutDiagLoading),
+                : (error != null
+                      ? l10n.aboutDiagUnavailable
+                      : l10n.aboutDiagLoading),
           ),
           if (info != null && info!.gitTag.isNotEmpty) _kv('git', info!.gitTag),
           if (info != null && info!.dateTag.isNotEmpty)

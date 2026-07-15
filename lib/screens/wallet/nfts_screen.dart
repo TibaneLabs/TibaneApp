@@ -9,6 +9,7 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// NFT collection view for the active account on the active network.
 /// Empty for accounts that don't have a valid address on the current
@@ -115,7 +116,7 @@ class _NftsScreenState extends State<NftsScreen> {
                               ? _listing!.network.name
                               : l10n.commonThisNetwork,
                         ),
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: context.textTheme.titleMedium,
                       ),
                       const SizedBox(height: 4),
                       Text(

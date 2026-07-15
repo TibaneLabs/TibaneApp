@@ -23,6 +23,7 @@ import '../utils/log.dart';
 import '../utils/wallet_error.dart';
 import '../widgets/wallet_error_display.dart';
 import '../l10n/l10n.dart';
+import '../utils/context_extensions.dart';
 
 class IncineratorScreen extends StatefulWidget {
   const IncineratorScreen({super.key});
@@ -414,7 +415,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       if (sigs == null) return; // cancelled / not authorized
       final sig = sigs.first;
       if (sig != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        context.showSnackBar(
           SnackBar(content: Text(context.l10n.incineratorBurnedSig(sig.substring(0, 8)))),
         );
         await _rpc.confirmTransaction(sig);
@@ -567,9 +568,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
 
       if (!mounted) return;
       if (successCount > 0) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(context.l10n.incineratorBurnedItems(successCount))));
+        context.showSnackBar(SnackBar(content: Text(context.l10n.incineratorBurnedItems(successCount))));
         _clearSelection();
       } else if (wallet.error != null) {
         logError('[Incinerator._directBurn] wallet error: ${wallet.error}');
@@ -771,7 +770,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
 
       if (!mounted) return;
       if (signatures.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        context.showSnackBar(
           SnackBar(
             content: Text(context.l10n.incineratorBurnedBatches(signatures.length)),
           ),
@@ -829,11 +828,11 @@ class _IncineratorScreenState extends State<IncineratorScreen>
                   children: [
                     Text(
                       l10n.incineratorTitle,
-                      style: Theme.of(context).textTheme.titleLarge,
+                      style: context.textTheme.titleLarge,
                     ),
                     Text(
                       l10n.incineratorSubtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      style: context.textTheme.bodySmall?.copyWith(
                         color: TibaneColors.textMuted,
                       ),
                     ),
@@ -981,9 +980,7 @@ class _NotConnectedView extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               context.l10n.incineratorConnectWallet,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyLarge?.copyWith(color: TibaneColors.textMuted),
+              style: context.textTheme.bodyLarge?.copyWith(color: TibaneColors.textMuted),
               textAlign: TextAlign.center,
             ),
           ],

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../l10n/l10n.dart';
 import '../theme/tibane_theme.dart';
 import '../utils/log.dart';
+import '../utils/context_extensions.dart';
 
 /// Shared building blocks for the post-transaction "successful" screens (send
 /// and swap) and their review sheets: a glowing success mark, tappable receipt
@@ -76,7 +77,7 @@ String? explorerTxUrl(Network? net, String? hash) {
 /// [label] must already be a localized string supplied by the caller.
 void copyWithToast(BuildContext context, String value, String label) {
   Clipboard.setData(ClipboardData(text: value));
-  ScaffoldMessenger.of(context).showSnackBar(
+  context.showSnackBar(
     SnackBar(
       content: Text(context.l10n.copiedToast(label)),
       duration: const Duration(seconds: 1),
@@ -106,9 +107,7 @@ Future<void> openExplorerUrl(BuildContext context, String url) async {
   }
   logError('[txSuccess.openExplorerUrl] could not open $url: $lastErr');
   if (!context.mounted) return;
-  ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: Text('Could not open $url')));
+  context.showSnackBar(SnackBar(content: Text('Could not open $url')));
 }
 
 /// Middle-ellipsis for a long tx signature ("5mR8x9Lp…x2Kp"); returns the

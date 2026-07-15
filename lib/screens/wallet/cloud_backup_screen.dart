@@ -9,6 +9,7 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// Cloud-backup hub. Writes an encrypted copy of the wallet to the app's
 /// documents directory; the device-level "iCloud Backup" (iOS) or "Auto
@@ -75,7 +76,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     await _refresh();
     if (!mounted) return;
     if (ts != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      context.showSnackBar(
         SnackBar(content: Text(context.l10n.cloudBackupWritten)),
       );
     }
@@ -85,7 +86,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     final l10n = context.l10n;
     final wallet = context.read<WalletService>();
     if (wallet.libwallet.hasWallet) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      context.showSnackBar(
         SnackBar(content: Text(l10n.cloudBackupDisconnectFirst)),
       );
       return;
@@ -93,7 +94,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     final json = await wallet.libwallet.readAutoBackup();
     if (json == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      context.showSnackBar(
         SnackBar(content: Text(context.l10n.cloudBackupNoBackup)),
       );
       return;
@@ -127,7 +128,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     if (ok) {
       await wallet.useLibwallet();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      context.showSnackBar(
         SnackBar(content: Text(context.l10n.cloudBackupRestored)),
       );
     }

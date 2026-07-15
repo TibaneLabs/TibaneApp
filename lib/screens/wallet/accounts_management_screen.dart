@@ -13,6 +13,7 @@ import '../../widgets/wallet_error_display.dart';
 import 'inapp_create_screen.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// Lists every chain account derived from libwallet wallets on this
 /// device. Shows the parent wallet, the chain type, the on-chain
@@ -208,7 +209,7 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
                       const SizedBox(height: 16),
                       Text(
                         l10n.accountsEmptyTitle,
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: context.textTheme.titleMedium,
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -322,7 +323,7 @@ class _AccountTile extends StatelessWidget {
                     InkWell(
                       onTap: () {
                         Clipboard.setData(ClipboardData(text: addr));
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        context.showSnackBar(
                           SnackBar(
                             content: Text(l10n.addressCopied),
                             duration: const Duration(seconds: 1),

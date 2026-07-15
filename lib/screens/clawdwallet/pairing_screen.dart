@@ -10,6 +10,7 @@ import '../../widgets/tibane_card.dart';
 import 'create_agent_wallet_screen.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../utils/context_extensions.dart';
 
 /// Handles an incoming `clawd://pair?agent=...&token=...` URL.
 ///
@@ -145,7 +146,7 @@ class _PairingScreenState extends State<PairingScreen> {
             const SizedBox(height: 24),
             Text(
               context.l10n.clawdPairingVerifyingTitle,
-              style: Theme.of(context).textTheme.titleLarge,
+              style: context.textTheme.titleLarge,
             ),
             const SizedBox(height: 10),
             Text(
@@ -180,7 +181,7 @@ class _PairingScreenState extends State<PairingScreen> {
                     Expanded(
                       child: Text(
                         _errorTitle ?? context.l10n.clawdPairingFailed,
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: context.textTheme.titleMedium,
                       ),
                     ),
                   ],
