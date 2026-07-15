@@ -9,6 +9,8 @@ import 'package:phone_form_field/phone_form_field.dart';
 import 'package:provider/provider.dart';
 
 import 'constants/solana_constants.dart';
+import 'l10n/fallback_localizations_delegate.dart';
+import 'l10n/l10n.dart';
 import 'screens/browser/dapp_browser_screen.dart';
 import 'screens/clawdwallet/pairing_screen.dart';
 import 'screens/home_screen.dart';
@@ -19,6 +21,7 @@ import 'screens/wallet/wallet_screen.dart';
 import 'services/balances_store.dart';
 import 'services/browser_preferences.dart';
 import 'services/favorites_service.dart';
+import 'services/locale_controller.dart';
 import 'services/token_meta_store.dart';
 import 'services/uk_compliance_service.dart';
 import 'services/wallet_service.dart';
@@ -48,6 +51,27 @@ void main() {
 /// Root navigator key — used by the deep-link listener to push the
 /// pairing screen without needing a `BuildContext`.
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
+/// Pick the app UI locale for a device locale, given the locales we ship.
+///
+/// Used as `MaterialApp.localeResolutionCallback` when no explicit language is
+/// chosen. Prefers an exact language+country match, then a language-only match
+/// (so `fr_CA`→`fr`, `ja_JP`→`ja`, and any Portuguese `pt_BR`/`pt_PT`→`pt`),
+/// and falls back to English for anything we don't ship. Pure, for unit testing.
+Locale resolveAppLocale(Locale? deviceLocale, Iterable<Locale> supported) {
+  const fallback = Locale('en');
+  if (deviceLocale == null) return fallback;
+  for (final l in supported) {
+    if (l.languageCode == deviceLocale.languageCode &&
+        l.countryCode == deviceLocale.countryCode) {
+      return l;
+    }
+  }
+  for (final l in supported) {
+    if (l.languageCode == deviceLocale.languageCode) return l;
+  }
+  return fallback;
+}
 
 /// Whether the startup gate (D16) can reveal the app instead of the loading
 /// splash. Pending until the biometric-migration check resolves; then reveal
@@ -93,6 +117,9 @@ class TibaneApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        // App language: null = System default (follow device). Drives
+        // MaterialApp.locale; the Settings → General switcher writes to it.
+        ChangeNotifierProvider(create: (_) => LocaleController()..load()),
         ChangeNotifierProvider(create: (_) => WalletService()..tryRestore()),
         // Centralized holdings + tx store; reads WalletService (listed first so
         // it's resolvable here). See BALANCES_STORE_MIGRATION.md.
@@ -107,21 +134,37 @@ class TibaneApp extends StatelessWidget {
         // TOKEN_METADATA_REGISTRY.md.
         ChangeNotifierProvider(create: (_) => TokenMetaStore()),
       ],
-      child: MaterialApp(
-        title: 'Tibane',
-        debugShowCheckedModeBanner: false,
-        theme: TibaneTheme.darkTheme,
-        navigatorKey: rootNavigatorKey,
-        // PhoneFieldLocalization powers the phone_form_field country
-        // picker labels and validator error messages.
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-          ...PhoneFieldLocalization.delegates,
-        ],
-        supportedLocales: const [Locale('en')],
-        home: const TibaneShell(),
+      // Consumer sits *below* the providers so it can watch LocaleController
+      // and rebuild MaterialApp when the user switches language.
+      child: Consumer<LocaleController>(
+        builder: (context, localeController, _) => MaterialApp(
+          onGenerateTitle: (ctx) => ctx.l10n.appTitle,
+          debugShowCheckedModeBanner: false,
+          theme: TibaneTheme.darkTheme,
+          navigatorKey: rootNavigatorKey,
+          // null = follow the device (resolved by localeResolutionCallback);
+          // non-null = the user's explicit choice.
+          locale: localeController.locale,
+          // AppLocalizations powers our translated strings; the Global*
+          // delegates localize Material/Cupertino widgets; PhoneFieldLocalization
+          // powers the phone_form_field country picker + validator messages.
+          // phone_form_field ships fr/pt but not ja, so its delegates are wrapped
+          // to fall back to English for any locale they lack — otherwise Flutter
+          // logs a debug "locale not supported by all delegates" warning and the
+          // picker has no strings for Japanese.
+          localizationsDelegates: [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            for (final d in PhoneFieldLocalization.delegates)
+              FallbackLocalizationsDelegate(d, const Locale('en')),
+          ],
+          supportedLocales: AppLocalizations.supportedLocales,
+          localeResolutionCallback: (deviceLocale, supportedLocales) =>
+              resolveAppLocale(deviceLocale, supportedLocales),
+          home: const TibaneShell(),
+        ),
       ),
     );
   }

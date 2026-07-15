@@ -1,0 +1,11 @@
+# Flutter gen_l10n configuration. Generated localizations are written to
+# lib/l10n/gen/ (a real directory — the legacy synthetic `package:flutter_gen`
+# import was removed in modern Flutter). Regenerate with `flutter gen-l10n`;
+# the tool also runs automatically during `flutter run` / `flutter build`.
+arb-dir: lib/l10n
+output-dir: lib/l10n/gen
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+# AppLocalizations.of(context) returns non-null (fewer `!` at call sites).
+nullable-getter: false
