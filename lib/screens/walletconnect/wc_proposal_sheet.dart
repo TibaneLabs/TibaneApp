@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart' show WcSessionProposal;
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet/walletconnect_bridge.dart';
 import '../../theme/tibane_theme.dart';
 
@@ -81,11 +82,11 @@ class _WcProposalSheetState extends State<_WcProposalSheet> {
               ),
               const SizedBox(height: 16),
               Text(
-                'WalletConnect session',
+                context.l10n.wcProposalTitle,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 12),
-              _SectionLabel('Connecting to'),
+              _SectionLabel(context.l10n.wcProposalConnectingTo),
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
@@ -109,23 +110,22 @@ class _WcProposalSheetState extends State<_WcProposalSheet> {
                 ),
               const SizedBox(height: 16),
               if (required is Map && required.isNotEmpty) ...[
-                _SectionLabel('Requested'),
+                _SectionLabel(context.l10n.wcProposalRequested),
                 _NamespaceList(map: Map<String, dynamic>.from(required)),
                 const SizedBox(height: 8),
               ],
               if (optional is Map && optional.isNotEmpty) ...[
-                _SectionLabel('Optional'),
+                _SectionLabel(context.l10n.wcProposalOptional),
                 _NamespaceList(map: Map<String, dynamic>.from(optional)),
                 const SizedBox(height: 8),
               ],
               const SizedBox(height: 4),
-              _SectionLabel('Accounts to expose'),
+              _SectionLabel(context.l10n.wcProposalAccountsToExpose),
               if (widget.candidates.isEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
-                    'You don\'t have any accounts that match the chains '
-                    'this dApp is asking for.',
+                    context.l10n.wcProposalNoAccounts,
                     style: monoStyle(
                       fontSize: 12,
                       color: TibaneColors.textMuted,
@@ -171,7 +171,7 @@ class _WcProposalSheetState extends State<_WcProposalSheet> {
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      child: const Text('Reject'),
+                      child: Text(context.l10n.actionReject),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -187,9 +187,9 @@ class _WcProposalSheetState extends State<_WcProposalSheet> {
                         foregroundColor: TibaneColors.black,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      child: const Text(
-                        'Approve',
-                        style: TextStyle(fontWeight: FontWeight.w600),
+                      child: Text(
+                        context.l10n.actionApprove,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
                   ),

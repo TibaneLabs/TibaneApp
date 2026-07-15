@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -76,27 +77,30 @@ class _ContactsScreenState extends State<ContactsScreen> {
   Future<void> _delete(lw.Contact c) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: TibaneColors.card,
-        title: const Text('Delete contact?'),
-        content: Text(
-          'Remove "${c.name}"? The on-chain history is unaffected.',
-          style: const TextStyle(color: TibaneColors.textMuted),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+      builder: (ctx) {
+        final l10n = ctx.l10n;
+        return AlertDialog(
+          backgroundColor: TibaneColors.card,
+          title: Text(l10n.contactsDeleteTitle),
+          content: Text(
+            l10n.contactsDeleteBody(c.name),
+            style: const TextStyle(color: TibaneColors.textMuted),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: TibaneColors.error),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.actionCancel),
             ),
-          ),
-        ],
-      ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(
+                l10n.actionDelete,
+                style: const TextStyle(color: TibaneColors.error),
+              ),
+            ),
+          ],
+        );
+      },
     );
     if (confirmed != true) return;
     if (!mounted) return;
@@ -116,15 +120,16 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Contacts')),
+      appBar: AppBar(title: Text(l10n.contactsTitle)),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: TibaneColors.orange,
         foregroundColor: TibaneColors.black,
         onPressed: _add,
         icon: const Icon(Icons.add),
-        label: const Text('New contact'),
+        label: Text(l10n.contactsNewContact),
       ),
       body: SafeArea(
         child: Builder(
@@ -161,14 +166,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'No contacts yet',
+                        l10n.contactsEmpty,
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Save addresses you use often so you don\'t have to '
-                        're-paste them.',
-                        style: TextStyle(color: TibaneColors.textMuted),
+                      Text(
+                        l10n.contactsEmptyHint,
+                        style: const TextStyle(color: TibaneColors.textMuted),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -247,20 +251,20 @@ class _ContactRow extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: 'Copy address',
+            tooltip: context.l10n.actionCopyAddress,
             icon: const Icon(Icons.copy, size: 16),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: addr));
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Address copied'),
-                  duration: Duration(seconds: 1),
+                SnackBar(
+                  content: Text(context.l10n.addressCopied),
+                  duration: const Duration(seconds: 1),
                 ),
               );
             },
           ),
           IconButton(
-            tooltip: 'Delete',
+            tooltip: context.l10n.actionDelete,
             icon: const Icon(Icons.delete_outline, size: 18),
             color: TibaneColors.error,
             onPressed: onDelete,
@@ -307,14 +311,15 @@ class _ContactEditScreenState extends State<_ContactEditScreen> {
   }
 
   Future<void> _save() async {
+    final l10n = context.l10n;
     final name = _nameCtrl.text.trim();
     final address = _addressCtrl.text.trim();
     if (name.isEmpty) {
-      setState(() => _error = 'Name is required');
+      setState(() => _error = l10n.contactsNameRequired);
       return;
     }
     if (address.isEmpty) {
-      setState(() => _error = 'Address is required');
+      setState(() => _error = l10n.contactsAddressRequired);
       return;
     }
     setState(() {
@@ -356,10 +361,13 @@ class _ContactEditScreenState extends State<_ContactEditScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final isNew = widget.initial == null;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: Text(isNew ? 'New contact' : 'Edit contact')),
+      appBar: AppBar(
+        title: Text(isNew ? l10n.contactsNewContact : l10n.contactsEditContact),
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -368,20 +376,20 @@ class _ContactEditScreenState extends State<_ContactEditScreen> {
               TextField(
                 controller: _nameCtrl,
                 enabled: !_busy,
-                decoration: const InputDecoration(labelText: 'Name'),
+                decoration: InputDecoration(labelText: l10n.labelName),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _addressCtrl,
                 enabled: !_busy,
                 autocorrect: false,
-                decoration: const InputDecoration(labelText: 'Address'),
+                decoration: InputDecoration(labelText: l10n.labelAddress),
                 style: monoStyle(fontSize: 13),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _type,
-                decoration: const InputDecoration(labelText: 'Type'),
+                decoration: InputDecoration(labelText: l10n.labelType),
                 items: const [
                   DropdownMenuItem(value: 'solana', child: Text('Solana')),
                   DropdownMenuItem(
@@ -399,7 +407,7 @@ class _ContactEditScreenState extends State<_ContactEditScreen> {
                 controller: _memoCtrl,
                 enabled: !_busy,
                 maxLines: 2,
-                decoration: const InputDecoration(labelText: 'Memo (optional)'),
+                decoration: InputDecoration(labelText: l10n.contactsMemoLabel),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
@@ -417,7 +425,9 @@ class _ContactEditScreenState extends State<_ContactEditScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: Text(
-                  _busy ? 'Saving…' : (isNew ? 'Create' : 'Save changes'),
+                  _busy
+                      ? l10n.contactsSaving
+                      : (isNew ? l10n.actionCreate : l10n.contactsSaveChanges),
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),

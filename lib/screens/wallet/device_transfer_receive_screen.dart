@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
@@ -86,12 +87,11 @@ class _DeviceTransferReceiveScreenState
       }
       if (raw.startsWith(_backupQrPrefix)) {
         setState(() => _scanHint =
-            "That's a wallet backup QR, not a device-transfer code. Point "
-            'the camera at the QR shown on the other device.');
+            context.l10n.deviceReceiveWrongQr);
         return;
       }
-      setState(() => _scanHint = 'Not a device-transfer code. Point the '
-          'camera at the QR shown by the other device.');
+      setState(() => _scanHint =
+          context.l10n.deviceReceiveNotTransferCode);
       return;
     }
   }
@@ -131,7 +131,7 @@ class _DeviceTransferReceiveScreenState
     if (_busy) return;
     final pw = _pwCtrl.text;
     if (pw.isEmpty) {
-      setState(() => _message = 'Enter the wallet password');
+      setState(() => _message = context.l10n.deviceReceiveEnterPassword);
       return;
     }
     setState(() {
@@ -192,17 +192,18 @@ class _DeviceTransferReceiveScreenState
   }
 
   Widget _buildScaffold() {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
         backgroundColor:
             _phase == _Phase.scanning ? Colors.black : TibaneColors.black,
         foregroundColor: Colors.white,
-        title: const Text('Receive wallet'),
+        title: Text(l10n.deviceReceiveTitle),
         actions: _phase == _Phase.scanning
             ? [
                 IconButton(
-                  tooltip: 'Switch camera',
+                  tooltip: l10n.deviceReceiveSwitchCamera,
                   onPressed: () => _controller.switchCamera(),
                   icon: const Icon(Icons.cameraswitch),
                 ),
@@ -246,9 +247,7 @@ class _DeviceTransferReceiveScreenState
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Text(
-                  _scanHint ??
-                      'Scan the device-transfer QR code shown on your old '
-                          'device.',
+                  _scanHint ?? context.l10n.deviceReceiveScanHint,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: _scanHint == null
@@ -267,6 +266,7 @@ class _DeviceTransferReceiveScreenState
   }
 
   Widget _buildWaiting() {
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.all(32),
       child: Column(
@@ -274,28 +274,27 @@ class _DeviceTransferReceiveScreenState
         children: [
           const CircularProgressIndicator(color: TibaneColors.orange),
           const SizedBox(height: 24),
-          const Text(
-            'Waiting for the other device to confirm…',
+          Text(
+            l10n.deviceReceiveWaiting,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: TibaneColors.text,
               fontSize: 16,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 12),
-          const Text(
-            'Approve the transfer on your old device. This can take up to a '
-            'couple of minutes.',
+          Text(
+            l10n.deviceReceiveWaitingHint,
             textAlign: TextAlign.center,
-            style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+            style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
           ),
           const SizedBox(height: 32),
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: TibaneColors.textMuted),
+            child: Text(
+              l10n.actionCancel,
+              style: const TextStyle(color: TibaneColors.textMuted),
             ),
           ),
         ],
@@ -304,6 +303,7 @@ class _DeviceTransferReceiveScreenState
   }
 
   Widget _buildPassword() {
+    final l10n = context.l10n;
     // Whether there's already an active wallet to keep — drives the
     // "use now" vs "just add" choice. When there's none, the received wallet
     // becomes active unconditionally.
@@ -322,21 +322,20 @@ class _DeviceTransferReceiveScreenState
               size: 48,
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Wallet received',
+            Text(
+              l10n.deviceReceivePasswordTitle,
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 color: TibaneColors.text,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Enter the wallet password to finish setting it up on this '
-              'device. This is the same password used on your old device.',
+            Text(
+              l10n.deviceReceivePasswordHint,
               textAlign: TextAlign.center,
-              style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+              style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
             ),
             const SizedBox(height: 24),
             TextField(
@@ -347,7 +346,7 @@ class _DeviceTransferReceiveScreenState
               textInputAction: TextInputAction.done,
               onSubmitted: (_) =>
                   _busy ? null : _activate(makeActive: !hasActive),
-              decoration: const InputDecoration(labelText: 'Password'),
+              decoration: InputDecoration(labelText: l10n.labelPassword),
             ),
             if (_message != null) ...[
               const SizedBox(height: 12),
@@ -367,7 +366,7 @@ class _DeviceTransferReceiveScreenState
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: Text(
-                  _busy ? 'Setting up…' : 'Add & switch to it',
+                  _busy ? l10n.deviceReceiveSettingUp : l10n.deviceReceiveAddAndSwitch,
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
@@ -379,9 +378,9 @@ class _DeviceTransferReceiveScreenState
                   side: const BorderSide(color: TibaneColors.textDim),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                child: const Text(
-                  'Add to my wallets, keep current',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                child: Text(
+                  l10n.deviceReceiveAddKeepCurrent,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
             ] else
@@ -394,7 +393,7 @@ class _DeviceTransferReceiveScreenState
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: Text(
-                  _busy ? 'Setting up…' : 'Finish setup',
+                  _busy ? l10n.deviceReceiveSettingUp : l10n.deviceReceiveFinishSetup,
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
@@ -405,6 +404,7 @@ class _DeviceTransferReceiveScreenState
   }
 
   Widget _buildError() {
+    final l10n = context.l10n;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -419,7 +419,7 @@ class _DeviceTransferReceiveScreenState
             ),
             const SizedBox(height: 16),
             Text(
-              _message ?? 'Transfer failed',
+              _message ?? l10n.transferFailed,
               textAlign: TextAlign.center,
               style: const TextStyle(color: TibaneColors.text, height: 1.4),
             ),
@@ -431,17 +431,17 @@ class _DeviceTransferReceiveScreenState
                 foregroundColor: TibaneColors.black,
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
-              child: const Text(
-                'Scan again',
-                style: TextStyle(fontWeight: FontWeight.w600),
+              child: Text(
+                l10n.deviceReceiveScanAgain,
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
             const SizedBox(height: 8),
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: TibaneColors.textMuted),
+              child: Text(
+                l10n.actionCancel,
+                style: const TextStyle(color: TibaneColors.textMuted),
               ),
             ),
           ],
@@ -471,7 +471,7 @@ class _TorchButton extends StatelessWidget {
           TorchState.unavailable => Icons.no_flash,
         };
         return IconButton(
-          tooltip: 'Toggle torch',
+          tooltip: context.l10n.deviceReceiveToggleTorch,
           onPressed: state.torchState == TorchState.unavailable
               ? null
               : controller.toggleTorch,
@@ -489,15 +489,15 @@ class _ScannerErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final code = error.errorCode;
     final body = switch (code) {
       MobileScannerErrorCode.permissionDenied =>
-        'Camera access is required to scan a transfer code. Enable it in '
-            'Settings and reopen this screen.',
+        l10n.deviceReceiveCameraPermission,
       MobileScannerErrorCode.unsupported =>
-        'This device does not support camera-based scanning.',
-      _ => 'Camera failed to start: '
-          '${error.errorDetails?.message ?? code.message}',
+        l10n.deviceReceiveCameraUnsupported,
+      _ => l10n.deviceReceiveCameraError(
+          error.errorDetails?.message ?? code.message),
     };
     return ColoredBox(
       color: Colors.black,

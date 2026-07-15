@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/solana_constants.dart';
+import '../l10n/l10n.dart';
 import '../services/favorites_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/tibane_card.dart';
@@ -38,9 +39,10 @@ class _TokenFavoritesScreenState extends State<TokenFavoritesScreen> {
   Widget build(BuildContext context) {
     final favs = context.watch<FavoritesService>();
 
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Tokens')),
+      appBar: AppBar(title: Text(l10n.tokensTitle)),
       body: Padding(
         padding: const EdgeInsets.only(top: 16),
         child: TokenSearch(
@@ -58,12 +60,12 @@ class _TokenFavoritesScreenState extends State<TokenFavoritesScreen> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'No favorite tokens yet',
-                        style: TextStyle(color: TibaneColors.textMuted),
+                        l10n.favoritesEmpty,
+                        style: const TextStyle(color: TibaneColors.textMuted),
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Search for a token and tap the star to add it',
+                        l10n.favoritesEmptyHint,
                         style: monoStyle(
                           fontSize: 11,
                           color: TibaneColors.textDim,
@@ -122,7 +124,8 @@ class _FavoriteTokenTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    token.name ?? 'Unknown',
+                    token.name ??
+                        context.l10n.commonUnknown,
                     style: const TextStyle(
                       color: TibaneColors.text,
                       fontWeight: FontWeight.w600,

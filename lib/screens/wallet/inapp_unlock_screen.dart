@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' show RemoteKeySession;
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
@@ -77,10 +78,11 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
   }
 
   Future<void> _sendRecoveryCode() async {
+    final l10n = context.l10n;
     // Repair doesn't need the password (it pushes the backup share copy);
     // recovery does (it re-encrypts the fresh device key under it).
     if (!_repairMode && _pwCtrl.text.isEmpty) {
-      setState(() => _error = 'Enter your password first');
+      setState(() => _error = l10n.inappUnlockErrEnterPassword);
       return;
     }
     setState(() {
@@ -107,10 +109,11 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
   }
 
   Future<void> _verifyAndRecover() async {
+    final l10n = context.l10n;
     final session = _recoverySession;
     if (session == null) return;
     if (_codeCtrl.text.isEmpty) {
-      setState(() => _error = 'Enter the verification code');
+      setState(() => _error = l10n.errEnterVerificationCode);
       return;
     }
     setState(() {
@@ -140,10 +143,11 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
   }
 
   Future<void> _verifyAndRepair() async {
+    final l10n = context.l10n;
     final session = _recoverySession;
     if (session == null) return;
     if (_codeCtrl.text.isEmpty) {
-      setState(() => _error = 'Enter the verification code');
+      setState(() => _error = l10n.errEnterVerificationCode);
       return;
     }
     setState(() {
@@ -159,6 +163,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
     if (ok) {
       // Repaired. Recovery needs ANOTHER fresh session, so land in the
       // device-setup sub-flow with a note prompting the user to verify again.
+      final l10nInner = context.l10n;
       setState(() {
         _busy = false;
         _repairMode = false;
@@ -166,7 +171,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
         _recoverySession = null;
         _codeCtrl.clear();
         _error = null;
-        _notice = '2FA key repaired. Now verify again to set up this device.';
+        _notice = l10nInner.inappUnlockRepairFixed;
       });
     } else {
       logError('[InAppUnlock._verifyAndRepair] repair failed: ${wallet.libwallet.error}');
@@ -181,9 +186,10 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Recover device key')),
+      appBar: AppBar(title: Text(l10n.inappUnlockTitle)),
       body: SafeArea(
         child: switch (_mode) {
           _Mode.probing => const Center(
@@ -200,23 +206,23 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
   /// Two visually distinct options so neither path is hidden: set up the device
   /// key (normal), or repair the 2FA key first (restored-from-backup + stuck).
   Widget _buildChooser() {
+    final l10n = context.l10n;
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'Recover this wallet on this device',
-            style: TextStyle(
+          Text(
+            l10n.inappUnlockChooserHeading,
+            style: const TextStyle(
               color: TibaneColors.text,
               fontSize: 16,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Both options verify with a 2FA code sent to your registered email '
-            'or phone.',
-            style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+          Text(
+            l10n.inappUnlockChooserBody,
+            style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
           ),
           if (_notice != null) ...[
             const SizedBox(height: 12),
@@ -225,9 +231,8 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
           const SizedBox(height: 20),
           _OptionCard(
             icon: Icons.phonelink_lock_outlined,
-            title: 'Set up this device',
-            body: "First time using this wallet on this phone? Verify via 2FA "
-                "to create this device's signing key.",
+            title: l10n.inappUnlockSetupTitle,
+            body: l10n.inappUnlockSetupBody,
             onTap: _busy
                 ? null
                 : () => setState(() {
@@ -239,10 +244,8 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
           const SizedBox(height: 12),
           _OptionCard(
             icon: Icons.healing_outlined,
-            title: 'Repair 2FA key',
-            body: 'Restored from a backup and setup gets stuck ("participant '
-                'stopped responding")? Your 2FA key may be out of sync — repair '
-                'it from your backup first, then set up this device.',
+            title: l10n.actionRepair2fa,
+            body: l10n.inappUnlockRepairBody,
             onTap: _busy
                 ? null
                 : () => setState(() {
@@ -258,6 +261,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
 
   /// The 2FA flow for the chosen option (send code → enter code → submit).
   Widget _buildFlow() {
+    final l10n = context.l10n;
     final codeSent = _recoverySession != null;
     final repair = _repairMode;
     return Column(
@@ -276,14 +280,14 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
                         _error = null;
                       }),
               icon: const Icon(Icons.arrow_back, size: 16),
-              label: const Text('Back'),
+              label: Text(l10n.actionBack),
               style: TextButton.styleFrom(
                 foregroundColor: TibaneColors.textMuted,
               ),
             ),
           ),
         Text(
-          repair ? "Repair this wallet's 2FA key" : 'Set up this device',
+          repair ? l10n.inappUnlockFlowRepairHeader : l10n.inappUnlockSetupTitle,
           style: const TextStyle(
             color: TibaneColors.text,
             fontSize: 16,
@@ -294,15 +298,11 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
         Text(
           repair
               ? (codeSent
-                  ? 'Enter the code we just sent. This re-syncs your 2FA key '
-                        'from your backup so setup can complete.'
-                  : "We'll send a 2FA code to repair your 2FA key from your "
-                        'backup. No password needed for this step.')
+                  ? l10n.inappUnlockFlowRepairDescCode
+                  : l10n.inappUnlockFlowRepairDescSend)
               : (codeSent
-                  ? 'Enter the verification code we just sent to your registered '
-                        'email or phone — takes a few seconds after you verify.'
-                  : "Verify via 2FA to create this device's signing key. We'll "
-                        'send a code to your registered email or phone.'),
+                  ? l10n.inappUnlockFlowSetupDescCode
+                  : l10n.inappUnlockFlowSetupDescSend),
           style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         // Single-device wallet: the committee has one device-key slot, so
@@ -313,15 +313,13 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
           const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
-              Icon(Icons.info_outline, color: TibaneColors.amber, size: 16),
-              SizedBox(width: 8),
+            children: [
+              const Icon(Icons.info_outline, color: TibaneColors.amber, size: 16),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'A wallet signs on one device at a time. Setting up here makes '
-                  'this your signing device — if it was set up on another phone, '
-                  'that phone will need to set up again to sign.',
-                  style: TextStyle(
+                  l10n.inappUnlockSingleDeviceWarning,
+                  style: const TextStyle(
                     color: TibaneColors.amber,
                     fontSize: 12.5,
                     height: 1.35,
@@ -344,7 +342,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
             obscureText: true,
             enabled: !_busy && !codeSent,
             autofocus: !codeSent,
-            decoration: const InputDecoration(labelText: 'Wallet password'),
+            decoration: InputDecoration(labelText: l10n.inappUnlockPasswordLabel),
           ),
         if (codeSent) ...[
           if (!repair) const SizedBox(height: 12),
@@ -356,7 +354,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
             autofocus: true,
             onSubmitted: (_) =>
                 repair ? _verifyAndRepair() : _verifyAndRecover(),
-            decoration: const InputDecoration(labelText: 'Verification code'),
+            decoration: InputDecoration(labelText: l10n.labelVerificationCode),
           ),
         ],
         if (_error != null) ...[
@@ -378,9 +376,9 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
                       _codeCtrl.clear();
                       _error = null;
                     }),
-            child: const Text(
-              'Resend code',
-              style: TextStyle(color: TibaneColors.orange),
+            child: Text(
+              l10n.inappUnlockResendCode,
+              style: const TextStyle(color: TibaneColors.orange),
             ),
           ),
         FilledButton(
@@ -397,11 +395,11 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
           child: Text(
             _busy
                 ? (codeSent
-                    ? (repair ? 'Repairing…' : 'Verifying…')
-                    : 'Sending…')
+                    ? (repair ? l10n.inappUnlockRepairing : l10n.commonVerifying)
+                    : l10n.commonSending)
                 : (codeSent
-                    ? (repair ? 'Repair 2FA key' : 'Verify and set up')
-                    : 'Send code'),
+                    ? (repair ? l10n.actionRepair2fa : l10n.inappUnlockVerifySetup)
+                    : l10n.inappUnlockSendCode),
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),

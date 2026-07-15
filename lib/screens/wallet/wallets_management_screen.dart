@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -100,15 +101,16 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final activeId =
         (_wallet ?? context.watch<WalletService>()).libwallet.walletId;
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
-        title: const Text('Wallets'),
+        title: Text(l10n.walletsMgmtTitle),
         actions: [
           IconButton(
-            tooltip: 'Receive from another device',
+            tooltip: l10n.walletsMgmtReceiveTooltip,
             icon: const Icon(Icons.qr_code_scanner),
             onPressed: () async {
               await Navigator.of(context).push(
@@ -127,7 +129,7 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
         foregroundColor: TibaneColors.black,
         onPressed: _addWallet,
         icon: const Icon(Icons.add),
-        label: const Text('New wallet'),
+        label: Text(l10n.walletsMgmtNewWallet),
       ),
       body: SafeArea(
         child: Builder(
@@ -164,13 +166,13 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'No local wallets yet',
+                        l10n.walletsMgmtEmptyTitle,
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Tap "New wallet" to create one.',
-                        style: TextStyle(color: TibaneColors.textMuted),
+                      Text(
+                        l10n.walletsMgmtEmptySubtitle,
+                        style: const TextStyle(color: TibaneColors.textMuted),
                       ),
                     ],
                   ),
@@ -220,7 +222,8 @@ class _WalletRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final subkeys = wallet.keys.map((k) => shareTypeLabel(k.type)).join(' · ');
+    final l10n = context.l10n;
+    final subkeys = wallet.keys.map((k) => shareTypeLabel(k.type, l10n)).join(' · ');
     return TibaneCard(
       onTap: onTap,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -237,7 +240,7 @@ class _WalletRow extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  wallet.name.isEmpty ? '(unnamed)' : wallet.name,
+                  wallet.name.isEmpty ? l10n.walletsMgmtUnnamed : wallet.name,
                   style: const TextStyle(
                     color: TibaneColors.text,
                     fontSize: 15,
@@ -255,7 +258,7 @@ class _WalletRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    'In use',
+                    l10n.walletsMgmtInUseBadge,
                     style: monoStyle(fontSize: 10, color: TibaneColors.cyan),
                   ),
                 ),
@@ -274,19 +277,22 @@ class _WalletRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Curve: ${wallet.curve}',
+                  l10n.walletsMgmtCurve(wallet.curve),
                   style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
                 Text(
-                  'Shares: $subkeys',
+                  l10n.walletsMgmtShares(subkeys),
                   style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
                 if (!usableHere)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 2),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
                     child: Text(
-                      'Needs 2FA to use on this device',
-                      style: TextStyle(fontSize: 11, color: TibaneColors.orange),
+                      l10n.walletsMgmtNeeds2fa,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: TibaneColors.orange,
+                      ),
                     ),
                   ),
               ],

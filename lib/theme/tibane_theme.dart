@@ -73,9 +73,27 @@ Color chainColor(String chain) {
   }
 }
 
+/// CJK fallback family so Japanese text renders instead of tofu boxes (□).
+///
+/// DM Sans and Space Mono — the theme's Latin fonts — have no CJK glyphs, so
+/// any Japanese run falls back to Noto Sans JP. French/Portuguese accents are
+/// covered by the primary fonts, so this only matters for the `ja` locale.
+/// Cached: the family name is resolved once. Empty when the font can't be
+/// resolved (e.g. offline in tests), in which case Flutter uses its own default
+/// fallbacks.
+List<String>? _cjkFallbackCache;
+List<String> get cjkFallback {
+  final cached = _cjkFallbackCache;
+  if (cached != null) return cached;
+  final jp = GoogleFonts.notoSansJp().fontFamily;
+  return _cjkFallbackCache = jp == null ? const <String>[] : <String>[jp];
+}
+
 class TibaneTheme {
   static ThemeData get darkTheme {
-    final textTheme = GoogleFonts.dmSansTextTheme(ThemeData.dark().textTheme);
+    final textTheme = GoogleFonts.dmSansTextTheme(
+      ThemeData.dark().textTheme,
+    ).apply(fontFamilyFallback: cjkFallback);
 
     return ThemeData(
       useMaterial3: true,
@@ -147,7 +165,7 @@ class TibaneTheme {
           fontSize: 20,
           fontWeight: FontWeight.w700,
           color: TibaneColors.text,
-        ),
+        ).copyWith(fontFamilyFallback: cjkFallback),
         iconTheme: const IconThemeData(color: TibaneColors.text),
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
@@ -176,7 +194,7 @@ class TibaneTheme {
             fontSize: 14,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.3,
-          ),
+          ).copyWith(fontFamilyFallback: cjkFallback),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -189,7 +207,7 @@ class TibaneTheme {
             fontSize: 14,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.3,
-          ),
+          ).copyWith(fontFamilyFallback: cjkFallback),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -214,7 +232,7 @@ class TibaneTheme {
         hintStyle: GoogleFonts.dmSans(
           color: TibaneColors.textDim,
           fontSize: 14,
-        ),
+        ).copyWith(fontFamilyFallback: cjkFallback),
       ),
       dividerTheme: const DividerThemeData(
         color: TibaneColors.border,
@@ -222,7 +240,9 @@ class TibaneTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: TibaneColors.card,
-        contentTextStyle: GoogleFonts.dmSans(color: TibaneColors.text),
+        contentTextStyle: GoogleFonts.dmSans(
+          color: TibaneColors.text,
+        ).copyWith(fontFamilyFallback: cjkFallback),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         behavior: SnackBarBehavior.floating,
       ),
@@ -233,18 +253,21 @@ class TibaneTheme {
         labelStyle: GoogleFonts.dmSans(
           fontWeight: FontWeight.w600,
           fontSize: 14,
-        ),
+        ).copyWith(fontFamilyFallback: cjkFallback),
         unselectedLabelStyle: GoogleFonts.dmSans(
           fontWeight: FontWeight.w400,
           fontSize: 14,
-        ),
+        ).copyWith(fontFamilyFallback: cjkFallback),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: TibaneColors.darker,
         selectedColor: TibaneColors.orange.withValues(alpha: 0.15),
         side: const BorderSide(color: TibaneColors.border),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-        labelStyle: GoogleFonts.spaceMono(fontSize: 11, letterSpacing: 0.5),
+        labelStyle: GoogleFonts.spaceMono(
+          fontSize: 11,
+          letterSpacing: 0.5,
+        ).copyWith(fontFamilyFallback: cjkFallback),
       ),
       progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: TibaneColors.orange,
@@ -267,7 +290,7 @@ TextStyle monoStyle({double fontSize = 13, Color color = TibaneColors.text}) {
     fontSize: fontSize,
     color: color,
     letterSpacing: -0.3,
-  );
+  ).copyWith(fontFamilyFallback: cjkFallback);
 }
 
 /// Serif italic for decorative accents
@@ -279,5 +302,5 @@ TextStyle serifStyle({
     fontSize: fontSize,
     fontStyle: FontStyle.italic,
     color: color,
-  );
+  ).copyWith(fontFamilyFallback: cjkFallback);
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/gradient_button.dart';
@@ -53,7 +54,8 @@ class _PairingScreenState extends State<PairingScreen> {
     } on PairingException catch (e) {
       logError('[Pairing._runPair] pairing error: $e');
       if (!mounted) return;
-      final mapped = _messageFor(e);
+      final l10n = context.l10n;
+      final mapped = _messageFor(l10n, e);
       setState(() {
         _stage = _Stage.error;
         _errorTitle = mapped.$1;
@@ -64,7 +66,7 @@ class _PairingScreenState extends State<PairingScreen> {
       if (!mounted) return;
       setState(() {
         _stage = _Stage.error;
-        _errorTitle = 'Pairing failed';
+        _errorTitle = context.l10n.clawdPairingFailed;
         _errorBody = WalletError.from(e).message;
       });
     }
@@ -72,37 +74,37 @@ class _PairingScreenState extends State<PairingScreen> {
 
   /// Map a typed pairing exception to (title, body) for display. Keep both
   /// strings short — they render in a card with a "Try again" button below.
-  (String, String) _messageFor(PairingException e) {
+  (String, String) _messageFor(AppLocalizations l10n, PairingException e) {
     return switch (e) {
       PairingURLMalformedException _ => (
-        'Pairing URL is malformed',
-        'This link is missing the agent or token, or uses the wrong scheme. Ask the agent to print a fresh URL.',
+        l10n.clawdPairingErrUrlMalformedTitle,
+        l10n.clawdPairingErrUrlMalformedBody,
       ),
       PairingAgentUnreachableException _ => (
-        'Could not reach the agent',
-        'The agent host did not answer within the timeout. Check your network connection, then open a fresh pairing URL from the agent and try again.',
+        l10n.clawdPairingErrUnreachableTitle,
+        l10n.clawdPairingErrUnreachableBody,
       ),
       PairingTokenInvalidException _ => (
-        'Pairing code not recognised',
-        'The agent does not recognise this token — the agent may have restarted, or the URL is for a different agent. Run `clawdwallet pair` again to get a fresh URL.',
+        l10n.clawdPairingErrTokenInvalidTitle,
+        l10n.clawdPairingErrTokenInvalidBody,
       ),
       PairingTokenExpiredException _ => (
-        'The pairing code expired',
-        'Pairing codes are valid for 5 minutes. Run `clawdwallet pair` again to get a fresh URL.',
+        l10n.clawdPairingErrTokenExpiredTitle,
+        l10n.clawdPairingErrTokenExpiredBody,
       ),
       PairingTokenConsumedException _ => (
-        'This pairing code has already been used',
-        'Each pairing URL is single-use. Run `clawdwallet pair` again to get a fresh URL.',
+        l10n.clawdPairingErrTokenConsumedTitle,
+        l10n.clawdPairingErrTokenConsumedBody,
       ),
       PairingIdentityMismatchException _ => (
-        'Pairing identity mismatch',
-        'The agent that responded does not match the one named in the URL. Treat this as suspicious and do not proceed. Run `clawdwallet pair` again from a trusted terminal.',
+        l10n.clawdPairingErrIdentityMismatchTitle,
+        l10n.clawdPairingErrIdentityMismatchBody,
       ),
       PairingBadRequestException _ => (
-        'Agent rejected the pair request',
-        'The agent and the app may be running incompatible versions. Update the agent (and the app, if newer than what you installed) and try again.',
+        l10n.clawdPairingErrBadRequestTitle,
+        l10n.clawdPairingErrBadRequestBody,
       ),
-      _ => ('Pairing failed', e.message),
+      _ => (l10n.clawdPairingFailed, e.message),
     };
   }
 
@@ -114,7 +116,7 @@ class _PairingScreenState extends State<PairingScreen> {
       canPop: _stage == _Stage.error,
       child: Scaffold(
         backgroundColor: TibaneColors.black,
-        appBar: AppBar(title: const Text('Pair agent')),
+        appBar: AppBar(title: Text(context.l10n.clawdPairingTitle)),
         body: SafeArea(
           child: switch (_stage) {
             _Stage.pairing => _buildPairing(),
@@ -142,15 +144,14 @@ class _PairingScreenState extends State<PairingScreen> {
             ),
             const SizedBox(height: 24),
             Text(
-              'Verifying agent',
+              context.l10n.clawdPairingVerifyingTitle,
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 10),
-            const Text(
-              "Contacting the agent over Spot to confirm the pairing URL. "
-              "This usually takes a second.",
+            Text(
+              context.l10n.clawdPairingVerifyingBody,
               textAlign: TextAlign.center,
-              style: TextStyle(color: TibaneColors.textMuted, height: 1.5),
+              style: const TextStyle(color: TibaneColors.textMuted, height: 1.5),
             ),
           ],
         ),
@@ -178,7 +179,7 @@ class _PairingScreenState extends State<PairingScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        _errorTitle ?? 'Pairing failed',
+                        _errorTitle ?? context.l10n.clawdPairingFailed,
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),
@@ -197,7 +198,7 @@ class _PairingScreenState extends State<PairingScreen> {
           ),
           const Spacer(),
           GradientButton(
-            label: 'Close',
+            label: context.l10n.actionClose,
             expanded: true,
             onPressed: () => Navigator.of(context).pop(),
           ),

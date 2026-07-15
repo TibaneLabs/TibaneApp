@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart' show Network, NetworkType;
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/network_logos.dart';
@@ -83,15 +84,16 @@ class _NetworksScreenState extends State<NetworksScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final wallet = context.watch<WalletService>();
     final activeId = wallet.libwallet.currentNetwork?.id;
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
-        title: const Text('Networks'),
+        title: Text(l10n.networksTitle),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: l10n.actionRefresh,
             icon: const Icon(Icons.refresh),
             onPressed: _load,
           ),
@@ -119,12 +121,12 @@ class _NetworksScreenState extends State<NetworksScreen> {
             }
             final list = _networks ?? const [];
             if (list.isEmpty) {
-              return const Center(
+              return Center(
                 child: Padding(
-                  padding: EdgeInsets.all(32),
+                  padding: const EdgeInsets.all(32),
                   child: Text(
-                    'No networks configured.',
-                    style: TextStyle(color: TibaneColors.textMuted),
+                    l10n.networksEmpty,
+                    style: const TextStyle(color: TibaneColors.textMuted),
                   ),
                 ),
               );
@@ -179,6 +181,7 @@ class _NetworkRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final asset = networkLogoAsset(net);
     final activeTint = active ? TibaneColors.orange : TibaneColors.textMuted;
     return TibaneCard(
@@ -214,7 +217,7 @@ class _NetworkRow extends StatelessWidget {
                   children: [
                     Flexible(
                       child: Text(
-                        net.name.isEmpty ? '(unnamed)' : net.name,
+                        net.name.isEmpty ? l10n.networksUnnamed : net.name,
                         style: const TextStyle(
                           color: TibaneColors.text,
                           fontSize: 15,
@@ -233,7 +236,7 @@ class _NetworkRow extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          'TEST',
+                          l10n.networksTestnet,
                           style: monoStyle(
                             fontSize: 9,
                             color: TibaneColors.textMuted,

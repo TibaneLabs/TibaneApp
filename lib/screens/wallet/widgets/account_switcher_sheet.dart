@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' show Network;
 import 'package:provider/provider.dart';
 
+import '../../../l10n/l10n.dart';
 import '../../../services/wallet/unified_account.dart';
 import '../../../services/wallet_service.dart';
 import '../../../theme/tibane_theme.dart';
@@ -57,7 +58,11 @@ Future<void> _switchAccount(
     if (compatible.isEmpty) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text('No ${chainLabel(account.chain)} network available'),
+          content: Text(
+            context.l10n.accountSwitcherNoNetwork(
+              chainLabel(account.chain),
+            ),
+          ),
         ),
       );
       return;
@@ -92,58 +97,62 @@ Future<Network?> _showNetworkConnectSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (ctx) => SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: TibaneColors.textDim,
-                  borderRadius: BorderRadius.circular(2),
+    builder: (ctx) {
+      final l10n = ctx.l10n;
+      return SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: TibaneColors.textDim,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Select ${chainLabel(account.chain)} network',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'This account connects on a ${chainLabel(account.chain)} network — '
-              'pick one to continue.',
-              style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            for (final n in networks)
-              ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                leading: const Icon(Icons.lan_outlined, color: TibaneColors.orange),
-                title: Text(
-                  n.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  n.testNet ? '${n.currencySymbol} · testnet' : n.currencySymbol,
-                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
-                ),
-                trailing: const Icon(
-                  Icons.chevron_right,
-                  color: TibaneColors.textDim,
-                  size: 18,
-                ),
-                onTap: () => Navigator.pop(ctx, n),
+              const SizedBox(height: 16),
+              Text(
+                l10n.accountSwitcherSelectNetwork(chainLabel(account.chain)),
+                style: Theme.of(ctx).textTheme.titleLarge,
               ),
-          ],
+              const SizedBox(height: 4),
+              Text(
+                l10n.accountSwitcherSelectNetworkHint(chainLabel(account.chain)),
+                style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              for (final n in networks)
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  leading: const Icon(Icons.lan_outlined, color: TibaneColors.orange),
+                  title: Text(
+                    n.name,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    n.testNet
+                        ? l10n.accountSwitcherTestnet(n.currencySymbol)
+                        : n.currencySymbol,
+                    style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right,
+                    color: TibaneColors.textDim,
+                    size: 18,
+                  ),
+                  onTap: () => Navigator.pop(ctx, n),
+                ),
+            ],
+          ),
         ),
-      ),
-    ),
+      );
+    },
   );
 }
 
@@ -152,6 +161,7 @@ class AccountSwitcherSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Consumer<WalletService>(
       builder: (context, wallet, _) {
         final accounts = wallet.accounts;
@@ -179,7 +189,7 @@ class AccountSwitcherSheet extends StatelessWidget {
                 Stack(
                   alignment: Alignment.center,
                   children: [
-                    Text('Accounts', style: Theme.of(context).textTheme.titleLarge),
+                    Text(l10n.accountsTitle, style: Theme.of(context).textTheme.titleLarge),
                     const Align(
                       alignment: Alignment.centerRight,
                       child: NetworkChip(iconOnly: true),
@@ -193,11 +203,11 @@ class AccountSwitcherSheet extends StatelessWidget {
                     isCurrent: a.id == current?.id,
                   ),
                 if (accounts.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Text(
-                      'No accounts yet',
-                      style: TextStyle(color: TibaneColors.textMuted),
+                      l10n.accountSwitcherEmpty,
+                      style: const TextStyle(color: TibaneColors.textMuted),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -205,13 +215,13 @@ class AccountSwitcherSheet extends StatelessWidget {
                 if (target != null)
                   _ActionTile(
                     icon: Icons.add_circle_outline,
-                    label: 'Add account',
+                    label: l10n.accountSwitcherAddAccount,
                     onTap: () => _showAddAccount(context, wallet, target),
                   ),
                 if (showMwaConnect)
                   _ActionTile(
                     icon: Icons.usb,
-                    label: 'Connect external (Seed Vault)',
+                    label: l10n.accountSwitcherConnectExternal,
                     onTap: () async {
                       // Capture before the sheet closes so the error can still
                       // be shown on the parent screen.
@@ -223,7 +233,7 @@ class AccountSwitcherSheet extends StatelessWidget {
                           SnackBar(
                             content: Text(
                               wallet.mwa.error ??
-                                  'No compatible wallet app is installed.',
+                                  l10n.accountSwitcherNoWalletApp,
                             ),
                           ),
                         );
@@ -234,7 +244,7 @@ class AccountSwitcherSheet extends StatelessWidget {
                   const Divider(height: 24, color: TibaneColors.border),
                   _ActionTile(
                     icon: Icons.copy,
-                    label: 'Copy address',
+                    label: l10n.accountSwitcherCopyAddress,
                     onTap: () async {
                       final messenger = ScaffoldMessenger.of(context);
                       await Clipboard.setData(
@@ -243,9 +253,9 @@ class AccountSwitcherSheet extends StatelessWidget {
                       if (!context.mounted) return;
                       Navigator.pop(context);
                       messenger.showSnackBar(
-                        const SnackBar(
-                          content: Text('Address copied'),
-                          duration: Duration(seconds: 1),
+                        SnackBar(
+                          content: Text(l10n.addressCopied),
+                          duration: const Duration(seconds: 1),
                         ),
                       );
                     },
@@ -253,7 +263,7 @@ class AccountSwitcherSheet extends StatelessWidget {
                   if (current.isInApp)
                     _ActionTile(
                       icon: Icons.file_download_outlined,
-                      label: 'Export wallet',
+                      label: l10n.exportWallet,
                       onTap: () {
                         final nav = Navigator.of(context);
                         Navigator.pop(context);
@@ -274,7 +284,7 @@ class AccountSwitcherSheet extends StatelessWidget {
                   if (current.isMwa)
                     _ActionTile(
                       icon: Icons.logout,
-                      label: 'Disconnect external',
+                      label: l10n.accountSwitcherDisconnect,
                       destructive: true,
                       onTap: () {
                         Navigator.pop(context);
@@ -305,50 +315,55 @@ class AccountSwitcherSheet extends StatelessWidget {
     );
     var selectedType = types.first;
 
+    if (!context.mounted) return;
+    final l10n = context.l10n;
     final created = await showDialog<bool>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          backgroundColor: TibaneColors.card,
-          title: const Text('Add account'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(labelText: 'Account name'),
-              ),
-              if (types.length > 1) ...[
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  initialValue: selectedType,
-                  decoration: const InputDecoration(labelText: 'Chain'),
-                  items: [
-                    for (final t in types)
-                      DropdownMenuItem(value: t, child: Text(chainLabel(t))),
-                  ],
-                  onChanged: (v) => setState(() => selectedType = v ?? types.first),
+      builder: (ctx) {
+        final dl10n = ctx.l10n;
+        return StatefulBuilder(
+          builder: (ctx, setState) => AlertDialog(
+            backgroundColor: TibaneColors.card,
+            title: Text(l10n.accountSwitcherAddAccount),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  autofocus: true,
+                  decoration: InputDecoration(labelText: dl10n.accountSwitcherAccountName),
                 ),
+                if (types.length > 1) ...[
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedType,
+                    decoration: InputDecoration(labelText: dl10n.accountSwitcherChain),
+                    items: [
+                      for (final t in types)
+                        DropdownMenuItem(value: t, child: Text(chainLabel(t))),
+                    ],
+                    onChanged: (v) => setState(() => selectedType = v ?? types.first),
+                  ),
+                ],
               ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(dl10n.actionCancel),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(
+                  dl10n.actionCreate,
+                  style: const TextStyle(color: TibaneColors.orange),
+                ),
+              ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text(
-                'Create',
-                style: TextStyle(color: TibaneColors.orange),
-              ),
-            ),
-          ],
-        ),
-      ),
+        );
+      },
     );
     if (created != true) return;
     if (!context.mounted) return;

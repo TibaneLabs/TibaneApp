@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' show Network, NetworkType;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/l10n.dart';
 import '../theme/tibane_theme.dart';
 import '../utils/log.dart';
 
@@ -71,12 +72,13 @@ String? explorerTxUrl(Network? net, String? hash) {
   return null;
 }
 
-/// Copy [value] to the clipboard and show a brief "<label> copied" toast.
+/// Copy [value] to the clipboard and show a brief "{label} copied" toast.
+/// [label] must already be a localized string supplied by the caller.
 void copyWithToast(BuildContext context, String value, String label) {
   Clipboard.setData(ClipboardData(text: value));
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      content: Text('$label copied'),
+      content: Text(context.l10n.copiedToast(label)),
       duration: const Duration(seconds: 1),
     ),
   );
@@ -224,7 +226,10 @@ Widget txExplorerLink({required VoidCallback onTap, required String label}) {
 
 /// The full-width orange "Back to home" button that pops the current tab's
 /// navigator stack back to its root.
-Widget txBackToHomeButton(BuildContext context, {String label = 'Back to home'}) {
+/// When no [label] is provided the localized [AppLocalizations.backToHome] string
+/// is used. Callers that DO pass a label (already localized) keep their override.
+Widget txBackToHomeButton(BuildContext context, {String? label}) {
+  final resolvedLabel = label ?? context.l10n.backToHome;
   return SizedBox(
     width: double.infinity,
     child: FilledButton(
@@ -236,7 +241,7 @@ Widget txBackToHomeButton(BuildContext context, {String label = 'Back to home'})
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
       child: Text(
-        label,
+        resolvedLabel,
         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
       ),
     ),

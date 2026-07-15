@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart' show SigningKey, Wallet, WalletKey;
 
+import '../../../l10n/l10n.dart';
 import '../../../services/wallet/signing.dart';
 import '../../../theme/tibane_theme.dart';
 import '../../../utils/wallet_error.dart';
@@ -112,8 +113,7 @@ class _SignSheetState extends State<_SignSheet> {
           debugPrint('[signSheet] StoreKey ${key.id} unreadable on this device '
               '(biometric/keystore/blob all empty)');
           setState(() => _error =
-              'Could not read your device key on this device. Recover it via '
-              '2FA in wallet settings, or enter your password first.');
+              context.l10n.signSheetDeviceKeyError);
           return;
         }
         setState(() {
@@ -131,34 +131,39 @@ class _SignSheetState extends State<_SignSheet> {
 
   Future<String?> _askPassword() {
     final ctrl = TextEditingController();
+    final l10n = context.l10n;
     return showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: TibaneColors.card,
-        title: const Text('Wallet password'),
-        content: TextField(
-          controller: ctrl,
-          obscureText: true,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Password'),
-          onSubmitted: (v) => Navigator.pop(ctx, v),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+      builder: (ctx) {
+        final dl10n = ctx.l10n;
+        return AlertDialog(
+          backgroundColor: TibaneColors.card,
+          title: Text(l10n.signSheetPasswordTitle),
+          content: TextField(
+            controller: ctrl,
+            obscureText: true,
+            autofocus: true,
+            decoration: InputDecoration(labelText: dl10n.labelPassword),
+            onSubmitted: (v) => Navigator.pop(ctx, v),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(dl10n.actionCancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text),
+              child: Text(dl10n.actionOk),
+            ),
+          ],
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
@@ -183,13 +188,12 @@ class _SignSheetState extends State<_SignSheet> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Unlock $_required of your wallet keys to '
-              '${widget.subtitlePurpose}.',
+              l10n.signSheetUnlockHint(_required.toString(), widget.subtitlePurpose),
               style: const TextStyle(color: TibaneColors.textMuted),
             ),
             const SizedBox(height: 16),
             for (var i = 0; i < _wallet.keys.length; i++)
-              _keyRow(i, _wallet.keys[i]),
+              _keyRow(i, _wallet.keys[i], l10n),
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -199,7 +203,7 @@ class _SignSheetState extends State<_SignSheet> {
             ],
             const SizedBox(height: 12),
             Text(
-              '${_collected.length} / $_required keys unlocked',
+              l10n.signSheetKeysUnlocked(_collected.length.toString(), _required.toString()),
               style: const TextStyle(color: TibaneColors.textDim, fontSize: 12),
             ),
             const SizedBox(height: 12),
@@ -209,7 +213,7 @@ class _SignSheetState extends State<_SignSheet> {
                   child: TextButton(
                     onPressed:
                         _busy ? null : () => Navigator.pop(context),
-                    child: const Text('Cancel'),
+                    child: Text(l10n.actionCancel),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -229,15 +233,15 @@ class _SignSheetState extends State<_SignSheet> {
     );
   }
 
-  Widget _keyRow(int index, WalletKey key) {
+  Widget _keyRow(int index, WalletKey key, AppLocalizations l10n) {
     final unlocked = _isUnlocked(key);
     final remote = key.isRemoteKey;
     final loading = _busy && key.isStoreKey && !unlocked;
     final subtitle = remote
-        ? 'Recovery only (2FA)'
+        ? l10n.signSheetKeyRemote
         : key.isStoreKey
-            ? 'This device'
-            : 'Password';
+            ? l10n.signSheetKeyDevice
+            : l10n.labelPassword;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -267,7 +271,7 @@ class _SignSheetState extends State<_SignSheet> {
                         ? TibaneColors.textDim
                         : TibaneColors.textMuted,
               ),
-        title: Text('Key ${index + 1} — ${key.type}'),
+        title: Text(l10n.signSheetKeyTitle((index + 1).toString(), key.type)),
         subtitle: Text(
           subtitle,
           style: const TextStyle(color: TibaneColors.textDim, fontSize: 12),

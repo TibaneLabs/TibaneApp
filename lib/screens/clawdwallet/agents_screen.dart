@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../l10n/l10n.dart';
 import '../../models/token_account.dart';
 import '../../services/clawdwallet_service.dart';
 import '../../services/rpc_service.dart';
@@ -51,7 +52,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
       debugPrint('[agents] server authentication cancelled/failed');
       setState(() {
         _loading = false;
-        _error = 'Sign in required to view agent wallets.';
+        _error = context.l10n.clawdAgentsSignInRequired;
       });
       return;
     }
@@ -141,7 +142,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
       MaterialPageRoute(
         builder: (_) => ActivityScreen(
           walletId: id,
-          walletName: (w['name'] as String?) ?? 'Agent wallet',
+          walletName: (w['name'] as String?) ?? context.l10n.clawdAgentsDefaultWalletName,
         ),
       ),
     );
@@ -163,9 +164,9 @@ class _AgentsScreenState extends State<AgentsScreen> {
         backgroundColor: TibaneColors.orange,
         foregroundColor: TibaneColors.black,
         icon: const Icon(Icons.add),
-        label: const Text(
-          'New agent',
-          style: TextStyle(fontWeight: FontWeight.w600),
+        label: Text(
+          context.l10n.clawdAgentsNewAgent,
+          style: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
     );
@@ -188,7 +189,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
                 const Icon(Icons.cloud_off_outlined, color: TibaneColors.error),
                 const SizedBox(height: 10),
                 Text(
-                  'Could not load agents',
+                  context.l10n.clawdAgentsLoadError,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 6),
@@ -217,18 +218,17 @@ class _AgentsScreenState extends State<AgentsScreen> {
           const SizedBox(height: 18),
           Center(
             child: Text(
-              'No agent wallets yet',
+              context.l10n.clawdAgentsEmpty,
               style: Theme.of(context).textTheme.titleLarge,
             ),
           ),
           const SizedBox(height: 8),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 40),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
             child: Text(
-              'Provision one to give a Claude-driven agent a Solana wallet '
-              'with hard spending limits and a kill-switch.',
+              context.l10n.clawdAgentsEmptyHint,
               textAlign: TextAlign.center,
-              style: TextStyle(color: TibaneColors.textMuted, height: 1.5),
+              style: const TextStyle(color: TibaneColors.textMuted, height: 1.5),
             ),
           ),
         ],
@@ -291,7 +291,7 @@ class _AgentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = (wallet['name'] as String?) ?? 'Agent wallet';
+    final name = (wallet['name'] as String?) ?? context.l10n.clawdAgentsDefaultWalletName;
     final addr = (wallet['solana_address'] ?? wallet['address']) as String?;
     final locked = wallet['locked'] == true;
 
@@ -332,9 +332,9 @@ class _AgentCard extends StatelessWidget {
                         if (addr == null) return;
                         Clipboard.setData(ClipboardData(text: addr));
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Address copied'),
-                            duration: Duration(seconds: 1),
+                          SnackBar(
+                            content: Text(context.l10n.addressCopied),
+                            duration: const Duration(seconds: 1),
                           ),
                         );
                       },
@@ -423,10 +423,11 @@ class _LockToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Tooltip(
       message: value
-          ? 'Locked — new sign-requests will be rejected'
-          : 'Unlocked — policy module gates each sign-request',
+          ? l10n.clawdAgentsLockedTooltip
+          : l10n.clawdAgentsUnlockedTooltip,
       child: Switch.adaptive(
         value: value,
         onChanged: onChanged,

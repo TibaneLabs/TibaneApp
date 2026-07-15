@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart' show NetworkType;
 import 'package:provider/provider.dart';
 
+import '../l10n/l10n.dart';
 import '../screens/wallet/networks_screen.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
@@ -52,9 +53,10 @@ class _NetworkChipState extends State<NetworkChip> {
   @override
   Widget build(BuildContext context) {
     final wallet = context.watch<WalletService>();
+    final l10n = context.l10n;
     final net = wallet.libwallet.currentNetwork;
     final color = _accent(net?.type);
-    final label = net?.name.isNotEmpty == true ? net!.name : 'Network';
+    final label = net?.name.isNotEmpty == true ? net!.name : l10n.labelNetwork;
     if (widget.iconOnly) {
       return InkWell(
         onTap: () => Navigator.of(
@@ -62,7 +64,7 @@ class _NetworkChipState extends State<NetworkChip> {
         ).push(MaterialPageRoute(builder: (_) => const NetworksScreen())),
         borderRadius: BorderRadius.circular(20),
         child: Tooltip(
-          message: 'Switch network ($label)',
+          message: l10n.networkChipSwitchTooltip(label),
           child: Padding(
             padding: const EdgeInsets.all(6),
             child: Icon(Icons.public, size: 20, color: color),

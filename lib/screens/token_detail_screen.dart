@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/solana_constants.dart';
+import '../l10n/l10n.dart';
 import '../models/staking_pool.dart';
 import '../models/token_account.dart';
 import '../services/chiefstaker_api.dart';
@@ -68,7 +69,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
   Future<void> _loadToken() async {
     if (widget.mint.length < 32) {
       setState(() {
-        _error = 'Invalid mint address';
+        _error = context.l10n.tokenDetailInvalidMint;
         _loading = false;
       });
       return;
@@ -85,7 +86,9 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
         _holders = results[1] as List<TokenHolder>;
         _transactions = results[2] as List<Map<String, dynamic>>;
         _loading = false;
-        if (_token == null) _error = 'Token not found';
+        if (_token == null) {
+          _error = context.l10n.tokenNotFound;
+        }
       });
       _checkStakingPool();
       _backfillPriceIfMissing();
@@ -195,7 +198,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Token info')),
+      appBar: AppBar(title: Text(context.l10n.tokenDetailTitle)),
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: TibaneColors.orange),
@@ -300,10 +303,10 @@ class _TokenDetails extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          'Staking Pool',
-                          style: TextStyle(
+                          context.l10n.tokenDetailStakingPool,
+                          style: const TextStyle(
                             color: TibaneColors.text,
                             fontWeight: FontWeight.w500,
                           ),
@@ -319,7 +322,8 @@ class _TokenDetails extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          'Active',
+                          context.l10n
+                              .tokenDetailStakingPoolActive,
                           style: monoStyle(
                             fontSize: 10,
                             color: TibaneColors.cyan,
@@ -341,7 +345,7 @@ class _TokenDetails extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 20),
                 child: SecondaryButton(
-                  label: 'Fee Sharing',
+                  label: context.l10n.tokenDetailFeeSharing,
                   icon: Icons.payments,
                   expanded: true,
                   onPressed: () {
@@ -404,7 +408,8 @@ class _TokenHeader extends StatelessWidget {
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        token.name ?? 'Unknown Token',
+                        token.name ??
+                            context.l10n.tokenDetailUnknownToken,
                         maxLines: 1,
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w700,
@@ -449,7 +454,7 @@ class _TokenHeader extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      'per token',
+                      context.l10n.tokenDetailPerToken,
                       style: monoStyle(
                         fontSize: 10,
                         color: TibaneColors.textDim,
@@ -477,13 +482,14 @@ class _TokenActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final isUk = context.watch<UkComplianceService>().isUk;
     final canSend = userBalance != null && userBalance! > BigInt.zero;
     return Row(
       children: [
         Expanded(
           child: _ActionButton(
-            label: 'Receive',
+            label: l10n.receiveTitle,
             icon: Icons.arrow_downward,
             onPressed: () => Navigator.of(
               context,
@@ -493,7 +499,7 @@ class _TokenActions extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(
           child: _ActionButton(
-            label: 'Send',
+            label: l10n.sendButton,
             icon: Icons.arrow_upward,
             onPressed: canSend
                 ? () => Navigator.of(context).push(
@@ -512,13 +518,13 @@ class _TokenActions extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: _ActionButton(
-              label: 'Swap',
+              label: l10n.homeSwapTitle,
               icon: Icons.swap_horiz,
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => Scaffold(
                     backgroundColor: TibaneColors.black,
-                    appBar: AppBar(title: const Text('Swap')),
+                    appBar: AppBar(title: Text(l10n.homeSwapTitle)),
                     body: SwapScreen(
                       initialInputMint: wsolMint,
                       initialOutputMint: token.mint,
@@ -577,11 +583,12 @@ class _SupplySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'SUPPLY',
+          l10n.tokenDetailSupplySection,
           style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 12),
@@ -589,7 +596,7 @@ class _SupplySection extends StatelessWidget {
           children: [
             Expanded(
               child: StatCard(
-                label: 'Total Supply',
+                label: l10n.labelTotalSupply,
                 value: formatTokenAmount(token.supply, token.decimals),
                 icon: Icons.pie_chart,
               ),
@@ -598,7 +605,7 @@ class _SupplySection extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: StatCard(
-                  label: 'Market Cap',
+                  label: l10n.tokenDetailMarketCap,
                   value: _formatMarketCap(token),
                   valueColor: TibaneColors.gold,
                   icon: Icons.attach_money,
@@ -610,7 +617,7 @@ class _SupplySection extends StatelessWidget {
         if (token.burned > BigInt.zero) ...[
           const SizedBox(height: 8),
           StatCard(
-            label: 'Burned',
+            label: l10n.tokenDetailBurned,
             value: formatTokenAmount(token.burned, token.decimals),
             valueColor: TibaneColors.orange,
             icon: Icons.local_fire_department,
@@ -622,7 +629,7 @@ class _SupplySection extends StatelessWidget {
           onTap: () {
             Clipboard.setData(ClipboardData(text: token.mint));
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Mint address copied')),
+              SnackBar(content: Text(l10n.tokenDetailMintAddressCopied)),
             );
           },
           child: Row(
@@ -672,7 +679,7 @@ class _HoldersSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'TOP HOLDERS',
+          context.l10n.tokenDetailTopHolders,
           style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 12),
@@ -739,7 +746,7 @@ class _TransactionsSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'RECENT TRANSACTIONS',
+          context.l10n.tokenDetailRecentTransactions,
           style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 12),

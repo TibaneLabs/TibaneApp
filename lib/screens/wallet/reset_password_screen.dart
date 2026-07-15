@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
@@ -84,18 +85,19 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   }
 
   Future<void> _reset() async {
+    final l10n = context.l10n;
     final token = _sessionToken;
     if (token == null) return;
     if (_codeCtrl.text.trim().isEmpty) {
-      setState(() => _error = 'Enter the verification code');
+      setState(() => _error = l10n.errEnterVerificationCode);
       return;
     }
     if (_pwCtrl.text.length < 8) {
-      setState(() => _error = 'New password must be at least 8 characters');
+      setState(() => _error = l10n.resetPwErrPasswordShort);
       return;
     }
     if (_pwCtrl.text != _pw2Ctrl.text) {
-      setState(() => _error = 'Passwords do not match');
+      setState(() => _error = l10n.errPasswordsMismatch);
       return;
     }
     setState(() {
@@ -113,8 +115,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       // The reset wallet is now active + unlocked; make the app use it.
       await wallet.useLibwallet();
       if (!mounted) return;
+      final l10nInner = context.l10n;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password reset — wallet unlocked')),
+        SnackBar(content: Text(l10nInner.resetPwSuccess)),
       );
       Navigator.of(context).pop(true);
     } else {
@@ -130,30 +133,31 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Reset password')),
+      appBar: AppBar(title: Text(l10n.resetPassword)),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: _phase == _Phase.intro ? _introBody() : _codeBody(),
+            children: _phase == _Phase.intro ? _introBody(l10n) : _codeBody(l10n),
           ),
         ),
       ),
     );
   }
 
-  List<Widget> _introBody() {
+  List<Widget> _introBody(AppLocalizations l10n) {
     final name = (widget.walletName != null && widget.walletName!.isNotEmpty)
-        ? '“${widget.walletName}”'
-        : 'this wallet';
+        ? '"${widget.walletName}"'
+        : l10n.commonThisWallet;
     return [
       const Icon(Icons.lock_reset, color: TibaneColors.orange, size: 48),
       const SizedBox(height: 16),
       Text(
-        'Reset the password for $name',
+        l10n.resetPwIntroHeading(name),
         textAlign: TextAlign.center,
         style: const TextStyle(
           color: TibaneColors.text,
@@ -162,13 +166,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         ),
       ),
       const SizedBox(height: 12),
-      const Text(
-        "Forgot your password? Set a new one with 2FA — no old password "
-        "needed. We'll send a verification code to the phone or email on this "
-        'wallet. This re-keys the wallet using your device key + 2FA; your '
-        'address and funds are unchanged.',
+      Text(
+        l10n.resetPwIntroBody,
         textAlign: TextAlign.center,
-        style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+        style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
       ),
       if (_error != null) ...[
         const SizedBox(height: 12),
@@ -183,34 +184,34 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           padding: const EdgeInsets.symmetric(vertical: 14),
         ),
         child: Text(
-          _busy ? 'Sending…' : 'Send verification code',
+          _busy ? l10n.commonSending : l10n.actionSendVerificationCode,
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
     ];
   }
 
-  List<Widget> _codeBody() {
+  List<Widget> _codeBody(AppLocalizations l10n) {
     return [
-      const Text(
-        'Enter the code we sent, then choose a new password.',
+      Text(
+        l10n.resetPwCodeIntro,
         textAlign: TextAlign.center,
-        style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+        style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
       ),
       const SizedBox(height: 20),
       TextField(
         controller: _codeCtrl,
         enabled: !_busy,
         keyboardType: TextInputType.number,
-        decoration: const InputDecoration(labelText: 'Verification code'),
+        decoration: InputDecoration(labelText: l10n.labelVerificationCode),
       ),
       const SizedBox(height: 12),
       TextField(
         controller: _pwCtrl,
         enabled: !_busy,
         obscureText: true,
-        decoration: const InputDecoration(
-          labelText: 'New password (min 8 characters)',
+        decoration: InputDecoration(
+          labelText: l10n.resetPwNewPasswordLabel,
         ),
       ),
       const SizedBox(height: 12),
@@ -220,7 +221,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         obscureText: true,
         textInputAction: TextInputAction.done,
         onSubmitted: (_) => _busy ? null : _reset(),
-        decoration: const InputDecoration(labelText: 'Confirm new password'),
+        decoration: InputDecoration(labelText: l10n.resetPwConfirmLabel),
       ),
       if (_error != null) ...[
         const SizedBox(height: 12),
@@ -235,7 +236,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           padding: const EdgeInsets.symmetric(vertical: 14),
         ),
         child: Text(
-          _busy ? 'Resetting…' : 'Reset password',
+          _busy ? l10n.resetPwResetting : l10n.resetPassword,
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
@@ -247,7 +248,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 _phase = _Phase.intro;
                 _error = null;
               }),
-        child: const Text('Back', style: TextStyle(color: TibaneColors.textMuted)),
+        child: Text(
+          l10n.actionBack,
+          style: const TextStyle(color: TibaneColors.textMuted),
+        ),
       ),
     ];
   }

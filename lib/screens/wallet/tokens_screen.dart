@@ -3,6 +3,7 @@ import 'package:libwallet/libwallet.dart'
     show CuratedToken, DiscoveredToken, Network, Token;
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -87,6 +88,7 @@ class _TokensScreenState extends State<TokensScreen> {
     if (_chainKey.isEmpty) return;
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = context.l10n;
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -121,7 +123,7 @@ class _TokensScreenState extends State<TokensScreen> {
       wallet.notifyTokenListChanged();
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('Added ${discovered.symbol}')),
+        SnackBar(content: Text(l10n.tokensAdded(discovered.symbol))),
       );
     } catch (e) {
       logError('[Tokens._addByAddress] discover/create error: $e');
@@ -133,6 +135,7 @@ class _TokensScreenState extends State<TokensScreen> {
 
   Future<void> _addCurated(CuratedToken c) async {
     final messenger = ScaffoldMessenger.of(context);
+    final l10n = context.l10n;
     try {
       final wallet = context.read<WalletService>();
       final client = await wallet.libwallet.ensureClient();
@@ -148,7 +151,7 @@ class _TokensScreenState extends State<TokensScreen> {
       _load();
       wallet.notifyTokenListChanged();
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('Added ${c.symbol}')));
+      messenger.showSnackBar(SnackBar(content: Text(l10n.tokensAdded(c.symbol))));
     } catch (e) {
       logError('[Tokens._addCurated] create error: $e');
       if (!mounted) return;
@@ -157,27 +160,26 @@ class _TokensScreenState extends State<TokensScreen> {
   }
 
   Future<void> _delete(Token t) async {
+    final l10n = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
-        title: const Text('Remove token?'),
+        title: Text(l10n.tokensRemoveTitle),
         content: Text(
-          'Stop tracking ${t.symbol.isEmpty ? t.address : t.symbol}? You '
-          'can re-add it later from the curated list or by pasting the '
-          'address.',
+          l10n.tokensRemoveBody(t.symbol.isEmpty ? t.address : t.symbol),
           style: const TextStyle(color: TibaneColors.textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Remove',
-              style: TextStyle(color: TibaneColors.error),
+            child: Text(
+              l10n.actionRemove,
+              style: const TextStyle(color: TibaneColors.error),
             ),
           ),
         ],
@@ -200,13 +202,14 @@ class _TokensScreenState extends State<TokensScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
-        title: const Text('Tokens'),
+        title: Text(l10n.tokensTitle),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: l10n.actionRefresh,
             onPressed: _load,
             icon: const Icon(Icons.refresh),
           ),
@@ -217,7 +220,7 @@ class _TokensScreenState extends State<TokensScreen> {
         foregroundColor: TibaneColors.black,
         onPressed: _addByAddress,
         icon: const Icon(Icons.add),
-        label: const Text('Add by address'),
+        label: Text(l10n.tokensAddByAddress),
       ),
       body: SafeArea(
         child: Builder(
@@ -256,13 +259,13 @@ class _TokensScreenState extends State<TokensScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
                 children: [
-                  _SectionLabel('Tracked tokens'),
+                  _SectionLabel(l10n.tokensTrackedSection),
                   const SizedBox(height: 8),
                   if (tracked.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Text(
-                        'No custom tokens tracked on this network.',
+                        l10n.tokensNoneTracked,
                         style: monoStyle(
                           fontSize: 12,
                           color: TibaneColors.textMuted,
@@ -279,7 +282,9 @@ class _TokensScreenState extends State<TokensScreen> {
                   if (curated.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     _SectionLabel(
-                      'Curated tokens on ${_network?.name ?? "this network"}',
+                      l10n.tokensCuratedSection(
+                        _network?.name ?? l10n.commonThisNetwork,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     ...curated.map(
@@ -322,6 +327,7 @@ class _TokenRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final preview = token.address.length > 14
         ? '${token.address.substring(0, 8)}…${token.address.substring(token.address.length - 6)}'
         : token.address;
@@ -336,7 +342,7 @@ class _TokenRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  token.symbol.isEmpty ? '(no symbol)' : token.symbol,
+                  token.symbol.isEmpty ? l10n.tokensNoSymbol : token.symbol,
                   style: const TextStyle(
                     color: TibaneColors.text,
                     fontSize: 15,
@@ -355,7 +361,7 @@ class _TokenRow extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: 'Remove',
+            tooltip: l10n.actionRemove,
             icon: const Icon(Icons.delete_outline, size: 18),
             color: TibaneColors.error,
             onPressed: onDelete,
@@ -374,6 +380,7 @@ class _CuratedRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return TibaneCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
@@ -440,7 +447,7 @@ class _CuratedRow extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               minimumSize: const Size(0, 0),
             ),
-            child: const Text('Add'),
+            child: Text(l10n.actionAdd),
           ),
         ],
       ),
@@ -507,24 +514,24 @@ class _AddressEntryDialogState extends State<_AddressEntryDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AlertDialog(
       backgroundColor: TibaneColors.card,
-      title: const Text('Add token by address'),
+      title: Text(l10n.tokensAddDialogTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Paste the token contract (EVM) or mint address (Solana) for the '
-            'active network. We\'ll read metadata from chain before adding.',
-            style: TextStyle(color: TibaneColors.textMuted),
+          Text(
+            l10n.tokensAddDialogBody,
+            style: const TextStyle(color: TibaneColors.textMuted),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _ctrl,
             autocorrect: false,
             autofocus: true,
-            decoration: const InputDecoration(labelText: 'Address'),
+            decoration: InputDecoration(labelText: l10n.labelAddress),
             style: monoStyle(fontSize: 13),
           ),
         ],
@@ -532,13 +539,13 @@ class _AddressEntryDialogState extends State<_AddressEntryDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(l10n.actionCancel),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context, _ctrl.text.trim()),
-          child: const Text(
-            'Discover',
-            style: TextStyle(color: TibaneColors.orange),
+          child: Text(
+            l10n.tokensDiscover,
+            style: const TextStyle(color: TibaneColors.orange),
           ),
         ),
       ],
@@ -553,19 +560,20 @@ class _DiscoveredPreviewDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AlertDialog(
       backgroundColor: TibaneColors.card,
-      title: const Text('Add this token?'),
+      title: Text(l10n.tokensAddThisTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _row('Name', token.name),
-          _row('Symbol', token.symbol),
-          _row('Type', token.type),
-          _row('Decimals', token.decimals.toString()),
+          _row(l10n.labelName, token.name),
+          _row(l10n.labelSymbol, token.symbol),
+          _row(l10n.labelType, token.type),
+          _row(l10n.labelDecimals, token.decimals.toString()),
           if (token.totalSupply != null && token.totalSupply!.isNotEmpty)
-            _row('Total supply', token.totalSupply!),
+            _row(l10n.labelTotalSupply, token.totalSupply!),
           const SizedBox(height: 8),
           Text(
             token.address,
@@ -576,13 +584,13 @@ class _DiscoveredPreviewDialog extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
+          child: Text(l10n.actionCancel),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context, true),
-          child: const Text(
-            'Add',
-            style: TextStyle(color: TibaneColors.orange),
+          child: Text(
+            l10n.actionAdd,
+            style: const TextStyle(color: TibaneColors.orange),
           ),
         ),
       ],

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart' show SigningKey;
 import 'package:provider/provider.dart';
 
+import '../../../l10n/l10n.dart';
 import '../../../services/wallet/signing.dart';
 import '../../../services/wallet_service.dart';
 import '../inapp_unlock_screen.dart';
@@ -31,13 +32,14 @@ void _toast(BuildContext context, String message) {
 /// wallet has no local signing share yet (e.g. freshly restored from a backup),
 /// so "Later" during restore still leads somewhere instead of dead-ending.
 void _promptSetUp(BuildContext context, String walletId, String message) {
+  final l10n = context.l10n;
   debugPrint('[authorizeAndSign] $message');
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(message),
       duration: const Duration(seconds: 6),
       action: SnackBarAction(
-        label: 'Set up',
+        label: l10n.authSignSetUp,
         onPressed: () {
           if (!context.mounted) return;
           Navigator.of(context).push(
@@ -59,16 +61,16 @@ Future<List<SigningKey>?> collectSigningKeys(BuildContext context) async {
   final lw = context.read<WalletService>().libwallet;
   final wallet = await lw.currentWallet();
   if (!context.mounted) return null;
+  final l10n = context.l10n;
   if (wallet == null) {
-    _toast(context, 'No in-app wallet to sign with.');
+    _toast(context, l10n.authSignNoWallet);
     return null;
   }
   if (!canAssembleThreshold(wallet)) {
     _promptSetUp(
       context,
       wallet.id,
-      "This device isn't set up to sign this wallet yet — finish setup with a "
-      '2FA code.',
+      l10n.authSignNotSetUp,
     );
     return null;
   }
@@ -77,6 +79,9 @@ Future<List<SigningKey>?> collectSigningKeys(BuildContext context) async {
     wallet: wallet,
     readStoreKey: (storeKey, password) =>
         lw.readStoreKeyPrivate(storeKey, password: password),
+    title: l10n.authSignTitle,
+    subtitlePurpose: l10n.authSignPurpose,
+    actionLabel: l10n.actionSign,
   );
 }
 
@@ -98,15 +103,14 @@ Future<({String password, String? storeKeyPriv})?> collectManagementKeys(
   final wallet = await lw.currentWallet();
   if (!context.mounted) return null;
   if (wallet == null) {
-    _toast(context, 'No in-app wallet to authorize.');
+    _toast(context, context.l10n.authSignNoWalletManage);
     return null;
   }
   if (!canAssembleThreshold(wallet)) {
     _promptSetUp(
       context,
       wallet.id,
-      "This device isn't set up for this wallet yet — finish setup with a 2FA "
-      'code.',
+      context.l10n.authSignNotSetUpManage,
     );
     return null;
   }

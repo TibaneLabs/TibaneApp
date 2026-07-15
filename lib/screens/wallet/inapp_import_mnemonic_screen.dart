@@ -3,6 +3,7 @@ import 'package:libwallet/libwallet.dart';
 import 'package:phone_form_field/phone_form_field.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
@@ -71,18 +72,19 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
   /// itself is deferred to [_runPromote] so an abandoned flow leaves no
   /// stray wallet behind.
   void _continue() {
+    final l10n = context.l10n;
     final mnemonic = _mnemonicCtrl.text.trim();
     final words = mnemonic.split(RegExp(r'\s+'));
     if (![12, 15, 18, 21, 24].contains(words.length)) {
-      setState(() => _error = 'Mnemonic must be 12/15/18/21/24 words');
+      setState(() => _error = l10n.mnemonicInvalidWordCount);
       return;
     }
     if (_pwCtrl.text.length < 8) {
-      setState(() => _error = 'Password must be at least 8 characters');
+      setState(() => _error = l10n.mnemonicPasswordTooShort);
       return;
     }
     if (_pwCtrl.text != _pwCtrl2.text) {
-      setState(() => _error = 'Passwords do not match');
+      setState(() => _error = l10n.errPasswordsMismatch);
       return;
     }
     setState(() {
@@ -94,17 +96,18 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
   /// Step 2a: send the 2FA verification code to the chosen email / phone.
   /// The resulting remoteKey becomes the wallet's RemoteKey share.
   Future<void> _sendCode() async {
+    final l10n = context.l10n;
     String identifier;
     if (_idMode == _IdMode.email) {
       identifier = _emailCtrl.text.trim();
       if (!identifier.contains('@')) {
-        setState(() => _error = 'Enter a valid email address');
+        setState(() => _error = l10n.mnemonicInvalidEmail);
         return;
       }
     } else {
       final phone = _phoneCtrl.value;
       if (!phone.isValid()) {
-        setState(() => _error = 'Enter a valid phone number');
+        setState(() => _error = l10n.mnemonicInvalidPhone);
         return;
       }
       identifier = phone.international;
@@ -136,11 +139,12 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
 
   /// Step 2b: verify the code → remoteKey, then import + promote.
   Future<void> _submitCode() async {
+    final l10n = context.l10n;
     final code = _codeCtrl.text.trim();
     final session = _session;
     if (session == null) return;
     if (code.length != session.length) {
-      setState(() => _error = 'Code must be ${session.length} digits');
+      setState(() => _error = l10n.mnemonicCodeLength(session.length));
       return;
     }
     setState(() {
@@ -173,6 +177,8 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
   Future<void> _runPromote() async {
     final remoteKey = _remoteKey;
     if (remoteKey == null) return;
+    // Wallet name passed to libwallet — not translated (stored on-chain /
+    // in the backend; the user can rename it later).
     final name = _curve == 'ed25519'
         ? 'Imported Solana wallet'
         : 'Imported EVM/BTC wallet';
@@ -207,9 +213,10 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Import mnemonic')),
+      appBar: AppBar(title: Text(l10n.mnemonicTitle)),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -217,7 +224,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
             _Step.input => _buildInput(),
             _Step.verifyId => _buildVerifyId(),
             _Step.verifyCode => _buildVerifyCode(),
-            _Step.promoting => _buildBusy('Importing and securing your wallet…'),
+            _Step.promoting => _buildBusy(l10n.mnemonicImporting),
             _Step.done => _buildDone(),
             _Step.error => _buildError(),
           },
@@ -227,14 +234,12 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
   }
 
   Widget _buildInput() {
+    final l10n = context.l10n;
     return ListView(
       children: [
-        const Text(
-          'Paste your BIP-39 mnemonic from another wallet. The phrase is '
-          'imported into libwallet and then upgraded in place to a 2-of-3 '
-          'MPC wallet (device + 2FA + password) — its address does not '
-          'change.',
-          style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+        Text(
+          l10n.mnemonicInputHint,
+          style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         const SizedBox(height: 20),
         TextField(
@@ -242,8 +247,8 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
           minLines: 3,
           maxLines: 5,
           autocorrect: false,
-          decoration: const InputDecoration(
-            labelText: 'Mnemonic (12 / 15 / 18 / 21 / 24 words)',
+          decoration: InputDecoration(
+            labelText: l10n.mnemonicFieldLabel,
           ),
           style: monoStyle(fontSize: 13),
         ),
@@ -252,18 +257,20 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
           controller: _passphraseCtrl,
           obscureText: true,
           autocorrect: false,
-          decoration: const InputDecoration(
-            labelText: 'BIP-39 passphrase (optional)',
+          decoration: InputDecoration(
+            labelText: l10n.mnemonicPassphraseLabel,
           ),
         ),
         const SizedBox(height: 20),
-        const Text(
-          'Wallet type',
-          style: TextStyle(color: TibaneColors.textDim, fontSize: 12),
+        Text(
+          l10n.mnemonicWalletTypeLabel,
+          style: const TextStyle(color: TibaneColors.textDim, fontSize: 12),
         ),
         const SizedBox(height: 6),
         SegmentedButton<String>(
           segments: const [
+            // 'Solana' and 'EVM/BTC' are proper nouns / technical terms —
+            // not translated.
             ButtonSegment(value: 'ed25519', label: Text('Solana')),
             ButtonSegment(value: 'secp256k1', label: Text('EVM/BTC')),
           ],
@@ -276,10 +283,8 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
         const SizedBox(height: 4),
         Text(
           _curve == 'ed25519'
-              ? 'Solana wallet (ed25519 derivation), m/44\'/501\'/0\'.'
-              : 'EVM / Bitcoin wallet (secp256k1 derivation) — one key serves '
-                    'both Ethereum and Bitcoin accounts. Best fit for phrases '
-                    'from MetaMask, Ledger, Trezor, or Bitcoin-only wallets.',
+              ? l10n.mnemonicCurveHintSolana
+              : l10n.mnemonicCurveHintEvm,
           style: const TextStyle(color: TibaneColors.textMuted, fontSize: 12),
         ),
         const SizedBox(height: 16),
@@ -287,15 +292,15 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
           controller: _pwCtrl,
           obscureText: true,
           textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(
-            labelText: 'Password (one of the three shares)',
+          decoration: InputDecoration(
+            labelText: l10n.mnemonicPasswordLabel,
           ),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _pwCtrl2,
           obscureText: true,
-          decoration: const InputDecoration(labelText: 'Confirm password'),
+          decoration: InputDecoration(labelText: l10n.labelConfirmPassword),
         ),
         if (_error != null) ...[
           const SizedBox(height: 12),
@@ -309,9 +314,9 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
             foregroundColor: TibaneColors.black,
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          child: const Text(
-            'Continue',
-            style: TextStyle(fontWeight: FontWeight.w600),
+          child: Text(
+            l10n.mnemonicContinueButton,
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
       ],
@@ -319,26 +324,25 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
   }
 
   Widget _buildVerifyId() {
+    final l10n = context.l10n;
     return ListView(
       children: [
-        const Text(
-          'Your wallet is secured by a 3-share committee: this device, a 2FA '
-          'share, and your password. Verify a 2FA share (email or SMS) to '
-          'continue — any two of the three can recover it.',
-          style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+        Text(
+          l10n.mnemonicVerifyIdHint,
+          style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         const SizedBox(height: 20),
         SegmentedButton<_IdMode>(
-          segments: const [
+          segments: [
             ButtonSegment(
               value: _IdMode.email,
-              label: Text('Email'),
-              icon: Icon(Icons.alternate_email, size: 18),
+              label: Text(l10n.labelEmail),
+              icon: const Icon(Icons.alternate_email, size: 18),
             ),
             ButtonSegment(
               value: _IdMode.phone,
-              label: Text('Phone'),
-              icon: Icon(Icons.phone_outlined, size: 18),
+              label: Text(l10n.labelPhone),
+              icon: const Icon(Icons.phone_outlined, size: 18),
             ),
           ],
           selected: {_idMode},
@@ -357,7 +361,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
             keyboardType: TextInputType.emailAddress,
             autocorrect: false,
             autofillHints: const [AutofillHints.email],
-            decoration: const InputDecoration(labelText: 'Email'),
+            decoration: InputDecoration(labelText: l10n.labelEmail),
           )
         else
           PhoneFormField(
@@ -368,7 +372,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
               showIsoCode: false,
               showFlag: true,
             ),
-            decoration: const InputDecoration(labelText: 'Phone number'),
+            decoration: InputDecoration(labelText: l10n.labelPhoneNumber),
             validator: PhoneValidator.compose([
               PhoneValidator.required(context),
               PhoneValidator.valid(context),
@@ -387,7 +391,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
           child: Text(
-            _busy ? 'Sending…' : 'Send verification code',
+            _busy ? l10n.mnemonicSendingCode : l10n.actionSendVerificationCode,
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
@@ -398,19 +402,21 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
                   _step = _Step.input;
                   _error = null;
                 }),
-          child: const Text('Back'),
+          child: Text(l10n.actionBack),
         ),
       ],
     );
   }
 
   Widget _buildVerifyCode() {
+    final l10n = context.l10n;
+    final digits = _session?.length ?? 6;
     return ListView(
       children: [
         Text(
-          'We sent a ${_session?.length ?? 6}-digit code '
-          '${_sentTo.contains('@') ? 'to' : 'via SMS to'} $_sentTo. '
-          'Enter it below to import your wallet.',
+          _sentTo.contains('@')
+              ? l10n.mnemonicCodeSentEmail(digits, _sentTo)
+              : l10n.mnemonicCodeSentSms(digits, _sentTo),
           style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         const SizedBox(height: 24),
@@ -419,8 +425,8 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
           enabled: !_busy,
           keyboardType: TextInputType.number,
           autofocus: true,
-          maxLength: _session?.length ?? 6,
-          decoration: const InputDecoration(labelText: 'Verification code'),
+          maxLength: digits,
+          decoration: InputDecoration(labelText: l10n.labelVerificationCode),
         ),
         if (_error != null) ...[
           const SizedBox(height: 8),
@@ -435,7 +441,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
           child: Text(
-            _busy ? 'Verifying…' : 'Verify and import',
+            _busy ? l10n.commonVerifying : l10n.mnemonicVerifyImportButton,
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
@@ -448,7 +454,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
                   _session = null;
                   _error = null;
                 }),
-          child: const Text('Use a different email or phone'),
+          child: Text(l10n.mnemonicChangeSenderButton),
         ),
       ],
     );
@@ -479,6 +485,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
   }
 
   Widget _buildDone() {
+    final l10n = context.l10n;
     final w = _result;
     return ListView(
       children: [
@@ -487,17 +494,15 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
             const Icon(Icons.check_circle, color: TibaneColors.cyan, size: 28),
             const SizedBox(width: 12),
             Text(
-              'Wallet imported',
+              l10n.mnemonicDoneTitle,
               style: Theme.of(context).textTheme.titleLarge,
             ),
           ],
         ),
         const SizedBox(height: 12),
-        const Text(
-          'Your mnemonic was imported and upgraded to a 2-of-3 MPC wallet '
-          '(device + 2FA + password). The address is unchanged from the '
-          'original seed.',
-          style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+        Text(
+          l10n.mnemonicDoneBody,
+          style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         const SizedBox(height: 16),
         if (w != null)
@@ -545,9 +550,9 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
             foregroundColor: TibaneColors.black,
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          child: const Text(
-            'Done',
-            style: TextStyle(fontWeight: FontWeight.w600),
+          child: Text(
+            l10n.actionDone,
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
       ],
@@ -555,16 +560,17 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
   }
 
   Widget _buildError() {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
-          children: const [
-            Icon(Icons.error_outline, color: TibaneColors.error, size: 24),
-            SizedBox(width: 10),
+          children: [
+            const Icon(Icons.error_outline, color: TibaneColors.error, size: 24),
+            const SizedBox(width: 10),
             Text(
-              'Import failed',
-              style: TextStyle(
+              l10n.mnemonicImportFailed,
+              style: const TextStyle(
                 color: TibaneColors.text,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
@@ -574,7 +580,7 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
         ),
         const SizedBox(height: 12),
         SelectableText(
-          _error ?? 'Unknown error',
+          _error ?? l10n.sendUnknownError,
           style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         const Spacer(),
@@ -588,9 +594,9 @@ class _InAppImportMnemonicScreenState extends State<InAppImportMnemonicScreen> {
             foregroundColor: TibaneColors.black,
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          child: const Text(
-            'Start over',
-            style: TextStyle(fontWeight: FontWeight.w600),
+          child: Text(
+            l10n.mnemonicStartOver,
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
       ],

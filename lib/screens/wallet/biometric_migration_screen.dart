@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
@@ -42,9 +43,7 @@ class _BiometricMigrationScreenState extends State<BiometricMigrationScreen> {
         widget.onDone();
         return;
       }
-      setState(() => _error =
-          'Some keys could not be secured. Authenticate when prompted and try '
-          'again.');
+      setState(() => _error = context.l10n.bioMigPartialError);
     } catch (e) {
       logError('[BiometricMigration._secure] migrate to biometric error: $e');
       if (!mounted) return;
@@ -56,6 +55,7 @@ class _BiometricMigrationScreenState extends State<BiometricMigrationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return PopScope(
       canPop: false, // mandatory — no back-out
       child: Scaffold(
@@ -74,19 +74,15 @@ class _BiometricMigrationScreenState extends State<BiometricMigrationScreen> {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  'Secure your wallet',
+                  l10n.bioMigTitle,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  "We're upgrading your wallet's security: each wallet's "
-                  "signing key moves behind this device's biometrics. Every "
-                  'wallet is secured separately, so you will see a biometric '
-                  "prompt for each wallet you have — that's expected. Your "
-                  'password still works as a backup.',
+                Text(
+                  l10n.bioMigBody,
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+                  style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 16),
@@ -101,7 +97,7 @@ class _BiometricMigrationScreenState extends State<BiometricMigrationScreen> {
                 ],
                 const Spacer(),
                 GradientButton(
-                  label: 'Secure now',
+                  label: l10n.bioMigButton,
                   loading: _busy,
                   expanded: true,
                   onPressed: _busy ? null : _secure,

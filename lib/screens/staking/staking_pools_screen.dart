@@ -10,6 +10,7 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import 'staking_detail_screen.dart';
+import '../../l10n/l10n.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
 
@@ -97,6 +98,7 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     if (context.watch<UkComplianceService>().isUk) {
       return const _StakingUnavailableInRegion();
     }
@@ -125,11 +127,11 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Staking Pools',
+                      l10n.stakingPoolsTitle,
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     Text(
-                      '${_pools.length} pools',
+                      l10n.stakingPoolsCount(_pools.length.toString()),
                       style: monoStyle(
                         fontSize: 12,
                         color: TibaneColors.textMuted,
@@ -154,7 +156,7 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
             controller: _searchController,
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
-              hintText: 'Search by name, symbol, or mint...',
+              hintText: l10n.stakingSearchHint,
               prefixIcon: const Icon(
                 Icons.search,
                 size: 20,
@@ -181,42 +183,42 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             children: [
               _SortChip(
-                label: 'Members',
+                label: l10n.stakingMembers,
                 value: 'members',
                 current: _sortBy,
                 onTap: (v) => setState(() => _sortBy = v),
               ),
               const SizedBox(width: 8),
               _SortChip(
-                label: 'MCap',
+                label: l10n.stakingMcap,
                 value: 'mcap',
                 current: _sortBy,
                 onTap: (v) => setState(() => _sortBy = v),
               ),
               const SizedBox(width: 8),
               _SortChip(
-                label: 'Staked',
+                label: l10n.stakingTotalStaked,
                 value: 'staked',
                 current: _sortBy,
                 onTap: (v) => setState(() => _sortBy = v),
               ),
               const SizedBox(width: 8),
               _SortChip(
-                label: 'Rewards',
+                label: l10n.stakingRewards,
                 value: 'rewards',
                 current: _sortBy,
                 onTap: (v) => setState(() => _sortBy = v),
               ),
               const SizedBox(width: 8),
               _SortChip(
-                label: 'Age',
+                label: l10n.stakingAge,
                 value: 'age',
                 current: _sortBy,
                 onTap: (v) => setState(() => _sortBy = v),
               ),
               const SizedBox(width: 8),
               _SortChip(
-                label: 'Name',
+                label: l10n.labelName,
                 value: 'name',
                 current: _sortBy,
                 onTap: (v) => setState(() => _sortBy = v),
@@ -249,7 +251,7 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
                       const SizedBox(height: 16),
                       OutlinedButton(
                         onPressed: _loadPools,
-                        child: const Text('Retry'),
+                        child: Text(l10n.actionRetry),
                       ),
                     ],
                   ),
@@ -258,8 +260,8 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
               ? Center(
                   child: Text(
                     _searchController.text.isNotEmpty
-                        ? 'No pools match your search'
-                        : 'No staking pools found',
+                        ? l10n.stakingNoPoolsMatchSearch
+                        : l10n.stakingNoPoolsFound,
                     style: const TextStyle(color: TibaneColors.textMuted),
                   ),
                 )
@@ -353,6 +355,7 @@ class _PoolCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return TibaneCard(
       onTap: onTap,
       padding: const EdgeInsets.all(16),
@@ -373,7 +376,7 @@ class _PoolCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      pool.tokenName ?? pool.tokenSymbol ?? 'Unknown',
+                      pool.tokenName ?? pool.tokenSymbol ?? l10n.commonUnknown,
                       style: const TextStyle(
                         color: TibaneColors.text,
                         fontWeight: FontWeight.w600,
@@ -442,20 +445,20 @@ class _PoolCard extends StatelessWidget {
           Row(
             children: [
               _PoolStat(
-                label: 'MCap',
+                label: l10n.stakingMcap,
                 value: _formatMcap(pool.marketCap),
                 valueColor: pool.marketCap != null ? TibaneColors.gold : null,
               ),
               _PoolStat(
-                label: 'Staked',
+                label: l10n.stakingTotalStaked,
                 value: formatTokenAmount(pool.totalStaked, pool.tokenDecimals),
               ),
               _PoolStat(
-                label: 'Rewards',
+                label: l10n.stakingRewards,
                 value: '${formatSol(pool.rewardBalance, decimals: 2)} SOL',
                 valueColor: TibaneColors.gold,
               ),
-              _PoolStat(label: 'Members', value: '${pool.memberCount}'),
+              _PoolStat(label: l10n.stakingMembers, value: '${pool.memberCount}'),
             ],
           ),
         ],
@@ -504,6 +507,7 @@ class _StakingUnavailableInRegion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(28),
@@ -513,16 +517,14 @@ class _StakingUnavailableInRegion extends StatelessWidget {
             const Icon(Icons.public_off, color: TibaneColors.textDim, size: 48),
             const SizedBox(height: 16),
             Text(
-              'Staking not available in your region',
+              l10n.stakingUnavailableTitle,
               style: Theme.of(context).textTheme.titleMedium,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Tibane does not offer in-app staking in the United Kingdom. '
-              'You can still use the in-app browser to access third-party '
-              'services directly.',
-              style: TextStyle(color: TibaneColors.textMuted, height: 1.5),
+            Text(
+              l10n.stakingUnavailableBody,
+              style: const TextStyle(color: TibaneColors.textMuted, height: 1.5),
               textAlign: TextAlign.center,
             ),
           ],

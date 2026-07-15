@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet/libwallet_backend.dart'
     show AccountSwitchRoute, LibwalletBackend, SwitchResult;
 import '../../services/wallet_service.dart';
@@ -107,26 +108,29 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
   }
 
   Future<void> _remove(lw.Account account) async {
+    final l10n = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
-        title: const Text('Remove account?'),
+        title: Text(l10n.accountsRemoveTitle),
         content: Text(
-          'Remove the ${account.type} account at ${account.path.isNotEmpty ? account.path : "index 0"}? '
-          'The parent wallet and its shares are untouched.',
+          l10n.accountsRemoveBody(
+            account.type,
+            account.path.isNotEmpty ? account.path : 'index 0',
+          ),
           style: const TextStyle(color: TibaneColors.textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Remove',
-              style: TextStyle(color: TibaneColors.error),
+            child: Text(
+              l10n.actionRemove,
+              style: const TextStyle(color: TibaneColors.error),
             ),
           ),
         ],
@@ -150,9 +154,10 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Accounts')),
+      appBar: AppBar(title: Text(l10n.accountsTitle)),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: TibaneColors.orange,
         foregroundColor: TibaneColors.black,
@@ -165,7 +170,7 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
           context,
         ).push(MaterialPageRoute(builder: (_) => const InAppCreateScreen())),
         icon: const Icon(Icons.add),
-        label: const Text('New wallet'),
+        label: Text(l10n.walletsMgmtNewWallet),
       ),
       body: SafeArea(
         child: Builder(
@@ -202,13 +207,13 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'No accounts yet',
+                        l10n.accountsEmptyTitle,
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Tap "New account" once a wallet exists.',
-                        style: TextStyle(color: TibaneColors.textMuted),
+                      Text(
+                        l10n.accountsEmptySubtitle,
+                        style: const TextStyle(color: TibaneColors.textMuted),
                       ),
                     ],
                   ),
@@ -252,6 +257,7 @@ class _AccountTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final addr = account.address;
     return TibaneCard(
       onTap: active ? null : onTap,
@@ -291,7 +297,7 @@ class _AccountTile extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          'Active',
+                          l10n.accountsActiveBadge,
                           style: monoStyle(
                             fontSize: 9,
                             color: TibaneColors.cyan,
@@ -317,9 +323,9 @@ class _AccountTile extends StatelessWidget {
                       onTap: () {
                         Clipboard.setData(ClipboardData(text: addr));
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Address copied'),
-                            duration: Duration(seconds: 1),
+                          SnackBar(
+                            content: Text(l10n.addressCopied),
+                            duration: const Duration(seconds: 1),
                           ),
                         );
                       },
@@ -336,19 +342,19 @@ class _AccountTile extends StatelessWidget {
                 ),
                 if (account.path.isNotEmpty)
                   Text(
-                    'Derivation: ${account.path}',
+                    l10n.accountsDerivationPath(account.path),
                     style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
                   ),
                 if (walletName.isNotEmpty)
                   Text(
-                    'From wallet: $walletName',
+                    l10n.accountsFromWallet(walletName),
                     style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
                   ),
               ],
             ),
           ),
           IconButton(
-            tooltip: 'Remove',
+            tooltip: l10n.actionRemove,
             icon: const Icon(Icons.delete_outline, size: 18),
             color: TibaneColors.error,
             onPressed: onRemove,

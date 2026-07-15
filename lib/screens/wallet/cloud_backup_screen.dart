@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -47,12 +48,11 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   }
 
   Future<void> _backupNow() async {
+    final l10n = context.l10n;
     final wallet = context.read<WalletService>();
     final pw = await _promptPassword(
-      title: 'Back up now',
-      message:
-          'Re-enter your wallet password so the encrypted backup can be '
-          'written to your device\'s auto-backup directory.',
+      title: l10n.cloudBackupNowButton,
+      message: l10n.cloudBackupNowMessage,
     );
     if (pw == null) return;
     setState(() {
@@ -75,19 +75,18 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     await _refresh();
     if (!mounted) return;
     if (ts != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Backup written')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.cloudBackupWritten)),
+      );
     }
   }
 
   Future<void> _restore() async {
+    final l10n = context.l10n;
     final wallet = context.read<WalletService>();
     if (wallet.libwallet.hasWallet) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Disconnect the current wallet before restoring'),
-        ),
+        SnackBar(content: Text(l10n.cloudBackupDisconnectFirst)),
       );
       return;
     }
@@ -95,16 +94,14 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     if (json == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No local auto-backup found')),
+        SnackBar(content: Text(context.l10n.cloudBackupNoBackup)),
       );
       return;
     }
     if (!mounted) return;
     final pw = await _promptPassword(
-      title: 'Restore from auto-backup',
-      message:
-          'Enter the password for this backup. Restore writes the wallet '
-          'data into the local libwallet store.',
+      title: l10n.cloudBackupRestoreButton,
+      message: l10n.cloudBackupRestoreMessage,
     );
     if (pw == null) return;
     setState(() {
@@ -130,35 +127,34 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     if (ok) {
       await wallet.useLibwallet();
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Wallet restored')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.cloudBackupRestored)),
+      );
     }
   }
 
   Future<void> _delete() async {
+    final l10n = context.l10n;
     final wallet = context.read<WalletService>();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
-        title: const Text('Delete local backup?'),
-        content: const Text(
-          'This removes the auto-backup file from this device. Any copy '
-          'already uploaded to iCloud / Google Backup remains until the '
-          'next device backup overwrites it.',
-          style: TextStyle(color: TibaneColors.textMuted),
+        title: Text(l10n.cloudBackupDeleteTitle),
+        content: Text(
+          l10n.cloudBackupDeleteBody,
+          style: const TextStyle(color: TibaneColors.textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: TibaneColors.error),
+            child: Text(
+              l10n.actionDelete,
+              style: const TextStyle(color: TibaneColors.error),
             ),
           ),
         ],
@@ -177,55 +173,58 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     final ctrl = TextEditingController();
     return showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: TibaneColors.card,
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              message,
-              style: const TextStyle(color: TibaneColors.textMuted),
+      builder: (ctx) {
+        final l10n = ctx.l10n;
+        return AlertDialog(
+          backgroundColor: TibaneColors.card,
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                message,
+                style: const TextStyle(color: TibaneColors.textMuted),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                obscureText: true,
+                autofocus: true,
+                decoration: InputDecoration(labelText: l10n.labelPassword),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(l10n.actionCancel),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              obscureText: true,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Password'),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text),
+              child: Text(
+                l10n.actionOk,
+                style: const TextStyle(color: TibaneColors.orange),
+              ),
             ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: const Text(
-              'OK',
-              style: TextStyle(color: TibaneColors.orange),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final wallet = context.watch<WalletService>();
     final hasWallet = wallet.libwallet.hasWallet;
     final hasBackup = _lastBackup != null;
-    final platformLabel = Platform.isIOS
-        ? 'iCloud Backup'
-        : 'Google Auto Backup';
+    // Platform labels are proper nouns — not translated.
+    final platformLabel = Platform.isIOS ? 'iCloud Backup' : 'Google Auto Backup';
 
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Cloud backup')),
+      appBar: AppBar(title: Text(l10n.cloudBackupTitle)),
       body: SafeArea(
         child: _loading
             ? const Center(
@@ -259,13 +258,8 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                         const SizedBox(height: 8),
                         Text(
                           Platform.isIOS
-                              ? 'Files in the app\'s documents directory are '
-                                    'included in iCloud Backup when you have it '
-                                    'enabled in Settings > Apple ID > iCloud > '
-                                    'iCloud Backup.'
-                              : 'Files in the app\'s data directory are '
-                                    'included in Google Auto Backup when '
-                                    'enabled in Settings > System > Backup.',
+                              ? l10n.cloudBackupHintIos
+                              : l10n.cloudBackupHintAndroid,
                           style: monoStyle(
                             fontSize: 11,
                             color: TibaneColors.textMuted,
@@ -281,7 +275,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'STATUS',
+                          l10n.cloudBackupStatusLabel,
                           style: monoStyle(
                             fontSize: 10,
                             color: TibaneColors.textDim,
@@ -290,14 +284,14 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                         const SizedBox(height: 6),
                         Text(
                           hasBackup
-                              ? 'Last backup: ${_formatTime(_lastBackup!)}'
-                              : 'No local backup yet',
+                              ? l10n.cloudBackupLastBackup(_formatTime(_lastBackup!))
+                              : l10n.cloudBackupNone,
                           style: const TextStyle(color: TibaneColors.text),
                         ),
                         if (_backupBytes != null) ...[
                           const SizedBox(height: 2),
                           Text(
-                            'Size: ${_formatBytes(_backupBytes!)}',
+                            l10n.cloudBackupSize(_formatBytes(_backupBytes!)),
                             style: monoStyle(
                               fontSize: 11,
                               color: TibaneColors.textMuted,
@@ -318,7 +312,7 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                   FilledButton.icon(
                     onPressed: !hasWallet || _busy ? null : _backupNow,
                     icon: const Icon(Icons.cloud_upload_outlined),
-                    label: Text(_busy ? 'Working…' : 'Back up now'),
+                    label: Text(_busy ? l10n.commonWorking : l10n.cloudBackupNowButton),
                     style: FilledButton.styleFrom(
                       backgroundColor: TibaneColors.orange,
                       foregroundColor: TibaneColors.black,
@@ -326,11 +320,11 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                     ),
                   ),
                   if (!hasWallet)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 6),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
                       child: Text(
-                        'Unlock a wallet first to back it up.',
-                        style: TextStyle(color: TibaneColors.textMuted),
+                        l10n.cloudBackupUnlockFirst,
+                        style: const TextStyle(color: TibaneColors.textMuted),
                       ),
                     ),
                   const SizedBox(height: 8),
@@ -339,18 +333,17 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                         ? null
                         : _restore,
                     icon: const Icon(Icons.cloud_download_outlined),
-                    label: const Text('Restore from auto-backup'),
+                    label: Text(l10n.cloudBackupRestoreButton),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                   ),
                   if (hasWallet)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 6),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
                       child: Text(
-                        'Disconnect the current wallet to restore another one '
-                        'from this backup.',
-                        style: TextStyle(color: TibaneColors.textMuted),
+                        l10n.cloudBackupDisconnectHint,
+                        style: const TextStyle(color: TibaneColors.textMuted),
                       ),
                     ),
                   const SizedBox(height: 8),
@@ -360,9 +353,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                       Icons.delete_outline,
                       color: TibaneColors.error,
                     ),
-                    label: const Text(
-                      'Delete local backup',
-                      style: TextStyle(color: TibaneColors.error),
+                    label: Text(
+                      l10n.cloudBackupDeleteButton,
+                      style: const TextStyle(color: TibaneColors.error),
                     ),
                   ),
                 ],
@@ -371,13 +364,14 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     );
   }
 
-  static String _formatTime(DateTime t) {
+  String _formatTime(DateTime t) {
+    final l10n = context.l10n;
     final now = DateTime.now();
     final diff = now.difference(t);
-    if (diff.inMinutes < 1) return 'just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    if (diff.inMinutes < 1) return l10n.cloudBackupTimeJustNow;
+    if (diff.inMinutes < 60) return l10n.cloudBackupTimeMinutes(diff.inMinutes);
+    if (diff.inHours < 24) return l10n.cloudBackupTimeHours(diff.inHours);
+    if (diff.inDays < 7) return l10n.cloudBackupTimeDays(diff.inDays);
     return '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import 'inapp_create_screen.dart';
@@ -14,17 +15,16 @@ class WalletScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Consumer<WalletService>(
       builder: (context, wallet, _) {
         final lw = wallet.libwallet;
         if (!lw.hasWallet) {
           return _Gate(
             icon: Icons.account_balance_wallet_outlined,
-            title: 'Create your wallet',
-            subtitle:
-                'Set up a secure MPC wallet with email or SMS recovery. '
-                'Your keys are split across this device, a 2FA share, and a password.',
-            actionLabel: 'Get started',
+            title: l10n.walletScreenGateTitle,
+            subtitle: l10n.walletScreenGateSubtitle,
+            actionLabel: l10n.walletScreenGetStarted,
             onAction: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const InAppCreateScreen()),
             ),

@@ -18,9 +18,11 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
 
+import 'l10n/l10n.dart';
 import 'main.dart';
 import 'models/staking_pool.dart';
 import 'models/token_account.dart';
@@ -142,6 +144,13 @@ class _ScreenshotApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: TibaneTheme.darkTheme,
         navigatorKey: _navKey,
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
         home: _ShellWithRunner(),
       ),
     );

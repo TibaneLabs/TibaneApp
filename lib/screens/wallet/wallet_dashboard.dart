@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants/solana_constants.dart';
+import '../../l10n/l10n.dart';
 import '../../services/balances_store.dart';
 import '../../services/jupiter_service.dart';
 import '../../services/uk_compliance_service.dart';
@@ -31,6 +32,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final wallet = context.watch<WalletService>();
     final store = context.watch<BalancesStore>();
     final addr = wallet.publicKey ?? '';
@@ -108,7 +110,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 children: [
                   _ActionButton(
                     icon: Icons.arrow_downward,
-                    label: 'Receive',
+                    label: l10n.receiveTitle,
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const ReceiveScreen()),
@@ -117,7 +119,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                   const SizedBox(width: 12),
                   _ActionButton(
                     icon: Icons.arrow_upward,
-                    label: 'Send',
+                    label: l10n.dashboardSend,
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const SendScreen()),
@@ -127,7 +129,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                     const SizedBox(width: 12),
                     _ActionButton(
                       icon: Icons.swap_horiz,
-                      label: 'Swap',
+                      label: l10n.swapButton,
                       onTap: () => _openSwap(context),
                     ),
                   ],
@@ -141,7 +143,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
           // so each gets the dashboard's full width.
           _TabSwitcher(
             selected: _selectedTab,
-            labels: const ['Tokens', 'Activity'],
+            labels: [l10n.dashboardTabTokens, l10n.dashboardTabActivity],
             onChanged: (i) => setState(() => _selectedTab = i),
           ),
           const SizedBox(height: 12),
@@ -151,8 +153,8 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Center(
                   child: Text(
-                    'No tokens yet',
-                    style: TextStyle(color: TibaneColors.textMuted),
+                    l10n.dashboardNoTokens,
+                    style: const TextStyle(color: TibaneColors.textMuted),
                   ),
                 ),
               )
@@ -264,8 +266,8 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 child: Padding(
                   padding: const EdgeInsets.all(32),
                   child: Text(
-                    'No transactions yet',
-                    style: TextStyle(color: TibaneColors.textMuted),
+                    l10n.dashboardNoTransactions,
+                    style: const TextStyle(color: TibaneColors.textMuted),
                   ),
                 ),
               )
@@ -494,11 +496,12 @@ class _WalletDashboardState extends State<WalletDashboard> {
     String? inputMint,
     String? outputMint,
   }) {
+    final l10n = context.l10n;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => Scaffold(
           backgroundColor: TibaneColors.black,
-          appBar: AppBar(title: const Text('Swap')),
+          appBar: AppBar(title: Text(l10n.swapButton)),
           body: SwapScreen(
             initialInputMint: inputMint ?? wsolMint,
             initialOutputMint: outputMint ?? chiefPussyMint,
@@ -648,6 +651,7 @@ class _TransactionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final counterparty = _isSend ? tx.to : tx.from;
     final amt = tx.amount;
     final amountStr = amt != null && !amt.isMax
@@ -709,7 +713,7 @@ class _TransactionRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _isSend ? 'Sent' : 'Received',
+                    _isSend ? l10n.dashboardTxSent : l10n.dashboardTxReceived,
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 13,

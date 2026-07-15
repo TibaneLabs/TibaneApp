@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet/unified_account.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
@@ -12,7 +13,6 @@ import 'inapp_export_screen.dart';
 import 'reset_password_screen.dart';
 import 'share_labels.dart';
 import '../../utils/log.dart';
-import '../../utils/wallet_error.dart';
 
 /// Wallet detail view. When [walletId] is null, falls back to the
 /// active in-app wallet (legacy callers); otherwise shows the wallet
@@ -45,17 +45,19 @@ class WalletDetailsScreen extends StatefulWidget {
 
   /// Validate + normalise a user-entered wallet name: trim surrounding
   /// whitespace, then require [kNameMinLength]–[kNameMaxLength] characters.
-  /// Returns the cleaned `name` on success, or an `error` message to surface.
+  /// Returns the cleaned `name` on success, or an `errorCode` sentinel
+  /// ('too_short' / 'too_long') to be mapped to a localized message at the
+  /// call site.
   @visibleForTesting
-  static ({String? name, String? error}) validateWalletName(String raw) {
+  static ({String? name, String? errorCode}) validateWalletName(String raw) {
     final trimmed = raw.trim();
     if (trimmed.length < kNameMinLength) {
-      return (name: null, error: 'Name must be at least $kNameMinLength characters.');
+      return (name: null, errorCode: 'too_short');
     }
     if (trimmed.length > kNameMaxLength) {
-      return (name: null, error: 'Name must be $kNameMaxLength characters or fewer.');
+      return (name: null, errorCode: 'too_long');
     }
-    return (name: trimmed, error: null);
+    return (name: trimmed, errorCode: null);
   }
 }
 
@@ -79,7 +81,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     if (id == null) {
       setState(() {
         _loading = false;
-        _loadError = 'No wallet selected';
+        _loadError = context.l10n.walletDetailsNoWallet;
       });
       return;
     }
@@ -158,6 +160,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
   Future<void> _use() async {
     final wallet = _wallet;
     if (wallet == null) return;
+    final l10n = context.l10n;
     final ws = context.read<WalletService>();
     final name = wallet.name.isEmpty ? 'wallet' : wallet.name;
     final messenger = ScaffoldMessenger.of(context);
@@ -165,7 +168,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     if (target == null) {
       logError('[WalletDetails._use] no account found for ${wallet.id}');
       messenger.showSnackBar(
-        SnackBar(content: Text('Could not switch to "$name"')),
+        SnackBar(content: Text(l10n.walletDetailsCouldNotSwitch(name))),
       );
       return;
     }
@@ -174,14 +177,20 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     if (ok) {
       await _load(); // refresh _isActive / _hasShareHere from the new state
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('"$name" is now in use')));
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.walletDetailsNowInUse(name))),
+      );
     } else {
       logError('[WalletDetails._use] switch failed: ${ws.libwallet.error}');
-      showWalletError(context, ws.libwallet.error ?? 'Could not switch to "$name"');
+      showWalletError(
+        context,
+        ws.libwallet.error ?? l10n.walletDetailsCouldNotSwitch(name),
+      );
     }
   }
 
   List<Widget> _buildUseSection() {
+    final l10n = context.l10n;
     final actions = WalletDetailsScreen.walletDetailActions(
       isActive: _isActive,
       hasShareHere: _hasShareHere,
@@ -193,7 +202,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
         child: FilledButton.icon(
           onPressed: _use,
           icon: const Icon(Icons.check_circle_outline, size: 18),
-          label: const Text('Use this wallet'),
+          label: Text(l10n.walletDetailsUseButton),
           style: FilledButton.styleFrom(
             backgroundColor: TibaneColors.orange,
             foregroundColor: TibaneColors.black,
@@ -203,10 +212,9 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       ),
       if (actions.showNeeds2fa) ...[
         const SizedBox(height: 8),
-        const Text(
-          'This wallet has no device key on this phone — using it will ask '
-          'for 2FA to set one up.',
-          style: TextStyle(color: TibaneColors.textMuted, fontSize: 12),
+        Text(
+          l10n.walletDetailsNeeds2faHint,
+          style: const TextStyle(color: TibaneColors.textMuted, fontSize: 12),
         ),
       ],
       const SizedBox(height: 20),
@@ -225,44 +233,48 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     );
     if (newName == null || !mounted) return;
     if (newName == wallet.name) return;
+    final l10n = context.l10n;
     final ws = context.read<WalletService>();
     final ok = await ws.libwallet.renameWallet(wallet.id, newName);
     if (!mounted) return;
     if (ok) {
       await _load();
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Renamed to "$newName"')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.walletDetailsRenamed(newName))),
+      );
     } else {
       logError('[WalletDetails._rename] rename failed: ${ws.libwallet.error}');
-      showWalletError(context, ws.libwallet.error ?? 'Rename failed');
+      showWalletError(
+        context,
+        ws.libwallet.error ?? l10n.walletDetailsRenameFailed,
+      );
     }
   }
 
   Future<void> _remove() async {
     final wallet = _wallet;
     if (wallet == null) return;
+    final l10n = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
-        title: const Text('Remove wallet?'),
-        content: const Text(
-          'This deletes the wallet from this device. If you have not backed '
-          'it up, the funds will be irrecoverable. Continue?',
-          style: TextStyle(color: TibaneColors.textMuted),
+        title: Text(l10n.walletDetailsRemoveTitle),
+        content: Text(
+          l10n.walletDetailsRemoveBody,
+          style: const TextStyle(color: TibaneColors.textMuted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Remove',
-              style: TextStyle(color: TibaneColors.error),
+            child: Text(
+              l10n.actionRemove,
+              style: const TextStyle(color: TibaneColors.error),
             ),
           ),
         ],
@@ -278,15 +290,19 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       Navigator.of(context).pop(true);
     } else {
       logError('[WalletDetails._remove] remove failed: ${ws.libwallet.error}');
-      showWalletError(context, ws.libwallet.error ?? 'Remove failed');
+      showWalletError(
+        context,
+        ws.libwallet.error ?? l10n.walletDetailsRemoveFailed,
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Wallet')),
+      appBar: AppBar(title: Text(l10n.labelWallet)),
       body: SafeArea(
         child: Builder(
           builder: (context) {
@@ -300,7 +316,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Text(
-                    _loadError ?? 'No wallet',
+                    _loadError ?? l10n.walletDetailsNoWallet,
                     style: const TextStyle(color: TibaneColors.textMuted),
                     textAlign: TextAlign.center,
                   ),
@@ -324,7 +340,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                     child: OutlinedButton.icon(
                       onPressed: _transfer,
                       icon: const Icon(Icons.send_to_mobile, size: 16),
-                      label: const Text('Transfer to new device'),
+                      label: Text(l10n.walletDetailsTransferButton),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: TibaneColors.text,
                         side: const BorderSide(color: TibaneColors.border),
@@ -338,7 +354,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                     child: OutlinedButton.icon(
                       onPressed: _resetPassword,
                       icon: const Icon(Icons.lock_reset, size: 16),
-                      label: const Text('Forgot password? Reset via 2FA'),
+                      label: Text(l10n.walletDetailsResetPasswordButton),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: TibaneColors.text,
                         side: const BorderSide(color: TibaneColors.border),
@@ -366,7 +382,11 @@ class _HeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final threshold = wallet.keys.length >= 2 ? wallet.keys.length - 1 : 1;
+    final sigAlgo = wallet.curve == 'ed25519'
+        ? 'EdDSA (Solana)'
+        : 'ECDSA (EVM/Bitcoin)';
     return TibaneCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -376,7 +396,7 @@ class _HeaderCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  wallet.name.isEmpty ? '(unnamed)' : wallet.name,
+                  wallet.name.isEmpty ? l10n.walletsMgmtUnnamed : wallet.name,
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
@@ -385,7 +405,7 @@ class _HeaderCard extends StatelessWidget {
                 onPressed: onEdit,
                 icon: const Icon(Icons.edit_outlined, size: 20),
                 color: TibaneColors.orange,
-                tooltip: 'Rename wallet',
+                tooltip: l10n.walletDetailsRenameTitle,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -394,8 +414,7 @@ class _HeaderCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'In-app MPC wallet · $threshold-of-${wallet.keys.length} '
-            '${wallet.curve == "ed25519" ? "EdDSA (Solana)" : "ECDSA (EVM/Bitcoin)"}',
+            l10n.walletDetailsWalletInfo(threshold, wallet.keys.length, sigAlgo),
             style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
           ),
         ],
@@ -411,18 +430,18 @@ class _SharesCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final n = (wallet.keys.length - 1).clamp(1, wallet.keys.length);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'KEY SHARES',
+          l10n.walletDetailsKeySharesSection,
           style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 6),
         Text(
-          'Any ${(wallet.keys.length - 1).clamp(1, wallet.keys.length)} of these '
-          '${wallet.keys.length} shares are enough to sign. No single party '
-          'can move funds alone.',
+          l10n.walletDetailsSharesDescription(n, wallet.keys.length),
           style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         const SizedBox(height: 12),
@@ -442,7 +461,8 @@ class _ShareRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (icon, protection) = _meta(type);
+    final l10n = context.l10n;
+    final (icon, protection) = _meta(type, l10n);
     return TibaneCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
@@ -462,7 +482,7 @@ class _ShareRow extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  shareTypeLabel(type),
+                  shareTypeLabel(type, l10n),
                   style: const TextStyle(
                     color: TibaneColors.text,
                     fontSize: 14,
@@ -485,35 +505,16 @@ class _ShareRow extends StatelessWidget {
     );
   }
 
-  static (IconData, String) _meta(String type) {
+  static (IconData, String) _meta(String type, AppLocalizations l10n) {
     switch (type) {
       case 'StoreKey':
-        return (
-          Icons.phone_iphone,
-          'On this device. Encrypted at rest in the OS keystore '
-              '(Keychain / Keystore); falls back to a password-derived '
-              'AES-GCM blob if the keystore is unavailable.',
-        );
+        return (Icons.phone_iphone, l10n.walletDetailsShareStoreKeyDesc);
       case 'RemoteKey':
-        return (
-          Icons.cloud_outlined,
-          'Held on the Tibane key server, gated by the email or phone '
-              'number you verified at setup. Recoverable on a new device '
-              'by re-verifying that contact.',
-        );
+        return (Icons.cloud_outlined, l10n.walletDetailsShareRemoteKeyDesc);
       case 'Password':
-        return (
-          Icons.password,
-          'A password only you know, kept in memory only while the wallet '
-              'is unlocked. Optional biometric unlock skips the password '
-              'prompt at signing time.',
-        );
+        return (Icons.password, l10n.walletDetailsSharePasswordDesc);
       case 'Plain':
-        return (
-          Icons.key_outlined,
-          'Imported share. Stored alongside other key material under the '
-              'same protection.',
-        );
+        return (Icons.key_outlined, l10n.walletDetailsSharePlainDesc);
       default:
         return (Icons.help_outline, type);
     }
@@ -527,20 +528,21 @@ class _AccountsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     if (accounts.isEmpty) {
       return TibaneCard(
         child: Row(
-          children: const [
-            Icon(
+          children: [
+            const Icon(
               Icons.account_circle_outlined,
               color: TibaneColors.textMuted,
               size: 18,
             ),
-            SizedBox(width: 10),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'No chain accounts derived from this wallet yet.',
-                style: TextStyle(color: TibaneColors.textMuted),
+                l10n.walletDetailsNoAccounts,
+                style: const TextStyle(color: TibaneColors.textMuted),
               ),
             ),
           ],
@@ -551,7 +553,7 @@ class _AccountsCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'ACCOUNTS DERIVED FROM THIS WALLET',
+          l10n.walletDetailsAccountsSection,
           style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 10),
@@ -571,6 +573,7 @@ class _AccountRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final addr = account.address;
     final preview = addr.length > 14
         ? '${addr.substring(0, 6)}…${addr.substring(addr.length - 6)}'
@@ -604,7 +607,7 @@ class _AccountRow extends StatelessWidget {
                 ),
                 if (account.path.isNotEmpty)
                   Text(
-                    'Derivation: ${account.path}',
+                    l10n.accountsDerivationPath(account.path),
                     style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
                   ),
               ],
@@ -641,11 +644,14 @@ class _RenameWalletDialogState extends State<_RenameWalletDialog> {
   }
 
   void _submit() {
+    final l10n = context.l10n;
     final result = WalletDetailsScreen.validateWalletName(_ctrl.text);
-    if (result.error != null) {
-      setState(() => _error = result.error == null
-          ? null
-          : WalletError.from(result.error!).message);
+    if (result.errorCode != null) {
+      setState(() {
+        _error = result.errorCode == 'too_short'
+            ? l10n.walletDetailsNameTooShort(WalletDetailsScreen.kNameMinLength)
+            : l10n.walletDetailsNameTooLong(WalletDetailsScreen.kNameMaxLength);
+      });
       return;
     }
     Navigator.of(context).pop(result.name);
@@ -653,9 +659,10 @@ class _RenameWalletDialogState extends State<_RenameWalletDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return AlertDialog(
       backgroundColor: TibaneColors.card,
-      title: const Text('Rename wallet'),
+      title: Text(l10n.walletDetailsRenameTitle),
       content: TextField(
         controller: _ctrl,
         autofocus: true,
@@ -666,20 +673,20 @@ class _RenameWalletDialogState extends State<_RenameWalletDialog> {
         },
         onSubmitted: (_) => _submit(),
         decoration: InputDecoration(
-          labelText: 'Wallet name',
+          labelText: l10n.labelWalletName,
           errorText: _error,
         ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.actionCancel),
         ),
         TextButton(
           onPressed: _submit,
-          child: const Text(
-            'Save',
-            style: TextStyle(color: TibaneColors.orange),
+          child: Text(
+            l10n.actionSave,
+            style: const TextStyle(color: TibaneColors.orange),
           ),
         ),
       ],
@@ -695,13 +702,14 @@ class _ActionsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Row(
       children: [
         Expanded(
           child: OutlinedButton.icon(
             onPressed: onBackup,
             icon: const Icon(Icons.download_outlined, size: 16),
-            label: const Text('Export'),
+            label: Text(l10n.walletDetailsExportButton),
             style: OutlinedButton.styleFrom(
               foregroundColor: TibaneColors.text,
               side: const BorderSide(color: TibaneColors.border),
@@ -714,7 +722,7 @@ class _ActionsRow extends StatelessWidget {
           child: OutlinedButton.icon(
             onPressed: onRemove,
             icon: const Icon(Icons.delete_outline, size: 16),
-            label: const Text('Remove'),
+            label: Text(l10n.actionRemove),
             style: OutlinedButton.styleFrom(
               foregroundColor: TibaneColors.error,
               side: const BorderSide(color: TibaneColors.error),

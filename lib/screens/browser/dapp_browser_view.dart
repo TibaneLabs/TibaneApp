@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/browser_preferences.dart';
 import '../../services/uk_compliance_service.dart';
 import '../../services/wallet/libwallet_request_bridge.dart';
@@ -284,14 +285,14 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
           child: Row(
             children: [
               IconButton(
-                tooltip: 'Back',
+                tooltip: context.l10n.actionBack,
                 icon: const Icon(Icons.arrow_back, size: 20),
                 onPressed: _canGoBack ? () => _webview.goBack() : null,
                 color: TibaneColors.textMuted,
                 visualDensity: VisualDensity.compact,
               ),
               IconButton(
-                tooltip: 'Forward',
+                tooltip: context.l10n.browserForward,
                 icon: const Icon(Icons.arrow_forward, size: 20),
                 onPressed:
                     _canGoForward ? () => _webview.goForward() : null,
@@ -330,8 +331,8 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
                     ),
                     suffixIcon: IconButton(
                       tooltip: isFav
-                          ? 'Remove from favorites'
-                          : 'Add to favorites',
+                          ? context.l10n.browserRemoveFromFavorites
+                          : context.l10n.browserAddToFavorites,
                       icon: Icon(
                         isFav ? Icons.star : Icons.star_border,
                         size: 18,
@@ -360,14 +361,14 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
                 ),
               ),
               IconButton(
-                tooltip: 'Favorites',
+                tooltip: context.l10n.browserFavorites,
                 icon: const Icon(Icons.bookmarks_outlined, size: 20),
                 onPressed: _openFavorites,
                 color: TibaneColors.textMuted,
                 visualDensity: VisualDensity.compact,
               ),
               IconButton(
-                tooltip: _loading ? 'Cancel' : 'Reload',
+                tooltip: _loading ? context.l10n.actionCancel : context.l10n.actionRefresh,
                 icon: Icon(_loading ? Icons.close : Icons.refresh, size: 20),
                 onPressed: () => _loading ? null : _webview.reload(),
                 color: TibaneColors.textMuted,
@@ -435,11 +436,11 @@ class _FavoritesSheet extends StatelessWidget {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
               child: Text(
-                'Favorites',
-                style: TextStyle(
+                context.l10n.browserFavorites,
+                style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: Colors.white,
@@ -449,7 +450,7 @@ class _FavoritesSheet extends StatelessWidget {
             const SizedBox(height: 8),
             _FavoriteTile(
               icon: Icons.home_outlined,
-              title: 'Start page',
+              title: context.l10n.browserStartPage,
               subtitle: startPage,
               onTap: () => Navigator.of(context).pop(startPage),
             ),
@@ -537,7 +538,7 @@ class _FavoriteTile extends StatelessWidget {
             ),
             if (onDelete != null)
               IconButton(
-                tooltip: 'Remove',
+                tooltip: context.l10n.actionRemove,
                 icon: const Icon(Icons.close, size: 18),
                 onPressed: onDelete,
                 color: TibaneColors.textDim,

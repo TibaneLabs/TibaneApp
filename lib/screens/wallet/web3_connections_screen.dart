@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart' show Web3Connection;
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -63,28 +64,30 @@ class _Web3ConnectionsScreenState extends State<Web3ConnectionsScreen> {
   Future<void> _revoke(Web3Connection c) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: TibaneColors.card,
-        title: const Text('Revoke access?'),
-        content: Text(
-          'Remove ${c.host}\'s permission to use this account. The site will '
-          'have to re-request access on its next visit.',
-          style: const TextStyle(color: TibaneColors.textMuted),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+      builder: (ctx) {
+        final l10n = ctx.l10n;
+        return AlertDialog(
+          backgroundColor: TibaneColors.card,
+          title: Text(l10n.web3RevokeTitle),
+          content: Text(
+            l10n.web3RevokeBody(c.host),
+            style: const TextStyle(color: TibaneColors.textMuted),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Revoke',
-              style: TextStyle(color: TibaneColors.error),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.actionCancel),
             ),
-          ),
-        ],
-      ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(
+                l10n.web3RevokeAction,
+                style: const TextStyle(color: TibaneColors.error),
+              ),
+            ),
+          ],
+        );
+      },
     );
     if (confirmed != true) return;
     if (!mounted) return;
@@ -104,13 +107,14 @@ class _Web3ConnectionsScreenState extends State<Web3ConnectionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
-        title: const Text('Connected sites'),
+        title: Text(l10n.web3Title),
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: l10n.actionRefresh,
             onPressed: _load,
             icon: const Icon(Icons.refresh),
           ),
@@ -151,14 +155,13 @@ class _Web3ConnectionsScreenState extends State<Web3ConnectionsScreen> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'No connected sites',
+                        l10n.web3Empty,
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Sites that connect via the in-app browser will show '
-                        'up here so you can revoke their access later.',
-                        style: TextStyle(color: TibaneColors.textMuted),
+                      Text(
+                        l10n.web3EmptyHint,
+                        style: const TextStyle(color: TibaneColors.textMuted),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -192,18 +195,19 @@ class _ConnectionRow extends StatelessWidget {
 
   const _ConnectionRow({required this.connection, required this.onRevoke});
 
-  String _formatTime(DateTime t) {
+  String _formatTime(DateTime t, AppLocalizations l10n) {
     final now = DateTime.now();
     final diff = now.difference(t);
-    if (diff.inMinutes < 1) return 'just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 30) return '${diff.inDays}d ago';
+    if (diff.inMinutes < 1) return l10n.web3TimeJustNow;
+    if (diff.inMinutes < 60) return l10n.web3TimeMinutesAgo(diff.inMinutes.toString());
+    if (diff.inHours < 24) return l10n.web3TimeHoursAgo(diff.inHours.toString());
+    if (diff.inDays < 30) return l10n.web3TimeDaysAgo(diff.inDays.toString());
     return '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return TibaneCard(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
@@ -226,7 +230,7 @@ class _ConnectionRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  connection.host.isEmpty ? '(unknown host)' : connection.host,
+                  connection.host.isEmpty ? l10n.web3UnknownHost : connection.host,
                   style: const TextStyle(
                     color: TibaneColors.text,
                     fontSize: 15,
@@ -234,14 +238,14 @@ class _ConnectionRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Connected ${_formatTime(connection.created)}',
+                  l10n.web3ConnectedAt(_formatTime(connection.created, l10n)),
                   style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
               ],
             ),
           ),
           IconButton(
-            tooltip: 'Revoke',
+            tooltip: l10n.web3RevokeAction,
             icon: const Icon(Icons.delete_outline, size: 18),
             color: TibaneColors.error,
             onPressed: onRevoke,

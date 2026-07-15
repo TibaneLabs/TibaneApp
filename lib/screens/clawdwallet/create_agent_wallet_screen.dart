@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' show AgentIdentity;
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/relay_service.dart' show tibaneApi;
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
@@ -154,7 +155,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Create agent wallet')),
+      appBar: AppBar(title: Text(context.l10n.clawdCreateTitle)),
       body: SafeArea(
         child: switch (_stage) {
           _Stage.form => _buildForm(),
@@ -193,46 +194,44 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Three-of-three EdDSA',
+                        context.l10n.clawdCreateSchemeTitle,
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 10),
-                const Text(
-                  'You hold one share, the agent holds one, our signer node '
-                  'holds the third. The agent cannot move funds alone; the '
-                  'policy module must approve every transfer.',
-                  style: TextStyle(color: TibaneColors.textMuted, height: 1.5),
+                Text(
+                  context.l10n.clawdCreateSchemeBody,
+                  style: const TextStyle(color: TibaneColors.textMuted, height: 1.5),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 20),
-          _SectionLabel('Wallet'),
+          _SectionLabel(context.l10n.labelWallet),
           const SizedBox(height: 10),
           TextFormField(
             controller: _nameCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Wallet name',
+            decoration: InputDecoration(
+              labelText: context.l10n.labelWalletName,
               hintText: 'e.g. ops-agent',
             ),
             validator: (v) =>
-                (v == null || v.trim().isEmpty) ? 'Required' : null,
+                (v == null || v.trim().isEmpty) ? context.l10n.clawdCreateRequired : null,
           ),
           const SizedBox(height: 12),
           TextFormField(
             controller: _agentSpotCtrl,
             readOnly: _isVerified,
             decoration: InputDecoration(
-              labelText: 'Agent spot id',
+              labelText: context.l10n.clawdCreateAgentSpotIdLabel,
               hintText: _isVerified
                   ? null
                   : 'Paste from `clawdwallet init` or open a pair link',
               suffixIcon: _isVerified
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12),
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -243,8 +242,8 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                           ),
                           SizedBox(width: 4),
                           Text(
-                            'Verified',
-                            style: TextStyle(
+                            context.l10n.clawdCreateVerified,
+                            style: const TextStyle(
                               color: TibaneColors.cyan,
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -262,7 +261,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
             ),
             style: monoStyle(fontSize: 13),
             validator: (v) =>
-                (v == null || v.trim().isEmpty) ? 'Required' : null,
+                (v == null || v.trim().isEmpty) ? context.l10n.clawdCreateRequired : null,
             inputFormatters: _isVerified
                 ? null
                 : [
@@ -272,15 +271,15 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                   ],
           ),
           const SizedBox(height: 24),
-          _SectionLabel('Policy'),
+          _SectionLabel(context.l10n.clawdCreateSectionPolicy),
           const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: TextFormField(
                   controller: _perTxCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Per-tx max',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.clawdCreatePerTxMax,
                     suffixText: 'USD',
                   ),
                   keyboardType: const TextInputType.numberWithOptions(
@@ -293,8 +292,8 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
               Expanded(
                 child: TextFormField(
                   controller: _dailyCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Daily max',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.clawdCreateDailyMax,
                     suffixText: 'USD',
                   ),
                   keyboardType: const TextInputType.numberWithOptions(
@@ -310,26 +309,24 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
             controller: _allowlistCtrl,
             minLines: 2,
             maxLines: 5,
-            decoration: const InputDecoration(
-              labelText: 'Recipient allowlist',
-              hintText:
-                  'Comma- or space-separated Solana addresses '
-                  '(empty = no restriction)',
+            decoration: InputDecoration(
+              labelText: context.l10n.clawdCreateAllowlistLabel,
+              hintText: context.l10n.clawdCreateAllowlistHint,
               alignLabelWithHint: true,
             ),
             style: monoStyle(fontSize: 12),
           ),
           const SizedBox(height: 28),
           GradientButton(
-            label: 'Provision wallet',
+            label: context.l10n.clawdCreateProvisionButton,
             icon: Icons.add_circle_outline,
             expanded: true,
             onPressed: _submit,
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Provisioning runs a 3-party EdDSA keygen. Stay on this screen.',
-            style: TextStyle(color: TibaneColors.textDim, fontSize: 12),
+          Text(
+            context.l10n.clawdCreateProvisionHint,
+            style: const TextStyle(color: TibaneColors.textDim, fontSize: 12),
             textAlign: TextAlign.center,
           ),
         ],
@@ -338,9 +335,9 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
   }
 
   String? _validateNumber(String? v) {
-    if (v == null || v.trim().isEmpty) return 'Required';
+    if (v == null || v.trim().isEmpty) return context.l10n.clawdCreateRequired;
     final n = parseAmount(v);
-    if (n == null || n < 0) return 'Invalid';
+    if (n == null || n < 0) return context.l10n.clawdCreateInvalid;
     return null;
   }
 
@@ -361,15 +358,14 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
             ),
             const SizedBox(height: 24),
             Text(
-              'Running keygen ceremony',
+              context.l10n.clawdCreateKeygenTitle,
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 10),
-            const Text(
-              'Coordinating with the agent and the signer node. This takes a '
-              'few seconds.',
+            Text(
+              context.l10n.clawdCreateKeygenBody,
               textAlign: TextAlign.center,
-              style: TextStyle(color: TibaneColors.textMuted, height: 1.5),
+              style: const TextStyle(color: TibaneColors.textMuted, height: 1.5),
             ),
           ],
         ),
@@ -396,14 +392,14 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      'Wallet provisioned',
+                      context.l10n.clawdCreateDoneTitle,
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'SOLANA ADDRESS',
+                  context.l10n.settingsSolanaAddressLabel,
                   style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
                 ),
                 const SizedBox(height: 6),
@@ -421,14 +417,14 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                           ClipboardData(text: _solanaAddress ?? ''),
                         );
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Address copied'),
-                            duration: Duration(seconds: 1),
+                          SnackBar(
+                            content: Text(context.l10n.addressCopied),
+                            duration: const Duration(seconds: 1),
                           ),
                         );
                       },
                       icon: const Icon(Icons.copy, size: 14),
-                      label: const Text('Copy address'),
+                      label: Text(context.l10n.actionCopyAddress),
                     ),
                   ],
                 ),
@@ -452,11 +448,10 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                   ),
                 ),
                 const SizedBox(width: 14),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Fund this address with SOL (gas) and USDC, then ask the '
-                    'agent to make a transfer.',
-                    style: TextStyle(color: TibaneColors.text, height: 1.4),
+                    context.l10n.clawdCreateFundHint,
+                    style: const TextStyle(color: TibaneColors.text, height: 1.4),
                   ),
                 ),
               ],
@@ -464,7 +459,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
           ),
           const SizedBox(height: 24),
           GradientButton(
-            label: 'Done',
+            label: context.l10n.actionDone,
             expanded: true,
             onPressed: () => Navigator.of(context).pop(_walletId),
           ),
@@ -492,14 +487,14 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      'Keygen failed',
+                      context.l10n.clawdCreateKeygenFailed,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
                 SelectableText(
-                  _error ?? 'Unknown error',
+                  _error ?? context.l10n.clawdCreateUnknownError,
                   style: const TextStyle(
                     color: TibaneColors.textMuted,
                     height: 1.5,
@@ -510,7 +505,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
           ),
           const Spacer(),
           GradientButton(
-            label: 'Back to form',
+            label: context.l10n.clawdCreateBackToForm,
             expanded: true,
             onPressed: () => setState(() {
               _stage = _Stage.form;

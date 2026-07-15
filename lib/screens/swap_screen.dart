@@ -30,6 +30,7 @@ import '../utils/amount.dart';
 import '../utils/log.dart';
 import '../utils/wallet_error.dart';
 import '../widgets/wallet_error_display.dart';
+import '../l10n/l10n.dart';
 
 class SwapScreen extends StatefulWidget {
   /// Optional input mint to pre-select once holdings finish loading. Pass
@@ -103,9 +104,6 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   int _slippageBps = 100;
   static const _slippagePresets = <int>[50, 100, 300];
 
-  static const _swapNotConfirmedMsg =
-      'Swap was not confirmed on-chain — your funds were not moved. '
-      'Please try again.';
 
   // Cached `maxSpendable` (UI units) for the current native-SOL input + the
   // mint it was computed for. The displayed SOL holding is over-reserved (a
@@ -291,7 +289,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         if (!mounted) return;
         setState(() => _switchingNetwork = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No Solana mainnet network configured')),
+          SnackBar(content: Text(context.l10n.swapNoSolanaMainnet)),
         );
         return;
       }
@@ -321,6 +319,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   }
 
   Widget _buildUnavailableBanner() {
+    final l10n = context.l10n;
     final a = _swapAvailability!;
     final wallet = context.read<WalletService>();
     final netName = wallet.libwallet.currentNetwork?.name ?? 'this network';
@@ -339,7 +338,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Swap unavailable on $netName',
+                  l10n.swapUnavailableOnNetwork(netName),
                   style: const TextStyle(
                     color: TibaneColors.text,
                     fontWeight: FontWeight.w600,
@@ -350,7 +349,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
           ),
           const SizedBox(height: 8),
           Text(
-            _availabilityMessage(a),
+            _availabilityMessage(a, l10n),
             style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
           ),
           const SizedBox(height: 12),
@@ -363,7 +362,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
             ),
             icon: const Icon(Icons.flash_on, size: 18),
             label: Text(
-              _switchingNetwork ? 'Switching…' : 'Switch to Solana mainnet',
+              _switchingNetwork ? l10n.swapSwitching : l10n.swapSwitchToSolana,
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
@@ -372,19 +371,16 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     );
   }
 
-  String _availabilityMessage(lw.SwapAvailability a) {
+  String _availabilityMessage(lw.SwapAvailability a, AppLocalizations l10n) {
     switch (a.reason) {
       case 'unsupported_chain':
-        return 'Swap isn\'t supported on the current network. Switch to '
-            'Solana mainnet or any EVM chain covered by 1inch.';
+        return l10n.swapUnavailableUnsupportedChain;
       case 'missing_api_key':
-        return 'Swap is supported here but the 1inch API key isn\'t '
-            'configured in this build. Switch to Solana mainnet to swap '
-            'now.';
+        return l10n.swapUnavailableMissingApiKey;
       default:
         return a.reason.isEmpty
-            ? 'Swap is unavailable on the current network.'
-            : 'Swap unavailable: ${a.reason}';
+            ? l10n.swapUnavailableDefault
+            : l10n.swapUnavailableReason(a.reason);
     }
   }
 
@@ -520,9 +516,10 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         'maxSpendableUi=$_maxSpendableUi '
         'symbol=${_selectedInput!.symbol} dec=${_selectedInput!.decimals}',
       );
+      final l10n = context.l10n;
       setState(() => _quoteError = isNativeSol && _maxSpendableUi != null
-          ? 'Amount exceeds spendable max (keep some SOL for fees)'
-          : 'Amount exceeds balance');
+          ? l10n.swapExceedsSpendableMax
+          : l10n.swapExceedsBalance);
       return;
     }
 
@@ -673,12 +670,13 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         // silently filling the field with an amount that won't actually
         // swap.
         if (!quote.isExecutable) {
+          final l10n = context.l10n;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
                 quote.statusMessage.isNotEmpty
                     ? quote.statusMessage
-                    : 'Max amount unavailable for this pair',
+                    : l10n.swapMaxAmountUnavailable,
               ),
             ),
           );
@@ -722,6 +720,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     if (!_hasQuote || _swapping) return;
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
+    final l10n = context.l10n;
 
     // Snapshot the trade before clearing state on success so the review +
     // success screens have names, amounts, and logos to display.
@@ -772,7 +771,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
           // Solana: authoritative on-chain signature check (Helius RPC).
           if (!await _confirmLanded(signature)) {
             if (!mounted) return;
-            setState(() => _error = _swapNotConfirmedMsg);
+            setState(() => _error = l10n.swapNotConfirmed);
             return;
           }
         } else {
@@ -786,7 +785,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                 : st != null && st.pending
                     ? 'Swap is still pending after 40s — check the explorer '
                         'before retrying so you don’t double-spend.'
-                    : _swapNotConfirmedMsg);
+                    : l10n.swapNotConfirmed);
             return;
           }
           if (st.txHash.isNotEmpty) signature = st.txHash;
@@ -796,7 +795,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         if (!mounted) return;
         if (!await _confirmLanded(signature)) {
           if (!mounted) return;
-          setState(() => _error = _swapNotConfirmedMsg);
+          setState(() => _error = l10n.swapNotConfirmed);
           return;
         }
       }
@@ -1157,6 +1156,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final wallet = context.watch<WalletService>();
     if (context.watch<UkComplianceService>().isUk) {
       return const _SwapUnavailableInRegion();
@@ -1189,7 +1189,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Connect wallet to swap',
+                          l10n.swapConnectWallet,
                           style: Theme.of(context).textTheme.bodyLarge,
                         ),
                       ],
@@ -1202,7 +1202,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
               _buildUnavailableBanner(),
             ] else ...[
               // From section
-              _buildFromSection(),
+              _buildFromSection(l10n),
               const SizedBox(height: 8),
 
               // Flip button
@@ -1227,7 +1227,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
               const SizedBox(height: 8),
 
               // To section
-              _buildToSection(),
+              _buildToSection(l10n),
               const SizedBox(height: 16),
 
               // Quote details
@@ -1273,7 +1273,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                   ),
                 ),
 
-              if (_hasQuote) _buildQuoteDetails(),
+              if (_hasQuote) _buildQuoteDetails(l10n),
 
               // Error
               if (_error != null)
@@ -1304,11 +1304,11 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                 ),
 
               // Slippage selector — only the in-app (OKX) path honors it.
-              if (wallet.kind == WalletKind.inapp) _buildSlippageSelector(),
+              if (wallet.kind == WalletKind.inapp) _buildSlippageSelector(l10n),
 
               // Swap button
               GradientButton(
-                label: _swapping ? 'Swapping...' : 'Swap',
+                label: _swapping ? l10n.swapSwapping : l10n.swapButton,
                 icon: Icons.swap_horiz,
                 expanded: true,
                 loading: _swapping,
@@ -1321,7 +1321,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     );
   }
 
-  Widget _buildFromSection() {
+  Widget _buildFromSection(AppLocalizations l10n) {
     return TibaneCard(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -1330,13 +1330,13 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
           Row(
             children: [
               Text(
-                'From',
+                l10n.labelFrom,
                 style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
               ),
               const Spacer(),
               if (_selectedInput != null)
                 Text(
-                  'Balance: ${_formatBalance(_selectedInput!.uiBalance)}',
+                  l10n.commonBalanceLabel(_formatBalance(_selectedInput!.uiBalance)),
                   style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
             ],
@@ -1396,7 +1396,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                             ),
                           const SizedBox(width: 8),
                           Text(
-                            _loadingHoldings ? 'Loading...' : 'Select token',
+                            _loadingHoldings ? l10n.swapLoadingTokens : l10n.swapSelectToken,
                             style: TextStyle(color: TibaneColors.textMuted),
                           ),
                         ],
@@ -1443,7 +1443,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                   child: Padding(
                     padding: EdgeInsets.only(right: pct == 100 ? 0 : 6),
                     child: _PercentButton(
-                      label: pct == 100 ? 'Max' : '$pct%',
+                      label: pct == 100 ? l10n.sendMax : '$pct%',
                       onTap: _selectedInput != null
                           ? () => _setPercent(pct)
                           : null,
@@ -1457,14 +1457,14 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     );
   }
 
-  Widget _buildToSection() {
+  Widget _buildToSection(AppLocalizations l10n) {
     return TibaneCard(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'To',
+            l10n.labelTo,
             style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
           ),
           const SizedBox(height: 12),
@@ -1503,7 +1503,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Select token',
+                      l10n.swapSelectToken,
                       style: TextStyle(color: TibaneColors.textMuted),
                     ),
                   ],
@@ -1537,9 +1537,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     );
   }
 
-  Widget _buildQuoteDetails() {
-    if (_lwQuote != null) return _buildLwQuoteDetails(_lwQuote!);
-    if (_jupiterQuote != null) return _buildJupiterQuoteDetails(_jupiterQuote!);
+  Widget _buildQuoteDetails(AppLocalizations l10n) {
+    if (_lwQuote != null) return _buildLwQuoteDetails(_lwQuote!, l10n);
+    if (_jupiterQuote != null) return _buildJupiterQuoteDetails(_jupiterQuote!, l10n);
     return const SizedBox.shrink();
   }
 
@@ -1552,14 +1552,14 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
   /// Slippage tolerance selector. Changing it re-quotes (slippage is baked into
   /// the quote). Raising it fixes thin-route 0xb (min-output) reverts.
-  Widget _buildSlippageSelector() {
+  Widget _buildSlippageSelector(AppLocalizations l10n) {
     final isCustom = !_slippagePresets.contains(_slippageBps);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
           Text(
-            'Max slippage',
+            l10n.swapMaxSlippage,
             style: TextStyle(color: TibaneColors.textMuted, fontSize: 13),
           ),
           const Spacer(),
@@ -1575,7 +1575,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
           Padding(
             padding: const EdgeInsets.only(left: 8),
             child: _slippageChip(
-              isCustom ? _formatBps(_slippageBps) : 'Custom',
+              isCustom ? _formatBps(_slippageBps) : l10n.swapSlippageCustom,
               isCustom,
               _promptCustomSlippage,
             ),
@@ -1620,6 +1620,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   }
 
   Future<void> _promptCustomSlippage() async {
+    final l10n = context.l10n;
     final ctrl = TextEditingController(
       text: (_slippageBps / 100).toString(),
     );
@@ -1627,20 +1628,20 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
-        title: const Text('Custom slippage'),
+        title: Text(l10n.swapCustomSlippageTitle),
         content: TextField(
           controller: ctrl,
           autofocus: true,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            labelText: 'Slippage %',
-            hintText: 'e.g. 1.5',
+          decoration: InputDecoration(
+            labelText: l10n.swapSlippagePercent,
+            hintText: l10n.swapSlippageHint,
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           TextButton(
             onPressed: () {
@@ -1653,7 +1654,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
               final clamped = (pct * 100).round().clamp(1, 5000);
               Navigator.pop(ctx, clamped);
             },
-            child: const Text('Set'),
+            child: Text(l10n.swapSlippageSet),
           ),
         ],
       ),
@@ -1661,7 +1662,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     if (bps != null) _setSlippage(bps);
   }
 
-  Widget _buildJupiterQuoteDetails(SwapQuote q) {
+  Widget _buildJupiterQuoteDetails(SwapQuote q, AppLocalizations l10n) {
     final summary = StringBuffer();
     if (q.outUsdValue != null) {
       summary.write('\$${q.outUsdValue!.toStringAsFixed(2)}');
@@ -1672,18 +1673,18 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       summary: summary.toString(),
       children: [
         if (q.inUsdValue != null)
-          _quoteRow('You pay', '\$${q.inUsdValue!.toStringAsFixed(2)}'),
+          _quoteRow(l10n.swapYouPay, '\$${q.inUsdValue!.toStringAsFixed(2)}'),
         if (q.outUsdValue != null)
-          _quoteRow('You receive', '\$${q.outUsdValue!.toStringAsFixed(2)}'),
-        _quoteRow('Price impact', '${q.priceImpactPct}%'),
+          _quoteRow(l10n.swapYouReceive, '\$${q.outUsdValue!.toStringAsFixed(2)}'),
+        _quoteRow(l10n.swapPriceImpact, '${q.priceImpactPct}%'),
         if (q.gasless)
-          _quoteRow('Gas', 'Gasless', valueColor: TibaneColors.cyan),
-        _quoteRow('Fee', '0.5%'),
+          _quoteRow(l10n.swapGas, l10n.swapGasless, valueColor: TibaneColors.cyan),
+        _quoteRow(l10n.swapFee, '0.5%'),
       ],
     );
   }
 
-  Widget _buildLwQuoteDetails(lw.SwapQuote q) {
+  Widget _buildLwQuoteDetails(lw.SwapQuote q, AppLocalizations l10n) {
     final provider = q.providerLabel.isNotEmpty ? q.providerLabel : q.provider;
     final summary = StringBuffer();
     summary.write(
@@ -1696,28 +1697,28 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     return _expandableCard(
       summary: summary.toString(),
       children: [
-        _quoteRow('Provider', provider),
+        _quoteRow(l10n.swapProvider, provider),
         _quoteRow(
-          'You receive',
+          l10n.swapYouReceive,
           '${_formatOutputAmount(q.amountOut.toDouble())} ${q.tokenOut.symbol}',
         ),
         _quoteRow(
-          'Min receive',
+          l10n.swapMinReceive,
           _formatOutputAmount(q.minAmountOut.toDouble()),
         ),
         if (q.priceImpact > 0)
           _quoteRow(
-            'Price impact',
+            l10n.swapPriceImpact,
             '${(q.priceImpact * 100).toStringAsFixed(2)}%',
           ),
         if (q.networkFee != null)
           _quoteRow(
-            'Network fee',
+            l10n.swapNetworkFee,
             '${q.networkFee!.toDouble().toStringAsFixed(6)} SOL',
           ),
-        _quoteRow('Fee', '${(q.feeBps / 100).toStringAsFixed(1)}%'),
+        _quoteRow(l10n.swapFee, '${(q.feeBps / 100).toStringAsFixed(1)}%'),
         if (q.route.isNotEmpty)
-          _quoteRow('Route', q.route.map((h) => h.venue).join(' → ')),
+          _quoteRow(l10n.swapRoute, q.route.map((h) => h.venue).join(' → ')),
       ],
     );
   }
@@ -1884,7 +1885,7 @@ class _InputTokenPicker extends StatelessWidget {
             child: Row(
               children: [
                 Text(
-                  'Select token to swap',
+                  context.l10n.swapSelectInputToken,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const Spacer(),
@@ -2002,7 +2003,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
       if (!mounted) return;
       if (meta == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Token not found on this network')),
+          SnackBar(content: Text(context.l10n.swapTokenNotFoundOnNetwork)),
         );
         return;
       }
@@ -2022,7 +2023,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
       if (meta == null) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Token not found')));
+        ).showSnackBar(SnackBar(content: Text(context.l10n.tokenNotFound)));
         return;
       }
       widget.onSelect(
@@ -2055,6 +2056,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final favorites = context.watch<FavoritesService>().favorites;
 
     return DraggableScrollableSheet(
@@ -2069,7 +2071,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
             child: Row(
               children: [
                 Text(
-                  'Select output token',
+                  l10n.swapSelectOutputToken,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const Spacer(),
@@ -2093,7 +2095,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                     child: Text(
-                      'POPULAR',
+                      l10n.swapPopular,
                       style: monoStyle(
                         fontSize: 10,
                         color: TibaneColors.textDim,
@@ -2135,7 +2137,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: Text(
-                        'FAVORITES',
+                        l10n.swapFavorites,
                         style: monoStyle(
                           fontSize: 10,
                           color: TibaneColors.textDim,
@@ -2188,6 +2190,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
   /// libwallet getAssets, passed in) — there's no curated list for EVM, so a
   /// pasted contract (resolved via libwallet) or a held token are the options.
   Widget _evmEmptyBody(ScrollController scrollController) {
+    final l10n = context.l10n;
     final tokens = widget.evmTokens;
     return ListView(
       controller: scrollController,
@@ -2195,7 +2198,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: Text(
-            tokens.isEmpty ? 'PASTE A TOKEN ADDRESS ABOVE' : 'YOUR TOKENS',
+            tokens.isEmpty ? l10n.swapPasteTokenAddressAbove : l10n.swapYourTokens,
             style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
           ),
         ),
@@ -2322,6 +2325,7 @@ class _SwapReviewSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return SafeArea(
       top: false,
       child: SingleChildScrollView(
@@ -2343,12 +2347,12 @@ class _SwapReviewSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            Text('Review swap', style: Theme.of(context).textTheme.titleLarge),
+            Text(l10n.swapReviewTitle, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 6),
-            const Text(
-              'Please review the details before confirming this transaction.',
+            Text(
+              l10n.swapReviewSubtitle,
               textAlign: TextAlign.center,
-              style: TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+              style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
             ),
             const SizedBox(height: 28),
             _swapPairRow(
@@ -2363,7 +2367,7 @@ class _SwapReviewSheet extends StatelessWidget {
               approxOutput: true,
             ),
             const SizedBox(height: 24),
-            if (net != null) _networkCard(net!),
+            if (net != null) _networkCard(net!, l10n),
             const SizedBox(height: 24),
             Row(
               children: [
@@ -2378,7 +2382,7 @@ class _SwapReviewSheet extends StatelessWidget {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    child: const Text('Cancel'),
+                    child: Text(l10n.actionCancel),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -2393,9 +2397,9 @@ class _SwapReviewSheet extends StatelessWidget {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    child: const Text(
-                      'Confirm',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                    child: Text(
+                      l10n.actionConfirm,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
@@ -2407,7 +2411,7 @@ class _SwapReviewSheet extends StatelessWidget {
     );
   }
 
-  Widget _networkCard(lw.Network net) {
+  Widget _networkCard(lw.Network net, AppLocalizations l10n) {
     final logoAsset = networkLogoAsset(net);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -2438,7 +2442,7 @@ class _SwapReviewSheet extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Network',
+                  l10n.labelNetwork,
                   style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
                 ),
                 const SizedBox(height: 2),
@@ -2489,11 +2493,12 @@ class _SwapSuccessScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final url = explorerTxUrl(net, signature);
     final exName = net == null ? null : explorerNameFor(net!.type, net!.chainId);
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Swap')),
+      appBar: AppBar(title: Text(l10n.swapButton)),
       body: SafeArea(
         child: Column(
           children: [
@@ -2505,9 +2510,9 @@ class _SwapSuccessScreen extends StatelessWidget {
                     const SizedBox(height: 36),
                     txSuccessMark(),
                     const SizedBox(height: 28),
-                    const Text(
-                      'Swap successful',
-                      style: TextStyle(
+                    Text(
+                      l10n.swapSuccessTitle,
+                      style: const TextStyle(
                         color: TibaneColors.text,
                         fontSize: 26,
                         fontWeight: FontWeight.w700,
@@ -2515,10 +2520,10 @@ class _SwapSuccessScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Your swap was completed successfully.',
+                    Text(
+                      l10n.swapSuccessSubtitle,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: TibaneColors.textMuted,
                         fontSize: 14,
                       ),
@@ -2537,14 +2542,14 @@ class _SwapSuccessScreen extends StatelessWidget {
                     const SizedBox(height: 32),
                     txReceiptCard(
                       icon: Icons.receipt_long_outlined,
-                      label: 'Transaction ID',
-                      value: shortenTxHash(signature) ?? '(unavailable)',
+                      label: l10n.labelTransaction,
+                      value: shortenTxHash(signature) ?? l10n.sendTxUnavailable,
                       onTap: signature.isEmpty
                           ? null
                           : () => copyWithToast(
                               context,
                               signature,
-                              'Transaction ID',
+                              l10n.labelTransactionId,
                             ),
                     ),
                     if (url != null) ...[
@@ -2552,8 +2557,8 @@ class _SwapSuccessScreen extends StatelessWidget {
                       txExplorerLink(
                         onTap: () => openExplorerUrl(context, url),
                         label: exName != null
-                            ? 'View transaction on $exName'
-                            : 'View transaction on explorer',
+                            ? l10n.viewOnExplorerNamed(exName)
+                            : l10n.viewOnExplorer,
                       ),
                     ],
                   ],
@@ -2562,7 +2567,7 @@ class _SwapSuccessScreen extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-              child: txBackToHomeButton(context),
+              child: txBackToHomeButton(context, label: l10n.backToHome),
             ),
           ],
         ),
@@ -2589,16 +2594,14 @@ class _SwapUnavailableInRegion extends StatelessWidget {
             const Icon(Icons.public_off, color: TibaneColors.textDim, size: 48),
             const SizedBox(height: 16),
             Text(
-              'Swap not available in your region',
+              context.l10n.swapUkUnavailableTitle,
               style: Theme.of(context).textTheme.titleMedium,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Tibane does not offer in-app token exchange in the United '
-              'Kingdom. You can still use the in-app browser to access '
-              'third-party services directly.',
-              style: TextStyle(color: TibaneColors.textMuted, height: 1.5),
+            Text(
+              context.l10n.swapUkUnavailableBody,
+              style: const TextStyle(color: TibaneColors.textMuted, height: 1.5),
               textAlign: TextAlign.center,
             ),
           ],

@@ -33,6 +33,7 @@ dependencies:
   cryptography: ^2.9.0
   biometric_storage: ^5.1.0-rc.5
   local_auth: ^3.0.1
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
@@ -49,6 +50,10 @@ flutter_launcher_icons:
 
 flutter:
   uses-material-design: true
+
+  # Enables gen_l10n localization codegen (see l10n.yaml). Generated
+  # AppLocalizations classes are written to lib/l10n/gen/.
+  generate: true
 
   assets:
     - assets/

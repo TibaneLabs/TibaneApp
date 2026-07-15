@@ -19,6 +19,7 @@ import '../../widgets/wallet_error_display.dart';
 import '../swap_screen.dart';
 import '../wallet/widgets/authorize_and_sign.dart';
 import 'staking_members_screen.dart';
+import '../../l10n/l10n.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
@@ -120,6 +121,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final wallet = context.watch<WalletService>();
 
     return Scaffold(
@@ -150,7 +152,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  pool.tokenName ?? pool.tokenSymbol ?? 'Pool',
+                  pool.tokenName ?? pool.tokenSymbol ?? l10n.stakingPoolLabel,
                   maxLines: 1,
                 ),
               ),
@@ -162,13 +164,13 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: AccentButton(
-                label: 'SWAP',
+                label: l10n.stakingSwapButton,
                 icon: Icons.swap_horiz,
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => Scaffold(
                       backgroundColor: TibaneColors.black,
-                      appBar: AppBar(title: const Text('Swap')),
+                      appBar: AppBar(title: Text(l10n.swapButton)),
                       body: SwapScreen(
                         initialInputMint: wsolMint,
                         initialOutputMint: pool.mint,
@@ -186,11 +188,11 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
             onPressed: () {
               Clipboard.setData(ClipboardData(text: pool.address));
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Pool address copied')),
+                SnackBar(content: Text(l10n.stakingPoolAddressCopied)),
               );
             },
             icon: const Icon(Icons.copy, size: 18),
-            tooltip: 'Copy pool address',
+            tooltip: l10n.stakingCopyPoolAddress,
           ),
         ],
       ),
@@ -264,7 +266,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
                     _userStake!.amount == BigInt.zero &&
                     !_userStake!.hasUnstakeRequest) ...[
                   SecondaryButton(
-                    label: 'Close Stake Account',
+                    label: l10n.stakingCloseStakeAccount,
                     icon: Icons.delete_outline,
                     expanded: true,
                     onPressed: _staking
@@ -294,7 +296,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'Connect your wallet to stake',
+                        l10n.stakingConnectToStake,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: TibaneColors.textMuted,
                         ),
@@ -307,7 +309,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
 
               // View Members button
               SecondaryButton(
-                label: 'View Members',
+                label: l10n.stakingViewMembers,
                 icon: Icons.people,
                 expanded: true,
                 onPressed: () {
@@ -521,10 +523,14 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
           );
           if (amount < pool.minStakeAmount) {
             if (mounted) {
+              final l10n = context.l10n;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
-                    'Below pool minimum: ${formatTokenAmount(pool.minStakeAmount, pool.tokenDecimals)} ${pool.tokenSymbol ?? ''}',
+                    l10n.stakingBelowMinimum(
+                      formatTokenAmount(pool.minStakeAmount, pool.tokenDecimals),
+                      pool.tokenSymbol ?? '',
+                    ),
                   ),
                 ),
               );
@@ -647,11 +653,12 @@ class _PoolStatsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'POOL STATS',
+          l10n.stakingPoolStatsSection,
           style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 12),
@@ -659,23 +666,20 @@ class _PoolStatsSection extends StatelessWidget {
           children: [
             Expanded(
               child: StatCard(
-                label: 'Total Staked',
+                label: l10n.stakingTotalStaked,
                 value: formatTokenAmount(pool.totalStaked, pool.tokenDecimals),
                 icon: Icons.lock,
-                tooltip:
-                    'All tokens currently staked across every member of this pool.',
+                tooltip: l10n.stakingTotalStakedTooltip,
               ),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: StatCard(
-                label: 'Rewards',
+                label: l10n.stakingRewards,
                 value: '${formatSol(pool.rewardBalance, decimals: 3)} SOL',
                 valueColor: TibaneColors.gold,
                 icon: Icons.diamond,
-                tooltip:
-                    'SOL balance the pool will distribute to stakers as rewards. '
-                    'Grows as the pool authority tops it up.',
+                tooltip: l10n.stakingRewardsTooltip,
               ),
             ),
           ],
@@ -685,24 +689,20 @@ class _PoolStatsSection extends StatelessWidget {
           children: [
             Expanded(
               child: StatCard(
-                label: 'Tau',
+                label: l10n.stakingTau,
                 value: pool.tauFormatted,
-                subtitle: 'Decay period',
+                subtitle: l10n.stakingDecayPeriod,
                 icon: Icons.timer,
-                tooltip:
-                    'Time-weighted decay constant. Your stake weight grows '
-                    'toward your full deposit over time at a rate set by '
-                    'tau — smaller tau ramps up faster.',
+                tooltip: l10n.stakingTauTooltip,
               ),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: StatCard(
-                label: 'Members',
+                label: l10n.stakingMembers,
                 value: '${pool.memberCount}',
                 icon: Icons.people,
-                tooltip:
-                    'Number of unique wallets currently staked in this pool.',
+                tooltip: l10n.stakingMembersTooltip,
               ),
             ),
           ],
@@ -762,7 +762,7 @@ class _UserStakeSection extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'You have no stake in this pool',
+              context.l10n.stakingNoStakeInPool,
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
@@ -772,11 +772,12 @@ class _UserStakeSection extends StatelessWidget {
       );
     }
 
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'YOUR STAKE',
+          l10n.stakingYourStakeSection,
           style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 12),
@@ -787,9 +788,9 @@ class _UserStakeSection extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Staked',
-                    style: TextStyle(color: TibaneColors.textMuted),
+                  Text(
+                    l10n.stakingStaked,
+                    style: const TextStyle(color: TibaneColors.textMuted),
                   ),
                   Text(
                     '${formatTokenAmount(userStake!.amount, pool.tokenDecimals)} ${pool.tokenSymbol ?? ''}',
@@ -805,9 +806,9 @@ class _UserStakeSection extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Weight',
-                    style: TextStyle(color: TibaneColors.textMuted),
+                  Text(
+                    l10n.stakingWeight,
+                    style: const TextStyle(color: TibaneColors.textMuted),
                   ),
                   Text(
                     '${weightPercent.toStringAsFixed(1)}%',
@@ -842,9 +843,9 @@ class _UserStakeSection extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Pending Rewards',
-                    style: TextStyle(color: TibaneColors.textMuted),
+                  Text(
+                    l10n.stakingPendingRewards,
+                    style: const TextStyle(color: TibaneColors.textMuted),
                   ),
                   Text(
                     '${formatSol(pendingRewards)} SOL',
@@ -860,6 +861,7 @@ class _UserStakeSection extends StatelessWidget {
                 const SizedBox(height: 12),
                 Builder(
                   builder: (context) {
+                    final l10n = context.l10n;
                     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
                     final elapsed = now - userStake!.unstakeRequestTime.toInt();
                     final required = pool.unstakeCooldownSeconds.toInt();
@@ -900,7 +902,7 @@ class _UserStakeSection extends StatelessWidget {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  'Unstake request: ${formatTokenAmount(userStake!.unstakeRequestAmount, pool.tokenDecimals)}',
+                                  l10n.stakingUnstakeRequest(formatTokenAmount(userStake!.unstakeRequestAmount, pool.tokenDecimals)),
                                   style: TextStyle(
                                     color: badgeColor,
                                     fontSize: 13,
@@ -918,7 +920,7 @@ class _UserStakeSection extends StatelessWidget {
                                 ),
                                 child: Text(
                                   cooldownDone
-                                      ? 'Ready'
+                                      ? l10n.stakingCooldownReady
                                       : _formatDuration(required - elapsed),
                                   style: TextStyle(
                                     color: badgeColor,
@@ -1004,47 +1006,51 @@ class _ActionsSection extends StatelessWidget {
   }) async {
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: TibaneColors.card,
-        title: Text(title),
-        content: Text(
-          body,
-          style: const TextStyle(color: TibaneColors.textMuted),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+      builder: (ctx) {
+        final l10n = ctx.l10n;
+        return AlertDialog(
+          backgroundColor: TibaneColors.card,
+          title: Text(title),
+          content: Text(
+            body,
+            style: const TextStyle(color: TibaneColors.textMuted),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              confirmLabel,
-              style: const TextStyle(color: TibaneColors.error),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.actionCancel),
             ),
-          ),
-        ],
-      ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(
+                confirmLabel,
+                style: const TextStyle(color: TibaneColors.error),
+              ),
+            ),
+          ],
+        );
+      },
     );
     return result == true;
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final hasCooldown = pool.unstakeCooldownSeconds > BigInt.zero;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'ACTIONS',
+          l10n.stakingActionsSection,
           style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 12),
         // Claim rewards
         if (pendingRewards > BigInt.zero) ...[
           GradientButton(
-            label: 'Claim ${formatSol(pendingRewards)} SOL',
+            label: l10n.stakingClaimRewards(formatSol(pendingRewards)),
             icon: Icons.diamond,
             onPressed: () => onAction('claim'),
             expanded: true,
@@ -1056,6 +1062,7 @@ class _ActionsSection extends StatelessWidget {
           // Pending unstake request
           Builder(
             builder: (context) {
+              final l10n = context.l10n;
               final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
               final elapsed = now - userStake.unstakeRequestTime.toInt();
               final required = pool.unstakeCooldownSeconds.toInt();
@@ -1069,8 +1076,8 @@ class _ActionsSection extends StatelessWidget {
                         Expanded(
                           child: SecondaryButton(
                             label: cooldownDone
-                                ? 'Complete Unstake'
-                                : 'Cooling down...',
+                                ? l10n.stakingCompleteUnstake
+                                : l10n.stakingCoolingDown,
                             icon: cooldownDone
                                 ? Icons.lock_open
                                 : Icons.hourglass_top,
@@ -1083,10 +1090,9 @@ class _ActionsSection extends StatelessWidget {
                                     final symbol = pool.tokenSymbol ?? 'tokens';
                                     final ok = await _confirmDestructive(
                                       context,
-                                      title: 'Complete unstake?',
-                                      body:
-                                          'This will release $amountStr $symbol from your stake account back to your wallet in a single on-chain transaction. You cannot undo it from the app.',
-                                      confirmLabel: 'Complete Unstake',
+                                      title: l10n.stakingCompleteUnstakeTitle,
+                                      body: l10n.stakingCompleteUnstakeBody(amountStr, symbol),
+                                      confirmLabel: l10n.stakingCompleteUnstake,
                                     );
                                     if (ok) onAction('completeUnstake');
                                   }
@@ -1096,7 +1102,7 @@ class _ActionsSection extends StatelessWidget {
                         const SizedBox(width: 8),
                         Expanded(
                           child: SecondaryButton(
-                            label: 'Cancel',
+                            label: l10n.actionCancel,
                             icon: Icons.cancel_outlined,
                             onPressed: () => onAction('cancelUnstake'),
                           ),
@@ -1112,6 +1118,7 @@ class _ActionsSection extends StatelessWidget {
           // Unstake input with % quick buttons
           Builder(
             builder: (context) {
+              final l10n = context.l10n;
               // Check lock state
               final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
               final lockDuration = pool.lockDurationSeconds.toInt();
@@ -1123,16 +1130,19 @@ class _ActionsSection extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Unstake',
-                      style: TextStyle(
+                    Text(
+                      l10n.stakingUnstakeTitle,
+                      style: const TextStyle(
                         color: TibaneColors.text,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Staked: ${formatTokenAmount(userStake.amount, pool.tokenDecimals)} ${pool.tokenSymbol ?? ''}',
+                      l10n.stakingStakedAmount(
+                        formatTokenAmount(userStake.amount, pool.tokenDecimals),
+                        pool.tokenSymbol ?? '',
+                      ),
                       style: monoStyle(
                         fontSize: 11,
                         color: TibaneColors.textMuted,
@@ -1156,7 +1166,7 @@ class _ActionsSection extends StatelessWidget {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'Locked for ${_formatDuration(lockRemaining)}',
+                                l10n.stakingLockedFor(_formatDuration(lockRemaining)),
                                 style: const TextStyle(
                                   color: Colors.red,
                                   fontSize: 12,
@@ -1229,7 +1239,7 @@ class _ActionsSection extends StatelessWidget {
                               ),
                               alignment: Alignment.center,
                               child: Text(
-                                'MAX',
+                                l10n.sendMax,
                                 style: monoStyle(
                                   fontSize: 11,
                                   color: isLocked
@@ -1251,8 +1261,8 @@ class _ActionsSection extends StatelessWidget {
                       ),
                       decoration: InputDecoration(
                         hintText: isLocked
-                            ? 'Tokens are locked'
-                            : 'Amount to unstake',
+                            ? l10n.stakingTokensLocked
+                            : l10n.stakingAmountToUnstake,
                         suffixText: pool.tokenSymbol,
                       ),
                     ),
@@ -1260,13 +1270,14 @@ class _ActionsSection extends StatelessWidget {
                     ListenableBuilder(
                       listenable: unstakeController,
                       builder: (context, _) {
+                        final l10n = context.l10n;
                         final amount = _parseUnstakeAmount();
                         return SecondaryButton(
                           label: isLocked
-                              ? 'Locked (${_formatDuration(lockRemaining)})'
+                              ? l10n.stakingLockedButton(_formatDuration(lockRemaining))
                               : hasCooldown
-                              ? 'Request Unstake'
-                              : 'Unstake',
+                              ? l10n.stakingRequestUnstake
+                              : l10n.stakingUnstakeButton,
                           icon: isLocked ? Icons.lock : Icons.lock_open,
                           expanded: true,
                           onPressed: !isLocked && amount != null
@@ -1284,10 +1295,9 @@ class _ActionsSection extends StatelessWidget {
                                   final symbol = pool.tokenSymbol ?? 'tokens';
                                   final ok = await _confirmDestructive(
                                     context,
-                                    title: 'Unstake?',
-                                    body:
-                                        'This will withdraw $amountStr $symbol from the pool and return them to your wallet in a single on-chain transaction. You cannot undo it from the app.',
-                                    confirmLabel: 'Unstake',
+                                    title: l10n.stakingUnstakeConfirmTitle,
+                                    body: l10n.stakingUnstakeConfirmBody(amountStr, symbol),
+                                    confirmLabel: l10n.stakingUnstakeButton,
                                   );
                                   if (ok) onAction('unstake', amount: amount);
                                 }
@@ -1346,11 +1356,12 @@ class _WeightMilestonesSection extends StatelessWidget {
       }
     }
 
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'WEIGHT MILESTONES',
+          l10n.stakingWeightMilestonesSection,
           style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 12),
@@ -1408,14 +1419,14 @@ class _WeightMilestonesSection extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          '${u.pct}% weight',
+                          l10n.stakingWeightPercent(u.pct.toString()),
                           style: monoStyle(
                             fontSize: 11,
                             color: TibaneColors.textMuted,
                           ),
                         ),
                         Text(
-                          '${u.daysLeft}d remaining',
+                          l10n.stakingDaysRemaining(u.daysLeft.toString()),
                           style: monoStyle(
                             fontSize: 11,
                             color: TibaneColors.gold,
@@ -1464,11 +1475,12 @@ class _StakeInputSection extends StatelessWidget {
         walletBalance.toDouble() /
         BigInt.from(10).pow(pool.tokenDecimals).toDouble();
 
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'STAKE TOKENS',
+          l10n.stakingStakeTokensSection,
           style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 12),
@@ -1480,8 +1492,8 @@ class _StakeInputSection extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Available',
-                    style: TextStyle(
+                    l10n.stakingAvailable,
+                    style: const TextStyle(
                       color: TibaneColors.textMuted,
                       fontSize: 13,
                     ),
@@ -1514,7 +1526,7 @@ class _StakeInputSection extends StatelessWidget {
                             ),
                           ),
                           child: Text(
-                            'MAX',
+                            l10n.sendMax,
                             style: monoStyle(
                               fontSize: 10,
                               color: TibaneColors.orange,
@@ -1533,14 +1545,14 @@ class _StakeInputSection extends StatelessWidget {
                   decimal: true,
                 ),
                 decoration: InputDecoration(
-                  hintText: 'Amount to stake',
+                  hintText: l10n.stakingAmountToStake,
                   suffixText: pool.tokenSymbol,
                 ),
               ),
               if (pool.minStakeAmount > BigInt.zero) ...[
                 const SizedBox(height: 8),
                 Text(
-                  'Min stake: ${formatTokenAmount(pool.minStakeAmount, pool.tokenDecimals)}',
+                  l10n.stakingMinStake(formatTokenAmount(pool.minStakeAmount, pool.tokenDecimals)),
                   style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
                 ),
               ],
@@ -1548,8 +1560,8 @@ class _StakeInputSection extends StatelessWidget {
               // Stake on behalf
               TextField(
                 controller: beneficiaryController,
-                decoration: const InputDecoration(
-                  hintText: 'Stake for another wallet (optional)',
+                decoration: InputDecoration(
+                  hintText: l10n.stakingStakeForAnotherWallet,
                   isDense: true,
                 ),
                 style: monoStyle(fontSize: 11),
@@ -1558,7 +1570,7 @@ class _StakeInputSection extends StatelessWidget {
               ListenableBuilder(
                 listenable: controller,
                 builder: (context, _) => GradientButton(
-                  label: 'Stake',
+                  label: context.l10n.stakingStakeButton,
                   icon: Icons.lock,
                   loading: staking,
                   expanded: true,
@@ -1632,11 +1644,12 @@ class _AdminSectionState extends State<_AdminSection> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'ADMIN',
+          l10n.sectionAdmin,
           style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 12),
@@ -1645,16 +1658,16 @@ class _AdminSectionState extends State<_AdminSection> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Deposit Rewards',
-                style: TextStyle(
+              Text(
+                l10n.stakingDepositRewards,
+                style: const TextStyle(
                   color: TibaneColors.text,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
-                'Current rewards: ${formatSol(widget.pool.rewardBalance)} SOL',
+                l10n.stakingCurrentRewards(formatSol(widget.pool.rewardBalance)),
                 style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
               ),
               const SizedBox(height: 8),
@@ -1663,8 +1676,8 @@ class _AdminSectionState extends State<_AdminSection> {
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                decoration: const InputDecoration(
-                  hintText: 'SOL amount',
+                decoration: InputDecoration(
+                  hintText: l10n.stakingSolAmount,
                   suffixText: 'SOL',
                 ),
               ),
@@ -1672,10 +1685,11 @@ class _AdminSectionState extends State<_AdminSection> {
               ListenableBuilder(
                 listenable: _depositController,
                 builder: (context, _) {
+                  final l10n = context.l10n;
                   final v = parseAmount(_depositController.text);
                   final valid = v != null && v > 0;
                   return SecondaryButton(
-                    label: 'Deposit',
+                    label: l10n.stakingDeposit,
                     icon: Icons.add_circle,
                     expanded: true,
                     onPressed: valid && !widget.staking
@@ -1697,9 +1711,9 @@ class _AdminSectionState extends State<_AdminSection> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Pool Settings',
-                style: TextStyle(
+              Text(
+                l10n.stakingPoolSettings,
+                style: const TextStyle(
                   color: TibaneColors.text,
                   fontWeight: FontWeight.w600,
                 ),
@@ -1711,9 +1725,9 @@ class _AdminSectionState extends State<_AdminSection> {
                   decimal: true,
                 ),
                 decoration: InputDecoration(
-                  hintText: 'Min stake amount',
+                  hintText: l10n.stakingMinStakeAmount,
                   suffixText: widget.pool.tokenSymbol,
-                  labelText: 'Min Stake',
+                  labelText: l10n.stakingMinStakeLabel,
                   labelStyle: const TextStyle(
                     color: TibaneColors.textDim,
                     fontSize: 12,
@@ -1724,11 +1738,11 @@ class _AdminSectionState extends State<_AdminSection> {
               TextField(
                 controller: _lockDurationController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  hintText: 'Lock duration (hours)',
+                decoration: InputDecoration(
+                  hintText: l10n.stakingLockDurationHours,
                   suffixText: 'hours',
-                  labelText: 'Lock Duration',
-                  labelStyle: TextStyle(
+                  labelText: l10n.stakingLockDurationLabel,
+                  labelStyle: const TextStyle(
                     color: TibaneColors.textDim,
                     fontSize: 12,
                   ),
@@ -1738,11 +1752,11 @@ class _AdminSectionState extends State<_AdminSection> {
               TextField(
                 controller: _cooldownController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  hintText: 'Unstake cooldown (hours)',
+                decoration: InputDecoration(
+                  hintText: l10n.stakingUnstakeCooldownHours,
                   suffixText: 'hours',
-                  labelText: 'Unstake Cooldown',
-                  labelStyle: TextStyle(
+                  labelText: l10n.stakingUnstakeCooldownLabel,
+                  labelStyle: const TextStyle(
                     color: TibaneColors.textDim,
                     fontSize: 12,
                   ),
@@ -1750,7 +1764,7 @@ class _AdminSectionState extends State<_AdminSection> {
               ),
               const SizedBox(height: 12),
               SecondaryButton(
-                label: 'Update Settings',
+                label: l10n.stakingUpdateSettings,
                 icon: Icons.settings,
                 expanded: true,
                 onPressed: widget.staking
@@ -1805,11 +1819,12 @@ class _PoolInfoSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'POOL INFO',
+          l10n.stakingPoolInfoSection,
           style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
         ),
         const SizedBox(height: 12),
@@ -1817,52 +1832,39 @@ class _PoolInfoSection extends StatelessWidget {
           child: Column(
             children: [
               _InfoRow(
-                label: 'Pool',
+                label: l10n.stakingPoolLabel,
                 value: shortenAddress(pool.address),
                 copyValue: pool.address,
-                tooltip:
-                    'On-chain account that holds the staked tokens and '
-                    'tracks total weight.',
+                tooltip: l10n.stakingPoolTooltip,
               ),
               _InfoRow(
-                label: 'Mint',
+                label: l10n.labelMint,
                 value: shortenAddress(pool.mint),
                 copyValue: pool.mint,
-                tooltip:
-                    'The SPL token mint this pool stakes. Every deposit and '
-                    'withdrawal uses this exact token.',
+                tooltip: l10n.stakingMintTooltip,
               ),
               _InfoRow(
-                label: 'Authority',
+                label: l10n.stakingAuthorityLabel,
                 value: shortenAddress(pool.authority),
                 copyValue: pool.authority,
-                tooltip:
-                    'Wallet allowed to deposit reward SOL and update pool '
-                    'settings (min stake, lock duration, cooldown).',
+                tooltip: l10n.stakingAuthorityTooltip,
               ),
               _InfoRow(
-                label: 'Tau',
+                label: l10n.stakingTau,
                 value: _formatDuration(pool.tauSeconds.toInt()),
-                tooltip:
-                    'Decay constant. Your stake weight grows toward your '
-                    'full deposit at a rate set by tau — smaller tau ramps '
-                    'up faster.',
+                tooltip: l10n.stakingTauInfoTooltip,
               ),
               if (pool.lockDurationSeconds > BigInt.zero)
                 _InfoRow(
-                  label: 'Lock',
+                  label: l10n.stakingLockLabel,
                   value: _formatDuration(pool.lockDurationSeconds.toInt()),
-                  tooltip:
-                      'Minimum time your stake stays locked before you can '
-                      'request to unstake.',
+                  tooltip: l10n.stakingLockTooltip,
                 ),
               if (pool.unstakeCooldownSeconds > BigInt.zero)
                 _InfoRow(
-                  label: 'Cooldown',
+                  label: l10n.stakingCooldownLabel,
                   value: _formatDuration(pool.unstakeCooldownSeconds.toInt()),
-                  tooltip:
-                      'Waiting period between requesting and completing an '
-                      'unstake — the tokens are reserved during this window.',
+                  tooltip: l10n.stakingCooldownTooltip,
                 ),
             ],
           ),
@@ -1916,7 +1918,7 @@ class _InfoRow extends StatelessWidget {
                 Clipboard.setData(ClipboardData(text: copyValue!));
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('$label address copied'),
+                    content: Text(context.l10n.addressCopied),
                     duration: const Duration(seconds: 1),
                   ),
                 );

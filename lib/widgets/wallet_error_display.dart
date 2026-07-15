@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/l10n.dart';
 import '../theme/tibane_theme.dart';
 import '../utils/log.dart';
 import '../utils/wallet_error.dart';
@@ -25,13 +26,14 @@ void showWalletError(BuildContext context, Object error) {
 
   final messenger = ScaffoldMessenger.of(context);
   messenger.hideCurrentSnackBar();
+  final l10n = context.l10n;
   messenger.showSnackBar(
     SnackBar(
       content: Text(we.message),
       backgroundColor: TibaneColors.error,
       action: _hasDetail(we)
           ? SnackBarAction(
-              label: 'Details',
+              label: l10n.walletErrorDetails,
               textColor: Colors.white,
               onPressed: () {
                 if (context.mounted) showWalletErrorDetails(context, we);
@@ -118,13 +120,25 @@ class _WalletErrorCardState extends State<WalletErrorCard> {
               child: Row(
                 children: [
                   if (_hasDetail(_we))
-                    _LinkButton(
-                      label: _showRaw ? 'Hide details' : 'Details',
-                      onTap: () => setState(() => _showRaw = !_showRaw),
+                    Builder(
+                      builder: (context) {
+                        final l10n = context.l10n;
+                        return _LinkButton(
+                          label: _showRaw
+                              ? l10n.walletErrorHideDetails
+                              : l10n.walletErrorDetails,
+                          onTap: () => setState(() => _showRaw = !_showRaw),
+                        );
+                      },
                     ),
                   if (widget.onRetry != null) ...[
                     if (_hasDetail(_we)) const SizedBox(width: 16),
-                    _LinkButton(label: 'Retry', onTap: widget.onRetry!),
+                    Builder(
+                      builder: (context) => _LinkButton(
+                        label: context.l10n.actionRetry,
+                        onTap: widget.onRetry!,
+                      ),
+                    ),
                   ],
                 ],
               ),
@@ -142,27 +156,30 @@ Future<void> showWalletErrorDetails(BuildContext context, WalletError we) {
     context: context,
     backgroundColor: TibaneColors.card,
     showDragHandle: true,
-    builder: (context) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(we.message,
-                style: const TextStyle(
-                    color: TibaneColors.text,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600)),
-            const SizedBox(height: 12),
-            const Text('Technical details',
-                style: TextStyle(color: TibaneColors.textMuted, fontSize: 12)),
-            const SizedBox(height: 6),
-            _RawDetail(raw: we.raw, copyable: true),
-          ],
+    builder: (context) {
+      final l10n = context.l10n;
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(we.message,
+                  style: const TextStyle(
+                      color: TibaneColors.text,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(height: 12),
+              Text(l10n.walletErrorTechnicalDetails,
+                  style: const TextStyle(color: TibaneColors.textMuted, fontSize: 12)),
+              const SizedBox(height: 6),
+              _RawDetail(raw: we.raw, copyable: true),
+            ],
+          ),
         ),
-      ),
-    ),
+      );
+    },
   );
 }
 
@@ -204,16 +221,21 @@ class _RawDetail extends StatelessWidget {
           if (copyable)
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: raw));
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Copied to clipboard')),
+              child: Builder(
+                builder: (context) {
+                  final l10n = context.l10n;
+                  return TextButton.icon(
+                    onPressed: () async {
+                      await Clipboard.setData(ClipboardData(text: raw));
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(l10n.walletErrorCopiedToClipboard)),
+                      );
+                    },
+                    icon: const Icon(Icons.copy, size: 16),
+                    label: Text(l10n.actionCopy),
                   );
                 },
-                icon: const Icon(Icons.copy, size: 16),
-                label: const Text('Copy'),
               ),
             ),
         ],

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/solana_constants.dart';
+import '../l10n/l10n.dart';
 import '../services/favorites_service.dart';
 import '../services/wallet/libwallet_backend.dart';
 import '../services/wallet_service.dart';
@@ -52,8 +53,9 @@ class TokenSearch extends StatefulWidget {
   /// (e.g. on-chain metadata lookup) without their own UI plumbing.
   final Future<void> Function(String mint)? onMintSubmitted;
 
-  /// Hint shown in the empty search field.
-  final String hintText;
+  /// Hint shown in the empty search field. When null the localized default
+  /// [AppLocalizations.tokenSearchHint] is used at build time.
+  final String? hintText;
 
   /// Body to render when the search query is empty. Typically a list
   /// of favourites or popular tokens.
@@ -81,7 +83,7 @@ class TokenSearch extends StatefulWidget {
     required this.onResultSelected,
     required this.emptyBody,
     this.onMintSubmitted,
-    this.hintText = 'Search by ticker, name or mint...',
+    this.hintText,
     this.showFavoriteToggle = true,
     this.padding = const EdgeInsets.symmetric(horizontal: 20),
     this.scrollController,
@@ -180,6 +182,7 @@ class _TokenSearchState extends State<TokenSearch> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Column(
       children: [
         Padding(
@@ -188,7 +191,7 @@ class _TokenSearchState extends State<TokenSearch> {
             controller: _controller,
             onSubmitted: _onSubmit,
             decoration: InputDecoration(
-              hintText: widget.hintText,
+              hintText: widget.hintText ?? l10n.tokenSearchHint,
               prefixIcon: const Icon(
                 Icons.search,
                 size: 20,
@@ -221,19 +224,20 @@ class _TokenSearchState extends State<TokenSearch> {
           ),
         ),
         const SizedBox(height: 12),
-        Expanded(child: _buildBody()),
+        Expanded(child: _buildBody(context)),
       ],
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(BuildContext context) {
+    final l10n = context.l10n;
     if (_query.isEmpty) return widget.emptyBody;
     if (_isMintShaped(_query) && widget.onMintSubmitted != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'Press Enter to use this mint.',
+            l10n.tokenSearchPressEnter,
             textAlign: TextAlign.center,
             style: TextStyle(color: TibaneColors.textMuted),
           ),
@@ -250,7 +254,7 @@ class _TokenSearchState extends State<TokenSearch> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'No tokens match "$_query".',
+            l10n.tokenSearchNoResults(_query),
             textAlign: TextAlign.center,
             style: TextStyle(color: TibaneColors.textMuted),
           ),

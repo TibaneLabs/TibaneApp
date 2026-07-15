@@ -11,6 +11,7 @@ import 'package:libwallet/libwallet.dart'
         Network,
         WatchAssetRequest;
 
+import '../../l10n/l10n.dart';
 import '../../theme/tibane_theme.dart';
 
 Future<bool> showConnectSheet(
@@ -18,12 +19,13 @@ Future<bool> showConnectSheet(
   required String host,
   required String accountAddress,
 }) async {
+  final l10n = context.l10n;
   return await _show(
         context,
-        title: 'Connect wallet',
+        title: l10n.browserApprovalConnectTitle,
         host: host,
-        approveLabel: 'Connect',
-        body: _KeyValue('Account', accountAddress),
+        approveLabel: l10n.actionConnect,
+        body: _KeyValue(l10n.browserApprovalAccount, accountAddress),
       ) ??
       false;
 }
@@ -35,20 +37,21 @@ Future<bool> showSignSheet(
   required Uint8List payload,
   required String accountAddress,
 }) async {
+  final l10n = context.l10n;
   final preview = _previewPayload(payload);
   return await _show(
         context,
         title: verb,
         host: host,
-        approveLabel: 'Approve',
+        approveLabel: l10n.actionApprove,
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _KeyValue('Account', accountAddress),
+            _KeyValue(l10n.browserApprovalAccount, accountAddress),
             const SizedBox(height: 12),
-            const Text(
-              'Payload',
-              style: TextStyle(color: TibaneColors.textMuted, fontSize: 12),
+            Text(
+              l10n.browserApprovalPayload,
+              style: const TextStyle(color: TibaneColors.textMuted, fontSize: 12),
             ),
             const SizedBox(height: 6),
             Container(
@@ -79,44 +82,43 @@ Future<bool> showMessageSignSheet(
   required MessageSignRequest req,
   required String accountAddress,
 }) async {
+  final l10n = context.l10n;
   final host = req.host.isEmpty ? '(unknown)' : req.host;
-  final verb = _verbForMethod(req.method);
+  final verb = _verbForMethod(l10n, req.method);
   final Widget body;
   if (req.structuredData != null) {
-    body = _typedDataBody(req, accountAddress);
+    body = _typedDataBody(l10n, req, accountAddress);
   } else if (req.isSiwe || req.isSiws) {
-    body = _siweBody(req, accountAddress);
+    body = _siweBody(l10n, req, accountAddress);
   } else {
-    body = _plainMessageBody(req, accountAddress);
+    body = _plainMessageBody(l10n, req, accountAddress);
   }
   return await _show(
         context,
         title: verb,
         host: host,
-        approveLabel: 'Sign',
+        approveLabel: l10n.actionSign,
         body: body,
       ) ??
       false;
 }
 
-String _verbForMethod(String method) {
+String _verbForMethod(AppLocalizations l10n, String method) {
   switch (method) {
     case 'eth_signTypedData':
     case 'eth_signTypedData_v3':
     case 'eth_signTypedData_v4':
-      return 'Sign typed data';
+      return l10n.browserApprovalSignTypedData;
     case 'personal_sign':
-      return 'Sign message';
     case 'solana_signMessage':
-      return 'Sign message';
     case 'mpurse_signMessage':
-      return 'Sign message';
+      return l10n.browserApprovalSignMessage;
     default:
-      return method.isEmpty ? 'Sign message' : method.replaceAll('_', ' ');
+      return method.isEmpty ? l10n.browserApprovalSignMessage : method.replaceAll('_', ' ');
   }
 }
 
-Widget _typedDataBody(MessageSignRequest req, String accountAddress) {
+Widget _typedDataBody(AppLocalizations l10n, MessageSignRequest req, String accountAddress) {
   final domain = req.structuredDomain ?? const <String, dynamic>{};
   final primary = req.structuredPrimaryType;
   final contractLabel = req.verifyingContractLabel;
@@ -126,24 +128,24 @@ Widget _typedDataBody(MessageSignRequest req, String accountAddress) {
   return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      _KeyValue('Account', accountAddress),
+      _KeyValue(l10n.browserApprovalAccount, accountAddress),
       if (contractLabel.isNotEmpty) ...[
         const SizedBox(height: 12),
-        _KeyValue('Contract', contractLabel),
+        _KeyValue(l10n.labelContract, contractLabel),
       ],
       if (primary.isNotEmpty) ...[
         const SizedBox(height: 12),
-        _KeyValue('Type', primary),
+        _KeyValue(l10n.labelType, primary),
       ],
       if (domain.isNotEmpty) ...[
         const SizedBox(height: 14),
-        const _SectionLabel('Domain'),
+        _SectionLabel(l10n.browserApprovalDomain),
         const SizedBox(height: 6),
         _StructBox(map: domain),
       ],
       if (message.isNotEmpty) ...[
         const SizedBox(height: 14),
-        const _SectionLabel('Message'),
+        _SectionLabel(l10n.browserApprovalMessage),
         const SizedBox(height: 6),
         _StructBox(map: message),
       ],
@@ -155,25 +157,25 @@ Widget _typedDataBody(MessageSignRequest req, String accountAddress) {
   );
 }
 
-Widget _siweBody(MessageSignRequest req, String accountAddress) {
+Widget _siweBody(AppLocalizations l10n, MessageSignRequest req, String accountAddress) {
   final f = req.siweFields;
   return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      _KeyValue('Account', accountAddress),
+      _KeyValue(l10n.browserApprovalAccount, accountAddress),
       const SizedBox(height: 12),
-      _KeyValue('Sign in to', f['domain'] ?? '(unknown)'),
+      _KeyValue(l10n.browserApprovalSignInTo, f['domain'] ?? '(unknown)'),
       if ((f['uri'] ?? '').isNotEmpty) ...[
         const SizedBox(height: 8),
-        _KeyValue('URI', f['uri']!),
+        _KeyValue(l10n.browserApprovalUri, f['uri']!),
       ],
       if ((f['chainid'] ?? '').isNotEmpty) ...[
         const SizedBox(height: 8),
-        _KeyValue('Chain', f['chainid']!),
+        _KeyValue(l10n.browserApprovalChain, f['chainid']!),
       ],
       if ((f['expirationtime'] ?? '').isNotEmpty) ...[
         const SizedBox(height: 8),
-        _KeyValue('Expires', f['expirationtime']!),
+        _KeyValue(l10n.browserApprovalExpires, f['expirationtime']!),
       ],
       if (req.warnings.isNotEmpty) ...[
         const SizedBox(height: 14),
@@ -183,16 +185,16 @@ Widget _siweBody(MessageSignRequest req, String accountAddress) {
   );
 }
 
-Widget _plainMessageBody(MessageSignRequest req, String accountAddress) {
+Widget _plainMessageBody(AppLocalizations l10n, MessageSignRequest req, String accountAddress) {
   final preview = req.messageText.isNotEmpty
       ? req.messageText
       : _previewPayload(req.messageBytes);
   return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      _KeyValue('Account', accountAddress),
+      _KeyValue(l10n.browserApprovalAccount, accountAddress),
       const SizedBox(height: 12),
-      const _SectionLabel('Message'),
+      _SectionLabel(l10n.browserApprovalMessage),
       const SizedBox(height: 6),
       Container(
         padding: const EdgeInsets.all(12),
@@ -284,7 +286,7 @@ Future<bool?> _show(
                     foregroundColor: TibaneColors.textMuted,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  child: const Text('Reject'),
+                  child: Text(ctx.l10n.actionReject),
                 ),
               ),
               const SizedBox(width: 12),
@@ -413,53 +415,50 @@ Future<bool> showAddNetworkSheet(
   BuildContext context, {
   required AddNetworkRequest req,
 }) async {
+  final l10n = context.l10n;
   final n = req.network;
   if (n == null) return false;
   final body = Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      _KeyValue('Name', n.name),
+      _KeyValue(l10n.labelName, n.name),
       const SizedBox(height: 8),
-      _KeyValue('Type', n.type.name),
+      _KeyValue(l10n.labelType, n.type.name),
       const SizedBox(height: 8),
-      _KeyValue('Chain ID', n.chainId),
+      _KeyValue(l10n.browserApprovalChainId, n.chainId),
       if (n.rpc.isNotEmpty) ...[
         const SizedBox(height: 8),
         _KeyValue('RPC', n.rpc),
       ],
       if (n.currencySymbol.isNotEmpty) ...[
         const SizedBox(height: 8),
-        _KeyValue('Currency', n.currencySymbol),
+        _KeyValue(l10n.browserApprovalCurrency, n.currencySymbol),
       ],
       if (req.alreadyExists) ...[
         const SizedBox(height: 14),
         _WarningRow(
-          text: 'This network is already in your wallet — approval is a no-op.',
+          text: l10n.browserApprovalNetworkAlreadyExists,
         ),
       ],
       if (!req.isKnown) ...[
         const SizedBox(height: 14),
         _WarningRow(
-          text:
-              'Chain ID ${n.chainId} is not in libwallet\'s known-chain '
-              'registry. Verify the network is legitimate before approving.',
+          text: l10n.browserApprovalNetworkUnknown(n.chainId),
         ),
       ],
       if (req.nameMismatch) ...[
         const SizedBox(height: 14),
         _WarningRow(
-          text:
-              'Chain ID ${n.chainId} is registered as "${req.knownName}". '
-              'This dApp is proposing a different name — possible phishing.',
+          text: l10n.browserApprovalNetworkNameMismatch(n.chainId, req.knownName),
         ),
       ],
     ],
   );
   return await _show(
         context,
-        title: 'Add network',
+        title: l10n.browserApprovalAddNetworkTitle,
         host: req.host.isEmpty ? '(unknown)' : req.host,
-        approveLabel: 'Add',
+        approveLabel: l10n.actionAdd,
         body: body,
       ) ??
       false;
@@ -472,6 +471,7 @@ Future<bool> showWatchAssetSheet(
   BuildContext context, {
   required WatchAssetRequest req,
 }) async {
+  final l10n = context.l10n;
   final isNft = req.assetType == 'ERC721' || req.assetType == 'ERC1155';
   final preview = req.address.length > 14
       ? '${req.address.substring(0, 8)}…${req.address.substring(req.address.length - 6)}'
@@ -499,7 +499,7 @@ Future<bool> showWatchAssetSheet(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  req.symbol.isEmpty ? '(no symbol)' : req.symbol,
+                  req.symbol.isEmpty ? l10n.tokensNoSymbol : req.symbol,
                   style: const TextStyle(
                     color: TibaneColors.text,
                     fontSize: 18,
@@ -516,39 +516,34 @@ Future<bool> showWatchAssetSheet(
         ],
       ),
       const SizedBox(height: 16),
-      _KeyValue('Contract', preview),
+      _KeyValue(l10n.labelContract, preview),
       if (!isNft) ...[
         const SizedBox(height: 8),
-        _KeyValue('Decimals', req.decimals.toString()),
+        _KeyValue(l10n.labelDecimals, req.decimals.toString()),
       ],
       if (req.tokenId.isNotEmpty) ...[
         const SizedBox(height: 8),
-        _KeyValue('Token ID', req.tokenId),
+        _KeyValue(l10n.browserApprovalTokenId, req.tokenId),
       ],
       if (req.addressLooksInvalid) ...[
         const SizedBox(height: 14),
         _WarningRow(
-          text:
-              'The contract address does not parse as a valid EVM '
-              'address. Approving could add a phishing token — verify the '
-              'address before continuing.',
+          text: l10n.browserApprovalAddressInvalid,
         ),
       ],
       if (req.isAlreadyTracked) ...[
         const SizedBox(height: 14),
         _WarningRow(
-          text:
-              'This token is already tracked in your wallet. Approving '
-              'is a no-op.',
+          text: l10n.browserApprovalAlreadyTracked,
         ),
       ],
     ],
   );
   return await _show(
         context,
-        title: isNft ? 'Add NFT collection' : 'Add token',
+        title: isNft ? l10n.browserApprovalAddNftTitle : l10n.browserApprovalAddTokenTitle,
         host: req.host.isEmpty ? '(unknown)' : req.host,
-        approveLabel: 'Add',
+        approveLabel: l10n.actionAdd,
         body: body,
       ) ??
       false;
@@ -653,7 +648,7 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
           ),
           const SizedBox(height: 16),
           Text(
-            req.isNewNetwork ? 'Add and switch network' : 'Switch network',
+            req.isNewNetwork ? context.l10n.browserApprovalAddAndSwitchTitle : context.l10n.browserApprovalSwitchNetworkTitle,
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 4),
@@ -663,10 +658,10 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
           ),
           const SizedBox(height: 16),
           if (req.currentNetwork != null)
-            _KeyValue('Current', req.currentNetwork!.name),
+            _KeyValue(context.l10n.browserApprovalCurrent, req.currentNetwork!.name),
           const SizedBox(height: 12),
           if (pickerMode) ...[
-            const _SectionLabel('Pick a network'),
+            _SectionLabel(context.l10n.browserApprovalPickNetwork),
             const SizedBox(height: 6),
             for (final n in req.candidateNetworks)
               RadioListTile<String>(
@@ -691,21 +686,19 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
                 dense: true,
               ),
           ] else ...[
-            _KeyValue('Switch to', req.targetNetwork!.name),
+            _KeyValue(context.l10n.browserApprovalSwitchTo, req.targetNetwork!.name),
             const SizedBox(height: 8),
-            _KeyValue('Chain ID', req.targetNetwork!.chainId),
+            _KeyValue(context.l10n.browserApprovalChainId, req.targetNetwork!.chainId),
             if (req.isNewNetwork) ...[
               const SizedBox(height: 14),
               _WarningRow(
-                text:
-                    'This network is not in your wallet yet. Approving will '
-                    'add it and make it active in one step.',
+                text: context.l10n.browserApprovalNetworkNotInWallet,
               ),
             ],
           ],
           if (req.candidateAccounts.length > 1) ...[
             const SizedBox(height: 12),
-            const _SectionLabel('Pick an account'),
+            _SectionLabel(context.l10n.browserApprovalPickAccount),
             const SizedBox(height: 6),
             for (final a in req.candidateAccounts)
               RadioListTile<String>(
@@ -732,7 +725,7 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
               ),
           ] else if (_pickedAccount != null) ...[
             const SizedBox(height: 8),
-            _KeyValue('Account', _pickedAccount!.address),
+            _KeyValue(context.l10n.browserApprovalAccount, _pickedAccount!.address),
           ],
           const SizedBox(height: 20),
           Row(
@@ -744,7 +737,7 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
                     foregroundColor: TibaneColors.textMuted,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  child: const Text('Reject'),
+                  child: Text(context.l10n.actionReject),
                 ),
               ),
               const SizedBox(width: 12),
@@ -765,7 +758,7 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   child: Text(
-                    req.isNewNetwork ? 'Add and switch' : 'Switch',
+                    req.isNewNetwork ? context.l10n.browserApprovalAddAndSwitch : context.l10n.browserApprovalSwitch,
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),

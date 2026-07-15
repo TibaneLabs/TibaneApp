@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/l10n.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import 'inapp_backup_restore_screen.dart';
@@ -23,34 +24,30 @@ class InAppImportScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Import wallet')),
+      appBar: AppBar(title: Text(l10n.inappImportTitle)),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
           children: [
-            const Text(
-              'How do you want to import?',
-              style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+            Text(
+              l10n.inappImportPrompt,
+              style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
             ),
             const SizedBox(height: 16),
             _MethodCard(
               icon: Icons.vpn_key_outlined,
-              title: 'Seed phrase',
-              subtitle:
-                  '12–24 words from another wallet (Phantom, MetaMask, '
-                  'Ledger…). Imported and upgraded to a device + 2FA + '
-                  'password wallet.',
+              title: l10n.inappImportSeedTitle,
+              subtitle: l10n.inappImportSeedSubtitle,
               onTap: () => _open(context, const InAppImportMnemonicScreen()),
             ),
             const SizedBox(height: 10),
             _MethodCard(
               icon: Icons.folder_open_outlined,
-              title: 'Tibane backup',
-              subtitle:
-                  'Restore a backup file or JSON exported from Tibane, using '
-                  'the wallet password.',
+              title: l10n.inappImportBackupTitle,
+              subtitle: l10n.inappImportBackupSubtitle,
               onTap: () => _open(context, const InAppBackupRestoreScreen()),
             ),
           ],

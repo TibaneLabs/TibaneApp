@@ -3,6 +3,7 @@ import 'package:libwallet/libwallet.dart';
 import 'package:phone_form_field/phone_form_field.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/wallet/biometric.dart';
 import '../../services/wallet/creation.dart';
 import '../../services/wallet_service.dart';
@@ -83,17 +84,18 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
   }
 
   Future<void> _sendCode() async {
+    final l10n = context.l10n;
     String identifier;
     if (_mode == _IdMode.email) {
       identifier = _emailCtrl.text.trim();
       if (!identifier.contains('@')) {
-        setState(() => _error = 'Enter a valid email address');
+        setState(() => _error = l10n.inappCreateErrInvalidEmail);
         return;
       }
     } else {
       final phone = _phoneCtrl.value;
       if (!phone.isValid()) {
-        setState(() => _error = 'Enter a valid phone number');
+        setState(() => _error = l10n.inappCreateErrInvalidPhone);
         return;
       }
       // E.164 — `+14045551234`. libwallet uses presence of `@` to route,
@@ -126,11 +128,12 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
   }
 
   Future<void> _submitCode() async {
+    final l10n = context.l10n;
     final code = _codeCtrl.text.trim();
     final session = _session;
     if (session == null) return;
     if (code.length != session.length) {
-      setState(() => _error = 'Code must be ${session.length} digits');
+      setState(() => _error = l10n.inappCreateErrCodeLength(session.length.toString()));
       return;
     }
     setState(() {
@@ -160,23 +163,24 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
   }
 
   Future<void> _createWallet() async {
+    final l10n = context.l10n;
     final pw = _pwCtrl.text;
     final remoteKey = _remoteKey;
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
-      setState(() => _error = 'Enter a wallet name');
+      setState(() => _error = l10n.inappCreateErrNoName);
       return;
     }
     if (pw.length < 8) {
-      setState(() => _error = 'Password must be at least 8 characters');
+      setState(() => _error = l10n.inappCreateErrPasswordShort);
       return;
     }
     if (pw != _pwCtrl2.text) {
-      setState(() => _error = 'Passwords do not match');
+      setState(() => _error = l10n.errPasswordsMismatch);
       return;
     }
     if (remoteKey == null) {
-      setState(() => _error = 'Missing verified email share');
+      setState(() => _error = l10n.inappCreateErrMissingShare);
       return;
     }
     setState(() {
@@ -214,9 +218,10 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: const Text('Create in-app wallet')),
+      appBar: AppBar(title: Text(l10n.inappCreateTitle)),
       body: SafeArea(
         child: switch (_step) {
           _Step.identifier => KeyboardSafeForm(child: _buildIdentifier()),
@@ -230,27 +235,26 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
   }
 
   Widget _buildIdentifier() {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text(
-          'Your keys are split into three shares: this device, a 2FA share '
-          '(email or SMS), and a password. Any two can recover your wallet — '
-          'no single point of failure.',
-          style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+        Text(
+          l10n.inappCreateIdentifierIntro,
+          style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         const SizedBox(height: 20),
         SegmentedButton<_IdMode>(
-          segments: const [
+          segments: [
             ButtonSegment(
               value: _IdMode.email,
-              label: Text('Email'),
-              icon: Icon(Icons.alternate_email, size: 18),
+              label: Text(l10n.labelEmail),
+              icon: const Icon(Icons.alternate_email, size: 18),
             ),
             ButtonSegment(
               value: _IdMode.phone,
-              label: Text('Phone'),
-              icon: Icon(Icons.phone_outlined, size: 18),
+              label: Text(l10n.labelPhone),
+              icon: const Icon(Icons.phone_outlined, size: 18),
             ),
           ],
           selected: {_mode},
@@ -269,7 +273,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
             keyboardType: TextInputType.emailAddress,
             autocorrect: false,
             autofillHints: const [AutofillHints.email],
-            decoration: const InputDecoration(labelText: 'Email'),
+            decoration: InputDecoration(labelText: l10n.inappCreateEmailLabel),
           )
         else
           PhoneFormField(
@@ -280,7 +284,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
               showIsoCode: false,
               showFlag: true,
             ),
-            decoration: const InputDecoration(labelText: 'Phone number'),
+            decoration: InputDecoration(labelText: l10n.labelPhoneNumber),
             validator: PhoneValidator.compose([
               PhoneValidator.required(context),
               PhoneValidator.valid(context),
@@ -292,7 +296,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
         ],
         const Spacer(),
         _primaryButton(
-          label: _busy ? 'Sending…' : 'Send verification code',
+          label: _busy ? l10n.commonSending : l10n.actionSendVerificationCode,
           onPressed: _busy ? null : _sendCode,
         ),
         TextButton(
@@ -307,20 +311,24 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
                   if (!mounted) return;
                   if (ok == true) Navigator.of(context).pop(true);
                 },
-          child: const Text('Import existing wallet'),
+          child: Text(l10n.inappCreateImportLink),
         ),
       ],
     );
   }
 
   Widget _buildCode() {
+    final l10n = context.l10n;
+    final length = (_session?.length ?? 6).toString();
+    final isEmail = _sentTo.contains('@');
+    final introText = isEmail
+        ? l10n.inappCreateCodeIntroEmail(length, _sentTo)
+        : l10n.inappCreateCodeIntroSms(length, _sentTo);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'We sent a ${_session?.length ?? 6}-digit code '
-          '${_sentTo.contains('@') ? 'to' : 'via SMS to'} $_sentTo. '
-          'Enter it below to confirm.',
+          introText,
           style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         const SizedBox(height: 24),
@@ -330,7 +338,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
           keyboardType: TextInputType.number,
           autofocus: true,
           maxLength: _session?.length ?? 6,
-          decoration: const InputDecoration(labelText: 'Verification code'),
+          decoration: InputDecoration(labelText: l10n.labelVerificationCode),
         ),
         if (_error != null) ...[
           const SizedBox(height: 8),
@@ -338,7 +346,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
         ],
         const Spacer(),
         _primaryButton(
-          label: _busy ? 'Verifying…' : 'Verify',
+          label: _busy ? l10n.commonVerifying : l10n.inappCreateVerify,
           onPressed: _busy ? null : _submitCode,
         ),
         TextButton(
@@ -350,13 +358,14 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
                   _session = null;
                   _error = null;
                 }),
-          child: const Text('Use a different email or phone'),
+          child: Text(l10n.inappCreateChangeDest),
         ),
       ],
     );
   }
 
   Widget _buildPassword() {
+    final l10n = context.l10n;
     final creating = _step == _Step.creating;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -371,11 +380,9 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
                 color: TibaneColors.warning.withValues(alpha: 0.4),
               ),
             ),
-            child: const Text(
-              'Lower-security wallet: this device has no biometric, so this '
-              'wallet is protected by your password alone (with 2FA kept for '
-              'recovery). Keep your password safe.',
-              style: TextStyle(
+            child: Text(
+              l10n.inappCreateLowerSecurityWarning,
+              style: const TextStyle(
                 color: TibaneColors.warning,
                 fontSize: 13,
                 height: 1.4,
@@ -384,20 +391,18 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
           ),
           const SizedBox(height: 16),
         ],
-        const Text(
-          'Set a password. This is the third share — without it, your device '
-          'and 2FA share alone cannot sign.',
-          style: TextStyle(color: TibaneColors.textMuted, height: 1.4),
+        Text(
+          l10n.inappCreatePasswordIntro,
+          style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         const SizedBox(height: 24),
         TextField(
           controller: _nameCtrl,
           enabled: !creating,
           textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(
-            labelText: 'Wallet name',
-            helperText:
-                'Shown in the wallet picker — purely for your reference.',
+          decoration: InputDecoration(
+            labelText: l10n.labelWalletName,
+            helperText: l10n.inappCreateWalletNameHelper,
           ),
         ),
         const SizedBox(height: 12),
@@ -405,22 +410,19 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
           controller: _pwCtrl,
           obscureText: true,
           enabled: !creating,
-          decoration: const InputDecoration(labelText: 'Password'),
+          decoration: InputDecoration(labelText: l10n.labelPassword),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _pwCtrl2,
           obscureText: true,
           enabled: !creating,
-          decoration: const InputDecoration(labelText: 'Confirm password'),
+          decoration: InputDecoration(labelText: l10n.labelConfirmPassword),
         ),
         const SizedBox(height: 20),
-        const Text(
-          'Solana + Ethereum accounts are created together in one keygen '
-          'ceremony (no second verification code). Plan for the secp256k1 step '
-          'to dominate the time (often a minute or more on mobile); keep the '
-          'app open.',
-          style: TextStyle(color: TibaneColors.textMuted, fontSize: 12),
+        Text(
+          l10n.inappCreateKeygenNote,
+          style: const TextStyle(color: TibaneColors.textMuted, fontSize: 12),
         ),
         if (_error != null) ...[
           const SizedBox(height: 12),
@@ -430,15 +432,15 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
         if (creating) ...[
           LinearProgressIndicator(value: _progress),
           const SizedBox(height: 8),
-          const Text(
-            'Generating key shares…',
-            style: TextStyle(color: TibaneColors.textMuted),
+          Text(
+            l10n.inappCreateGenerating,
+            style: const TextStyle(color: TibaneColors.textMuted),
             textAlign: TextAlign.center,
           ),
         ],
         const Spacer(),
         _primaryButton(
-          label: creating ? 'Creating…' : 'Create wallet',
+          label: creating ? l10n.inappCreateCreating : l10n.inappCreateButton,
           onPressed: creating ? null : _createWallet,
         ),
       ],

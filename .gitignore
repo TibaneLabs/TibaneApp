@@ -33,6 +33,11 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Generated localizations (gen_l10n). Derived from lib/l10n/*.arb; regenerated
+# by `flutter pub get` / `flutter gen-l10n`. The .arb files + l10n.yaml are the
+# tracked source of truth.
+/lib/l10n/gen/
+
 # Symbolication related
 app.*.symbols
 
