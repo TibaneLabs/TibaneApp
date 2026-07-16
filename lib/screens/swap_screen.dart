@@ -79,6 +79,12 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   TokenHolding? _selectedInput;
   _SwapToken? _selectedOutput;
 
+  // Wallet holding for the selected output token (balance + price), when the
+  // user holds it. Populated by [_loadHoldings] from the full holdings list so
+  // the To section can mirror the From section's balance + USD readout. Null
+  // when no output is selected or the user holds none of it.
+  TokenHolding? _outputHolding;
+
   // Quote — one of these is non-null when a quote is ready
   SwapQuote? _jupiterQuote; // MWA path
   lw.SwapQuote? _lwQuote; // in-app path
@@ -207,6 +213,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       setState(() {
         _holdings = [];
         _selectedInput = null;
+        _outputHolding = null;
         _jupiterQuote = null;
         _lwQuote = null;
         _hasQuote = false;
@@ -405,15 +412,26 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     });
 
     try {
-      final holdings = _isSolana
-          ? await _jupiter.fetchHoldings(
-              wallet.publicKey!,
-              excludeMint: _selectedOutput?.mint,
-            )
-          : await _holdingsFromLibwallet(wallet, excludeMint: _selectedOutput?.mint);
+      // Fetch the FULL holdings list (no output exclusion) so we can read the
+      // selected output token's own balance + price for the To section, then
+      // derive the input list by filtering the output mint out locally.
+      final all = _isSolana
+          ? await _jupiter.fetchHoldings(wallet.publicKey!)
+          : await _holdingsFromLibwallet(wallet);
       if (!mounted) return;
+      final outMint = _selectedOutput?.mint;
+      final holdings = outMint == null
+          ? all
+          : all.where((h) => h.mint != outMint).toList();
+      final outputHolding = outMint == null
+          ? null
+          : all.cast<TokenHolding?>().firstWhere(
+              (h) => h!.mint == outMint,
+              orElse: () => null,
+            );
       setState(() {
         _holdings = holdings;
+        _outputHolding = outputHolding;
         _loadingHoldings = false;
         // Update or clear selected input with fresh data
         if (_selectedInput != null) {
@@ -464,17 +482,14 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   /// native asset (mint = the OKX `'NATIVE'` sentinel) + each token (mint = its
   /// contract), with real on-chain decimals. Jupiter is Solana-only, so this is
   /// the EVM/other-chain equivalent.
-  Future<List<TokenHolding>> _holdingsFromLibwallet(
-    WalletService wallet, {
-    String? excludeMint,
-  }) async {
+  Future<List<TokenHolding>> _holdingsFromLibwallet(WalletService wallet) async {
     final net = wallet.libwallet.currentNetwork;
     final assets = await wallet.libwallet.getAssets();
     final out = <TokenHolding>[];
     for (final a in assets) {
       if (net != null && a.network != net.id) continue;
       final mint = a.isNative ? evmNativeSwapMint : mintFromAssetKey(a.key);
-      if (mint.isEmpty || mint == excludeMint) continue;
+      if (mint.isEmpty) continue;
       out.add(
         TokenHolding(
           mint: mint,
@@ -1074,6 +1089,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     setState(() {
       _selectedInput = newInput;
       _selectedOutput = newOutput;
+      // The output token changed — drop the old holding; _loadHoldings below
+      // repopulates it for the new output.
+      _outputHolding = null;
       if (newOutput != null) {
         _outputDecimals = oldInput?.decimals ?? 9;
         _outputImageUrl = oldInput?.imageUrl;
@@ -1115,6 +1133,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
             );
             _outputDecimals = decimals;
             _outputImageUrl = imageUrl;
+            // Clear the prior token's holding so we don't flash its balance
+            // for the new output; _loadHoldings repopulates it.
+            _outputHolding = null;
             _jupiterQuote = null;
             _lwQuote = null;
             _hasQuote = false;
@@ -1464,9 +1485,21 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            l10n.labelTo,
-            style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
+          Row(
+            children: [
+              Text(
+                l10n.labelTo,
+                style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
+              ),
+              const Spacer(),
+              if (_selectedOutput != null)
+                Text(
+                  l10n.commonBalanceLabel(
+                    _formatBalance(_outputHolding?.uiBalance ?? 0),
+                  ),
+                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+                ),
+            ],
           ),
           const SizedBox(height: 12),
           InkWell(
@@ -1527,9 +1560,25 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                 color: TibaneColors.darker,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text(
-                _formatOutputAmount(_quoteOutUi!),
-                style: monoStyle(fontSize: 20, color: TibaneColors.cyan),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _formatOutputAmount(_quoteOutUi!),
+                      style: monoStyle(fontSize: 20, color: TibaneColors.cyan),
+                    ),
+                  ),
+                  if (_outputUsdValue() != null) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      '\$${_outputUsdValue()!.toStringAsFixed(2)}',
+                      style: monoStyle(
+                        fontSize: 12,
+                        color: TibaneColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],
@@ -1814,6 +1863,22 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   String _formatUsd(double amount, double price) {
     final usd = amount * price;
     return usd.toStringAsFixed(2);
+  }
+
+  /// USD value of the current quote's output amount — the To-section mirror of
+  /// the From field's amount×price suffix. Prefers Jupiter's own out-USD figure
+  /// (MWA path); falls back to the output amount × the output token's market
+  /// price (in-app path, when we hold the token and thus have its price).
+  /// Returns null when neither is available so the readout is simply omitted,
+  /// matching how the From suffix hides itself without a price.
+  double? _outputUsdValue() {
+    final out = _quoteOutUi;
+    if (out == null) return null;
+    final jup = _jupiterQuote?.outUsdValue;
+    if (jup != null) return jup;
+    final price = _outputHolding?.priceUsd;
+    if (price != null) return out * price;
+    return null;
   }
 }
 
