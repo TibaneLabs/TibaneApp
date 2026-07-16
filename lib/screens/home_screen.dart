@@ -126,7 +126,7 @@ class _ToolsSection extends StatelessWidget {
     final isUk = context.watch<UkComplianceService>().isUk;
     // Staking + Incinerator are Solana-only (ChiefStaker program / SPL burns),
     // so hide them when the current account isn't Solana (Atonline-parity §4.5
-    // chain gating). Swap + Token info are chain-neutral and stay.
+    // chain gating). Search is chain-neutral and stays.
     final solana = context.watch<WalletService>().solanaFeaturesEnabled;
 
     final l10n = context.l10n;
@@ -136,8 +136,6 @@ class _ToolsSection extends StatelessWidget {
           icon: Icons.local_fire_department,
           title: 'Incinerator',
           description: l10n.homeIncineratorDescription,
-          badge: l10n.homeBadgeLive,
-          badgeColor: TibaneColors.cyan,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => Scaffold(
@@ -148,15 +146,13 @@ class _ToolsSection extends StatelessWidget {
             ),
           ),
         ),
-      // Staking and Swap are regulated activities in the UK — hide their entry
-      // points for UK users (still reachable via third-party sites in Browse).
+      // Staking is a regulated activity in the UK — hide its entry point for UK
+      // users (still reachable via third-party sites in Browse).
       if (!isUk && solana)
         FeatureCard(
           icon: Icons.account_balance,
           title: l10n.homeStakingTitle,
           description: l10n.homeStakingDescription,
-          badge: l10n.homeBadgeLive,
-          badgeColor: TibaneColors.cyan,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => Scaffold(
@@ -167,21 +163,10 @@ class _ToolsSection extends StatelessWidget {
             ),
           ),
         ),
-      if (!isUk)
-        FeatureCard(
-          icon: Icons.swap_horiz,
-          title: l10n.homeSwapTitle,
-          description: l10n.homeSwapDescription,
-          badge: l10n.homeBadgeLive,
-          badgeColor: TibaneColors.cyan,
-          onTap: () => onNavigate(1),
-        ),
       FeatureCard(
         icon: Icons.analytics_outlined,
         title: l10n.homeTokenInfoTitle,
         description: l10n.homeTokenInfoDescription,
-        badge: l10n.homeBadgeLive,
-        badgeColor: TibaneColors.cyan,
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const TokenFavoritesScreen()),
         ),
