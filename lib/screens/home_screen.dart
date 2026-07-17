@@ -8,15 +8,13 @@ import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/cat_logo.dart';
 import '../widgets/tibane_card.dart';
-import 'incinerator_screen.dart';
 import 'staking/staking_pools_screen.dart';
 import 'token_favorites_screen.dart';
+import 'tools_screen.dart';
 import '../utils/context_extensions.dart';
 
 class HomeScreen extends StatelessWidget {
-  final void Function(int) onNavigate;
-
-  const HomeScreen({super.key, required this.onNavigate});
+  const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -25,9 +23,9 @@ class HomeScreen extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 16),
-          _HeroSection(onNavigate: onNavigate),
+          const _HeroSection(),
           const SizedBox(height: 48),
-          _ToolsSection(onNavigate: onNavigate),
+          const _HomeActions(),
           const SizedBox(height: 48),
           const _AboutSection(),
           const SizedBox(height: 40),
@@ -38,9 +36,7 @@ class HomeScreen extends StatelessWidget {
 }
 
 class _HeroSection extends StatelessWidget {
-  final void Function(int) onNavigate;
-
-  const _HeroSection({required this.onNavigate});
+  const _HeroSection();
 
   @override
   Widget build(BuildContext context) {
@@ -116,47 +112,53 @@ class _HeroSection extends StatelessWidget {
   }
 }
 
-class _ToolsSection extends StatelessWidget {
-  final void Function(int) onNavigate;
+/// Which of the three Home actions are visible for the current account context.
+/// Tools + Stake are Solana-only (Incinerator burns / ChiefStaker program), and
+/// Stake is additionally hidden for UK users (staking is a regulated activity).
+/// Search is chain-neutral and always shown. Pure, for unit testing.
+@visibleForTesting
+({bool tools, bool search, bool stake}) homeActionVisibility({
+  required bool isUk,
+  required bool solana,
+}) => (tools: solana, search: true, stake: solana && !isUk);
 
-  const _ToolsSection({required this.onNavigate});
+/// The top-level Home actions, laid out horizontally: Tools (a catalog of the
+/// remaining tools), Search (token info / favorites) and Stake (staking pools).
+/// The row collapses to whichever actions [homeActionVisibility] allows.
+class _HomeActions extends StatelessWidget {
+  const _HomeActions();
 
   @override
   Widget build(BuildContext context) {
     final isUk = context.watch<UkComplianceService>().isUk;
-    // Staking + Incinerator are Solana-only (ChiefStaker program / SPL burns),
-    // so hide them when the current account isn't Solana (Atonline-parity §4.5
-    // chain gating). Swap + Token info are chain-neutral and stay.
     final solana = context.watch<WalletService>().solanaFeaturesEnabled;
-
+    final vis = homeActionVisibility(isUk: isUk, solana: solana);
     final l10n = context.l10n;
-    final cards = <Widget>[
-      if (solana)
-        FeatureCard(
-          icon: Icons.local_fire_department,
-          title: 'Incinerator',
-          description: l10n.homeIncineratorDescription,
-          badge: l10n.homeBadgeLive,
-          badgeColor: TibaneColors.cyan,
+
+    final actions = <Widget>[
+      if (vis.tools)
+        _HomeActionCard(
+          icon: Icons.handyman_outlined,
+          title: l10n.homeToolsCardTitle,
+          description: l10n.homeToolsCardDesc,
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => Scaffold(
-                backgroundColor: TibaneColors.black,
-                appBar: AppBar(title: const Text('Incinerator')),
-                body: const IncineratorScreen(),
-              ),
-            ),
+            MaterialPageRoute(builder: (_) => const ToolsScreen()),
           ),
         ),
-      // Staking and Swap are regulated activities in the UK — hide their entry
-      // points for UK users (still reachable via third-party sites in Browse).
-      if (!isUk && solana)
-        FeatureCard(
-          icon: Icons.account_balance,
-          title: l10n.homeStakingTitle,
-          description: l10n.homeStakingDescription,
-          badge: l10n.homeBadgeLive,
-          badgeColor: TibaneColors.cyan,
+      if (vis.search)
+        _HomeActionCard(
+          icon: Icons.search,
+          title: l10n.homeTokenInfoTitle,
+          description: l10n.homeTokenInfoDescription,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const TokenFavoritesScreen()),
+          ),
+        ),
+      if (vis.stake)
+        _HomeActionCard(
+          icon: Icons.layers_outlined,
+          title: l10n.homeStakeCardTitle,
+          description: l10n.homeStakeCardDesc,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => Scaffold(
@@ -167,46 +169,70 @@ class _ToolsSection extends StatelessWidget {
             ),
           ),
         ),
-      if (!isUk)
-        FeatureCard(
-          icon: Icons.swap_horiz,
-          title: l10n.homeSwapTitle,
-          description: l10n.homeSwapDescription,
-          badge: l10n.homeBadgeLive,
-          badgeColor: TibaneColors.cyan,
-          onTap: () => onNavigate(1),
-        ),
-      FeatureCard(
-        icon: Icons.analytics_outlined,
-        title: l10n.homeTokenInfoTitle,
-        description: l10n.homeTokenInfoDescription,
-        badge: l10n.homeBadgeLive,
-        badgeColor: TibaneColors.cyan,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const TokenFavoritesScreen()),
-        ),
-      ),
     ];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              context.l10n.homeToolsSection,
-              style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
-            ),
-            const SizedBox(width: 8),
-            Expanded(child: Container(height: 1, color: TibaneColors.border)),
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < actions.length; i++) ...[
+            if (i > 0) const SizedBox(width: 12),
+            Expanded(child: actions[i]),
           ],
-        ),
-        const SizedBox(height: 20),
-        for (var i = 0; i < cards.length; i++) ...[
-          if (i > 0) const SizedBox(height: 12),
-          cards[i],
         ],
-      ],
+      ),
+    );
+  }
+}
+
+/// A compact, vertically-stacked Home action tile: icon, title, short blurb.
+class _HomeActionCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String description;
+  final VoidCallback onTap;
+
+  const _HomeActionCard({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TibaneCard(
+      onTap: onTap,
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: TibaneColors.orange.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, color: TibaneColors.orange, size: 22),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            title,
+            style: context.textTheme.titleMedium?.copyWith(
+              color: TibaneColors.text,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            description,
+            style: context.textTheme.bodySmall?.copyWith(
+              color: TibaneColors.textMuted,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

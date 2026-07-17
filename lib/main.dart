@@ -361,7 +361,7 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
               rootBuilder: (_) => Scaffold(
                 backgroundColor: TibaneColors.black,
                 appBar: const TibaneAppBar(),
-                body: HomeScreen(onNavigate: _navigateTo),
+                body: const HomeScreen(),
               ),
             ),
             // Tab 1 follows the current account's mode: Swap for an MWA account,
