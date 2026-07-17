@@ -169,8 +169,9 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       for (final asset in assets) {
         final iface = asset['interface'] as String? ?? '';
         // Only include NFT-like interfaces
-        if (!['V1_NFT', 'V1_PRINT', 'ProgrammableNFT'].contains(iface))
+        if (!['V1_NFT', 'V1_PRINT', 'ProgrammableNFT'].contains(iface)) {
           continue;
+        }
         nfts.add(NftItem.fromHeliusAsset(asset));
       }
 

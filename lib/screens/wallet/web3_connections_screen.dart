@@ -176,7 +176,7 @@ class _Web3ConnectionsScreenState extends State<Web3ConnectionsScreen> {
               child: ListView.separated(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
                 itemCount: list.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (_, i) => _ConnectionRow(
                   connection: list[i],
                   onRevoke: () => _revoke(list[i]),

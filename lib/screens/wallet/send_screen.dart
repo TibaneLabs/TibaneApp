@@ -660,8 +660,9 @@ class _SendScreenState extends State<SendScreen> {
                               final clip = await Clipboard.getData(
                                 'text/plain',
                               );
-                              if (clip?.text != null)
+                              if (clip?.text != null) {
                                 _addrCtrl.text = clip!.text!;
+                              }
                             },
                     ),
                   ),

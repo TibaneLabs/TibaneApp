@@ -184,7 +184,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
             return ListView.separated(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
               itemCount: list.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (_, i) => _ContactRow(
                 contact: list[i],
                 onTap: () => _edit(list[i]),

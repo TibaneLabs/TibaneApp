@@ -261,7 +261,7 @@ class _NftImage extends StatelessWidget {
                 ),
               ),
             ),
-      errorBuilder: (_, __, ___) => Container(
+      errorBuilder: (_, _, _) => Container(
         color: TibaneColors.darker,
         child: const Icon(
           Icons.broken_image_outlined,

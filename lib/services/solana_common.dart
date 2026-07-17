@@ -24,10 +24,11 @@ Uint8List base58Decode(String input) {
   final base = BigInt.from(58);
   for (final c in input.codeUnits) {
     final digit = _base58Map[c];
-    if (digit == null)
+    if (digit == null) {
       throw FormatException(
         'Invalid base58 character: ${String.fromCharCode(c)}',
       );
+    }
     value = value * base + BigInt.from(digit);
   }
 

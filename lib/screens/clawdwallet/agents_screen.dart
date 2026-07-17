@@ -432,7 +432,7 @@ class _LockToggle extends StatelessWidget {
       child: Switch.adaptive(
         value: value,
         onChanged: onChanged,
-        activeColor: TibaneColors.error,
+        activeThumbColor: TibaneColors.error,
         activeTrackColor: TibaneColors.error.withValues(alpha: 0.5),
       ),
     );
