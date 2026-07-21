@@ -97,8 +97,10 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
       final r = await backend.switchWallet(widget.walletId);
       if (!mounted) return;
       if (r != SwitchResult.ok) {
-        debugPrint('[device-transfer] switch to ${widget.walletId} failed: '
-            '$r (${backend.error})');
+        debugPrint(
+          '[device-transfer] switch to ${widget.walletId} failed: '
+          '$r (${backend.error})',
+        );
         setState(() {
           _phase = _Phase.error;
           _message = context.l10n.deviceSendErrOpenWallet;
@@ -109,8 +111,10 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
     _exportPriv = await backend.readActiveStoreKeyPrivate();
     if (!mounted) return;
     if (_exportPriv == null) {
-      debugPrint('[device-transfer] StoreKey unreadable for '
-          '${widget.walletId} — needs 2FA recovery');
+      debugPrint(
+        '[device-transfer] StoreKey unreadable for '
+        '${widget.walletId}. Needs 2FA recovery',
+      );
       setState(() {
         _phase = _Phase.error;
         _message = context.l10n.deviceSendErrReadKey;
@@ -191,7 +195,9 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
       _ticker?.cancel();
       setState(() => _phase = _Phase.done);
     } catch (e) {
-      debugPrint('[device-transfer] source confirmDeviceTransferExport failed: $e');
+      debugPrint(
+        '[device-transfer] source confirmDeviceTransferExport failed: $e',
+      );
       if (!mounted) return;
       setState(() {
         _phase = _Phase.error;

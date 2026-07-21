@@ -11,13 +11,14 @@ Account _acct({
   required String id,
   required String wallet,
   String name = 'Account 1',
+  int index = 0,
   String type = 'solana',
   String? address,
 }) => Account(
   id: id,
   wallet: wallet,
   name: name,
-  index: 0,
+  index: index,
   type: type,
   path: '',
   // Default to a type-appropriate, usable address so accounts pass
@@ -50,7 +51,7 @@ Wallet _wallet({
 
 void main() {
   group('buildUnifiedAccounts', () {
-    test('in-app account: label "name — walletName", ids + chain mapped', () {
+    test('in-app account: label "walletName - name", ids + chain mapped', () {
       final out = buildUnifiedAccounts(
         inappAccounts: [
           _acct(id: 'acc1', wallet: 'w1', name: 'Main', address: 'SoLaddr'),
@@ -61,7 +62,7 @@ void main() {
       final a = out.single;
       expect(a.backend, AccountBackend.inapp);
       expect(a.isInApp, isTrue);
-      expect(a.label, 'Main — My Wallet');
+      expect(a.label, 'My Wallet - Main');
       expect(a.chain, 'solana');
       expect(a.isSolana, isTrue);
       expect(a.address, 'SoLaddr');
@@ -71,13 +72,28 @@ void main() {
       expect(a.id, 'acc1');
     });
 
-    test('missing wallet in map → label falls back to the account name', () {
+    test('missing wallet in map is treated as an orphan and hidden', () {
       final out = buildUnifiedAccounts(
         inappAccounts: [_acct(id: 'acc1', wallet: 'w-missing', name: 'Main')],
         walletsById: const {},
       );
-      expect(out.single.label, 'Main');
-      expect(out.single.curve, isNull);
+      expect(out, isEmpty);
+    });
+
+    test('default network account names display as account numbers', () {
+      final out = buildUnifiedAccounts(
+        inappAccounts: [
+          _acct(
+            id: 'acc1',
+            wallet: 'w1',
+            name: 'Solana',
+            index: 1,
+            type: 'solana',
+          ),
+        ],
+        walletsById: {'w1': _wallet(id: 'w1', name: 'My Wallet')},
+      );
+      expect(out.single.label, 'My Wallet - Account 2');
     });
 
     test('MWA appended only with an address; always Solana; mwa: id', () {
@@ -124,11 +140,224 @@ void main() {
         },
         mwaAddress: 'M',
       );
-      expect(out.map((a) => a.id).toList(), ['a1', 'a2', 'mwa:M']);
+      expect(out.map((a) => a.id).toList(), [
+        'a1',
+        'a2',
+        'bitcoin:a2',
+        'bitcoin-cash:a2',
+        'dogecoin:a2',
+        'litecoin:a2',
+        'mwa:M',
+      ]);
       expect(out[1].chain, 'ethereum');
       expect(out[1].isSolana, isFalse);
       expect(out[1].curve, 'secp256k1');
+      expect(out[2].chain, 'bitcoin');
+      expect(out[2].isVirtual, isTrue);
+      expect(out[2].accountId, 'a2');
+      expect(out[3].chain, 'bitcoin-cash');
+      expect(out[4].chain, 'dogecoin');
+      expect(out[5].chain, 'litecoin');
       expect(out.last.backend, AccountBackend.mwa);
+    });
+
+    test(
+      'main ethereum secp256k1 account surfaces Bitcoin-family contexts',
+      () {
+        final out = buildUnifiedAccounts(
+          inappAccounts: [
+            _acct(id: 'eth1', wallet: 'w2', name: 'Ethereum', type: 'ethereum'),
+          ],
+          walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+        );
+        expect(out.map((a) => a.id).toList(), [
+          'eth1',
+          'bitcoin:eth1',
+          'bitcoin-cash:eth1',
+          'dogecoin:eth1',
+          'litecoin:eth1',
+        ]);
+        final bitcoin = out.last;
+        expect(bitcoin.backend, AccountBackend.inapp);
+        expect(bitcoin.chain, 'litecoin');
+        expect(bitcoin.address, '');
+        expect(bitcoin.label, 'Wallet 1 - Account 1');
+        expect(bitcoin.accountId, 'eth1');
+        expect(bitcoin.isVirtual, isTrue);
+      },
+    );
+
+    test('virtual Bitcoin context can use a pre-resolved Bitcoin address', () {
+      final out = buildUnifiedAccounts(
+        inappAccounts: [
+          _acct(id: 'eth1', wallet: 'w2', name: 'Main', type: 'ethereum'),
+        ],
+        walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+        bitcoinAddressesByAccountId: {
+          'eth1': 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+        },
+      );
+      final bitcoin = out.singleWhere((a) => a.chain == 'bitcoin');
+      expect(bitcoin.address, 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh');
+    });
+
+    test('manual preferred Ethereum account does not add Bitcoin contexts', () {
+      final out = buildUnifiedAccounts(
+        inappAccounts: [
+          _acct(
+            id: 'eth1',
+            wallet: 'w2',
+            name: 'Trading',
+            index: 1,
+            type: 'ethereum',
+          ),
+        ],
+        walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+        preferredChainsByAccountId: {'eth1': 'ethereum'},
+      );
+      expect(out.map((a) => a.id).toList(), ['eth1']);
+      expect(out.single.chain, 'ethereum');
+    });
+
+    test('legacy manual preferred Bitcoin account is hidden', () {
+      final out = buildUnifiedAccounts(
+        inappAccounts: [
+          _acct(
+            id: 'eth1',
+            wallet: 'w2',
+            name: 'Savings',
+            index: 1,
+            type: 'ethereum',
+          ),
+        ],
+        walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+        bitcoinAddressesByAccountId: {
+          'eth1': 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+        },
+        preferredChainsByAccountId: {'eth1': 'bitcoin'},
+      );
+      expect(out, isEmpty);
+    });
+
+    test('virtual Bitcoin context uses the active Bitcoin address', () {
+      final out = buildUnifiedAccounts(
+        inappAccounts: [
+          _acct(id: 'eth1', wallet: 'w2', name: 'Ethereum', type: 'ethereum'),
+        ],
+        walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+        currentAccountId: 'eth1',
+        currentNetworkType: NetworkType.bitcoin,
+        currentAddress: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080',
+      );
+      final bitcoin = out.singleWhere((a) => a.chain == 'bitcoin');
+      expect(bitcoin.address, 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080');
+    });
+
+    test('virtual Bitcoin context rejects an active 0x address', () {
+      final out = buildUnifiedAccounts(
+        inappAccounts: [
+          _acct(id: 'eth1', wallet: 'w2', name: 'Ethereum', type: 'ethereum'),
+        ],
+        walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+        currentAccountId: 'eth1',
+        currentNetworkType: NetworkType.bitcoin,
+        currentAddress: '0x4d9477b1cDf10155eE5E2c55F781D48B18fD59fE',
+        bitcoinAddressesByAccountId: {
+          'eth1': 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+        },
+      );
+      final bitcoin = out.singleWhere((a) => a.chain == 'bitcoin');
+      expect(bitcoin.address, 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh');
+    });
+
+    test('avatar assets are mapped by displayed account id', () {
+      final out = buildUnifiedAccounts(
+        inappAccounts: [
+          _acct(id: 'sol1', wallet: 'w1', type: 'solana'),
+          _acct(id: 'eth1', wallet: 'w2', type: 'ethereum'),
+        ],
+        walletsById: {
+          'w1': _wallet(id: 'w1', curve: 'ed25519'),
+          'w2': _wallet(id: 'w2', curve: 'secp256k1'),
+        },
+        accountAvatarAssetsById: const {
+          'sol1': 'assets/account_pfps/account_pfp_01.png',
+          'eth1': 'assets/account_pfps/account_pfp_02.png',
+          'bitcoin:eth1': 'assets/account_pfps/account_pfp_03.png',
+          'bitcoin-cash:eth1': 'assets/account_pfps/account_pfp_04.png',
+          'dogecoin:eth1': 'assets/account_pfps/account_pfp_05.png',
+          'litecoin:eth1': 'assets/account_pfps/account_pfp_06.png',
+        },
+      );
+      expect(out.map((a) => a.avatarAsset).toList(), const [
+        'assets/account_pfps/account_pfp_01.png',
+        'assets/account_pfps/account_pfp_02.png',
+        'assets/account_pfps/account_pfp_03.png',
+        'assets/account_pfps/account_pfp_04.png',
+        'assets/account_pfps/account_pfp_05.png',
+        'assets/account_pfps/account_pfp_06.png',
+      ]);
+    });
+
+    test('bitcoin account under secp256k1 wallet is hidden', () {
+      final out = buildUnifiedAccounts(
+        inappAccounts: [
+          _acct(
+            id: 'btc1',
+            wallet: 'w2',
+            name: 'Bitcoin',
+            type: 'bitcoin',
+            address: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080',
+          ),
+        ],
+        walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+      );
+      expect(out, isEmpty);
+    });
+  });
+
+  group('Bitcoin address display helpers', () {
+    test('accept native Bitcoin address shapes and reject EVM', () {
+      expect(
+        isBitcoinAddress('bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh'),
+        isTrue,
+      );
+      expect(isBitcoinAddress('1BoatSLRHtKNngkdXEeobR76b53LETtpyT'), isTrue);
+      expect(isBitcoinAddress('3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy'), isTrue);
+      expect(
+        isBitcoinAddress('0x4d9477b1cDf10155eE5E2c55F781D48B18fD59fE'),
+        isFalse,
+      );
+    });
+
+    test('pickBitcoinAddress skips 0x formats', () {
+      expect(
+        pickBitcoinAddress([
+          '0x4d9477b1cDf10155eE5E2c55F781D48B18fD59fE',
+          'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+        ]),
+        'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      );
+      expect(
+        pickBitcoinAddress(['0x4d9477b1cDf10155eE5E2c55F781D48B18fD59fE']),
+        isNull,
+      );
+    });
+
+    test('isBitcoinFamilyAddress accepts non-EVM Bitcoin-family addresses', () {
+      expect(isBitcoinFamilyAddress('bitcoincash:qq07vng'), isTrue);
+      expect(
+        isBitcoinFamilyAddress('ltc1qxy2kgdygjrsqtzq2n0yrf2493p83kk'),
+        isTrue,
+      );
+      expect(
+        isBitcoinFamilyAddress('D8f1111111111111111111111111111111'),
+        isTrue,
+      );
+      expect(
+        isBitcoinFamilyAddress('0x4d9477b1cDf10155eE5E2c55F781D48B18fD59fE'),
+        isFalse,
+      );
     });
   });
 
@@ -168,13 +397,17 @@ void main() {
   group('isUsableAccount (single phantom filter)', () {
     test('rejects "N/A" / empty address', () {
       expect(
-        isUsableAccount(_acct(id: 'a', wallet: 'w', address: 'N/A'),
-            _wallet(id: 'w')),
+        isUsableAccount(
+          _acct(id: 'a', wallet: 'w', address: 'N/A'),
+          _wallet(id: 'w'),
+        ),
         isFalse,
       );
       expect(
         isUsableAccount(
-            _acct(id: 'a', wallet: 'w', address: ''), _wallet(id: 'w')),
+          _acct(id: 'a', wallet: 'w', address: ''),
+          _wallet(id: 'w'),
+        ),
         isFalse,
       );
     });
@@ -184,10 +417,11 @@ void main() {
       expect(
         isUsableAccount(
           _acct(
-              id: 'a',
-              wallet: 'w',
-              type: 'ethereum',
-              address: 'E47NsfqHUqGTVGGcUjBR1aTENJPxAbywEigVMKNtvNry'),
+            id: 'a',
+            wallet: 'w',
+            type: 'ethereum',
+            address: 'E47NsfqHUqGTVGGcUjBR1aTENJPxAbywEigVMKNtvNry',
+          ),
           _wallet(id: 'w', curve: 'secp256k1'),
         ),
         isFalse,
@@ -197,25 +431,28 @@ void main() {
       expect(
         isUsableAccount(
           _acct(
-              id: 'a',
-              wallet: 'w',
-              type: 'ethereum',
-              address: '0x4d9477b1cDf10155eE5E2c55F781D48B18fD59fE'),
+            id: 'a',
+            wallet: 'w',
+            type: 'ethereum',
+            address: '0x4d9477b1cDf10155eE5E2c55F781D48B18fD59fE',
+          ),
           _wallet(id: 'w', curve: 'secp256k1'),
         ),
         isTrue,
       );
     });
-    test('rejects type incompatible with wallet curve (ethereum under ed25519)',
-        () {
-      expect(
-        isUsableAccount(
-          _acct(id: 'a', wallet: 'w', type: 'ethereum', address: '0xabc'),
-          _wallet(id: 'w', curve: 'ed25519'),
-        ),
-        isFalse,
-      );
-    });
+    test(
+      'rejects type incompatible with wallet curve (ethereum under ed25519)',
+      () {
+        expect(
+          isUsableAccount(
+            _acct(id: 'a', wallet: 'w', type: 'ethereum', address: '0xabc'),
+            _wallet(id: 'w', curve: 'ed25519'),
+          ),
+          isFalse,
+        );
+      },
+    );
     test('accepts solana under ed25519', () {
       expect(
         isUsableAccount(
@@ -225,32 +462,41 @@ void main() {
         isTrue,
       );
     });
-    test('unknown wallet (null): curve skipped, address + 0x still apply', () {
+    test('unknown wallet (null) is rejected as an orphan account', () {
       expect(
         isUsableAccount(
-            _acct(id: 'a', wallet: 'w', type: 'solana', address: 'SoL'), null),
-        isTrue,
+          _acct(id: 'a', wallet: 'w', type: 'solana', address: 'SoL'),
+          null,
+        ),
+        isFalse,
       );
       expect(
         isUsableAccount(
-            _acct(id: 'a', wallet: 'w', type: 'ethereum', address: 'SoL'),
-            null),
+          _acct(id: 'a', wallet: 'w', type: 'ethereum', address: 'SoL'),
+          null,
+        ),
         isFalse,
       );
     });
-    test('buildUnifiedAccounts drops phantom ethereum accounts under ed25519',
-        () {
-      final out = buildUnifiedAccounts(
-        inappAccounts: [
-          _acct(id: 'sol', wallet: 'w1', type: 'solana', address: 'E47Nsf'),
-          // Phantom: ethereum-typed under an ed25519 wallet, base58 fallback.
-          _acct(
-              id: 'phantom', wallet: 'w1', type: 'ethereum', address: 'E47Nsf'),
-        ],
-        walletsById: {'w1': _wallet(id: 'w1', curve: 'ed25519')},
-      );
-      expect(out.map((a) => a.id).toList(), ['sol']);
-    });
+    test(
+      'buildUnifiedAccounts drops phantom ethereum accounts under ed25519',
+      () {
+        final out = buildUnifiedAccounts(
+          inappAccounts: [
+            _acct(id: 'sol', wallet: 'w1', type: 'solana', address: 'E47Nsf'),
+            // Phantom: ethereum-typed under an ed25519 wallet, base58 fallback.
+            _acct(
+              id: 'phantom',
+              wallet: 'w1',
+              type: 'ethereum',
+              address: 'E47Nsf',
+            ),
+          ],
+          walletsById: {'w1': _wallet(id: 'w1', curve: 'ed25519')},
+        );
+        expect(out.map((a) => a.id).toList(), ['sol']);
+      },
+    );
   });
 
   group('pickNextAccount', () {
@@ -286,20 +532,25 @@ void main() {
         walletsById: wallets,
         mwaAddress: 'M',
       );
-      expect(resolvePersistedAccount(accounts: list, savedId: 'mwa:M')!.id,
-          'mwa:M');
+      expect(
+        resolvePersistedAccount(accounts: list, savedId: 'mwa:M')!.id,
+        'mwa:M',
+      );
     });
 
-    test('saved MWA gone (Seed Vault disconnected) → first in-app fallback', () {
-      // Saved was the MWA account, but this launch only has in-app accounts.
-      final list = buildUnifiedAccounts(
-        inappAccounts: [inapp1],
-        walletsById: wallets,
-      );
-      final r = resolvePersistedAccount(accounts: list, savedId: 'mwa:M');
-      expect(r!.id, 'a1');
-      expect(r.isInApp, isTrue);
-    });
+    test(
+      'saved MWA gone (Seed Vault disconnected) → first in-app fallback',
+      () {
+        // Saved was the MWA account, but this launch only has in-app accounts.
+        final list = buildUnifiedAccounts(
+          inappAccounts: [inapp1],
+          walletsById: wallets,
+        );
+        final r = resolvePersistedAccount(accounts: list, savedId: 'mwa:M');
+        expect(r!.id, 'a1');
+        expect(r.isInApp, isTrue);
+      },
+    );
 
     test('savedId null → first in-app', () {
       final list = buildUnifiedAccounts(
@@ -316,8 +567,10 @@ void main() {
         walletsById: const {},
         mwaAddress: 'M',
       );
-      expect(resolvePersistedAccount(accounts: list, savedId: null)!.id,
-          'mwa:M');
+      expect(
+        resolvePersistedAccount(accounts: list, savedId: null)!.id,
+        'mwa:M',
+      );
     });
 
     test('empty → null', () {
@@ -333,19 +586,21 @@ void main() {
       mwaAddress: 'M',
     );
 
-    test('saved in-app id wins even when preferMwa (stale Seed Vault pubkey)',
-        () {
-      // The bug: a restored MWA pubkey set preferMwa=true and stole the current
-      // account. The saved id must win.
-      final r = resolveCurrentAccount(
-        accounts: list,
-        savedId: 'a1',
-        preferMwa: true,
-        activeInAppAccountId: null,
-      );
-      expect(r!.id, 'a1');
-      expect(r.isInApp, isTrue);
-    });
+    test(
+      'saved in-app id wins even when preferMwa (stale Seed Vault pubkey)',
+      () {
+        // The bug: a restored MWA pubkey set preferMwa=true and stole the current
+        // account. The saved id must win.
+        final r = resolveCurrentAccount(
+          accounts: list,
+          savedId: 'a1',
+          preferMwa: true,
+          activeInAppAccountId: null,
+        );
+        expect(r!.id, 'a1');
+        expect(r.isInApp, isTrue);
+      },
+    );
 
     test('saved MWA id wins even when not preferMwa', () {
       final r = resolveCurrentAccount(
@@ -387,14 +642,53 @@ void main() {
       );
       expect(r!.id, 'a1'); // first in-app fallback
     });
+
+    test('live Bitcoin network resolves the virtual Bitcoin context', () {
+      final bitcoinList = buildUnifiedAccounts(
+        inappAccounts: [
+          _acct(id: 'eth1', wallet: 'w2', name: 'Ethereum', type: 'ethereum'),
+        ],
+        walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+      );
+      final r = resolveCurrentAccount(
+        accounts: bitcoinList,
+        savedId: null,
+        preferMwa: false,
+        activeInAppAccountId: 'eth1',
+        activeNetworkType: NetworkType.bitcoin,
+      );
+      expect(r!.id, 'bitcoin:eth1');
+      expect(r.chain, 'bitcoin');
+      expect(r.isVirtual, isTrue);
+    });
+
+    test('live Dogecoin network resolves the Dogecoin context', () {
+      final bitcoinList = buildUnifiedAccounts(
+        inappAccounts: [
+          _acct(id: 'eth1', wallet: 'w2', name: 'Ethereum', type: 'ethereum'),
+        ],
+        walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+      );
+      final r = resolveCurrentAccount(
+        accounts: bitcoinList,
+        savedId: null,
+        preferMwa: false,
+        activeInAppAccountId: 'eth1',
+        activeNetworkType: NetworkType.bitcoin,
+        activeNetworkChainId: 'dogecoin',
+      );
+      expect(r!.id, 'dogecoin:eth1');
+      expect(r.chain, 'dogecoin');
+      expect(r.isVirtual, isTrue);
+    });
   });
 
   group('allowedAccountTypesForCurve', () {
     test('ed25519 → solana only', () {
       expect(allowedAccountTypesForCurve('ed25519'), ['solana']);
     });
-    test('secp256k1 → ethereum + bitcoin', () {
-      expect(allowedAccountTypesForCurve('secp256k1'), ['ethereum', 'bitcoin']);
+    test('secp256k1 → ethereum only', () {
+      expect(allowedAccountTypesForCurve('secp256k1'), ['ethereum']);
     });
     test('unknown / null → empty', () {
       expect(allowedAccountTypesForCurve('bogus'), isEmpty);
@@ -467,8 +761,19 @@ void main() {
       expect(chainLabel('solana'), 'Solana');
       expect(chainLabel('ethereum'), 'Ethereum');
       expect(chainLabel('bitcoin'), 'Bitcoin');
+      expect(chainLabel('bitcoin-cash'), 'Bitcoin Cash');
+      expect(chainLabel('dogecoin'), 'Dogecoin');
+      expect(chainLabel('litecoin'), 'Litecoin');
       expect(chainLabel('polygon'), 'Polygon');
       expect(chainLabel(''), '');
+    });
+    test('chainTicker maps known chains', () {
+      expect(chainTicker('solana'), 'SOL');
+      expect(chainTicker('ethereum'), 'ETH');
+      expect(chainTicker('bitcoin'), 'BTC');
+      expect(chainTicker('bitcoin-cash'), 'BCH');
+      expect(chainTicker('dogecoin'), 'DOGE');
+      expect(chainTicker('litecoin'), 'LTC');
     });
   });
 
@@ -477,6 +782,9 @@ void main() {
       expect(networkTypeForChain('solana'), NetworkType.solana);
       expect(networkTypeForChain('ethereum'), NetworkType.evm);
       expect(networkTypeForChain('bitcoin'), NetworkType.bitcoin);
+      expect(networkTypeForChain('bitcoin-cash'), NetworkType.bitcoin);
+      expect(networkTypeForChain('dogecoin'), NetworkType.bitcoin);
+      expect(networkTypeForChain('litecoin'), NetworkType.bitcoin);
       expect(networkTypeForChain('bogus'), NetworkType.solana); // Solana-first
     });
     test('accountMatchesNetwork', () {
@@ -487,11 +795,33 @@ void main() {
       final eth = buildUnifiedAccounts(
         inappAccounts: [_acct(id: 'b', wallet: 'w2', type: 'ethereum')],
         walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
-      ).single;
+      ).firstWhere((a) => a.chain == 'ethereum');
+      final btc = buildUnifiedAccounts(
+        inappAccounts: [_acct(id: 'b', wallet: 'w2', type: 'ethereum')],
+        walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+      ).firstWhere((a) => a.chain == 'bitcoin');
       expect(accountMatchesNetwork(sol, NetworkType.solana), isTrue);
       expect(accountMatchesNetwork(sol, NetworkType.evm), isFalse);
       expect(accountMatchesNetwork(eth, NetworkType.evm), isTrue);
       expect(accountMatchesNetwork(eth, NetworkType.solana), isFalse);
+      expect(accountMatchesNetwork(btc, NetworkType.bitcoin), isTrue);
+      expect(
+        accountMatchesNetwork(
+          btc,
+          NetworkType.bitcoin,
+          networkChainId: 'bitcoin',
+        ),
+        isTrue,
+      );
+      expect(
+        accountMatchesNetwork(
+          btc,
+          NetworkType.bitcoin,
+          networkChainId: 'dogecoin',
+        ),
+        isFalse,
+      );
+      expect(accountMatchesNetwork(btc, NetworkType.evm), isFalse);
     });
   });
 
@@ -503,7 +833,7 @@ void main() {
     final eth = buildUnifiedAccounts(
       inappAccounts: [_acct(id: 'a2', wallet: 'w2', type: 'ethereum')],
       walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
-    ).single;
+    ).firstWhere((a) => a.chain == 'ethereum');
     final mwa = buildUnifiedAccounts(
       inappAccounts: const [],
       walletsById: const {},

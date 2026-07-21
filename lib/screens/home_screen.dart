@@ -4,13 +4,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/l10n.dart';
 import '../services/uk_compliance_service.dart';
-import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/cat_logo.dart';
 import '../widgets/tibane_card.dart';
 import 'staking/staking_pools_screen.dart';
 import 'token_favorites_screen.dart';
 import 'tools_screen.dart';
+import 'wallet/solana_context.dart';
 import '../utils/context_extensions.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -24,7 +24,7 @@ class HomeScreen extends StatelessWidget {
         children: [
           const SizedBox(height: 16),
           const _HeroSection(),
-          const SizedBox(height: 48),
+          const SizedBox(height: 24),
           const _HomeActions(),
           const SizedBox(height: 48),
           const _AboutSection(),
@@ -79,31 +79,6 @@ class _HeroSection extends StatelessWidget {
                   height: 1.5,
                 ),
               ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: TibaneColors.cyan,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: TibaneColors.cyan.withValues(alpha: 0.5),
-                          blurRadius: 6,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    context.l10n.homeLiveOnSolana,
-                    style: monoStyle(fontSize: 10, color: TibaneColors.cyan),
-                  ),
-                ],
-              ),
             ],
           ),
         ),
@@ -113,26 +88,24 @@ class _HeroSection extends StatelessWidget {
 }
 
 /// Which of the three Home actions are visible for the current account context.
-/// Tools + Stake are Solana-only (Incinerator burns / ChiefStaker program), and
-/// Stake is additionally hidden for UK users (staking is a regulated activity).
-/// Search is chain-neutral and always shown. Pure, for unit testing.
+/// Tools and Stake remain visible from every wallet context; tapping them
+/// switches to the wallet's Solana context first. Stake is still hidden for UK
+/// users because staking is a regulated activity. Pure, for unit testing.
 @visibleForTesting
 ({bool tools, bool search, bool stake}) homeActionVisibility({
   required bool isUk,
-  required bool solana,
-}) => (tools: solana, search: true, stake: solana && !isUk);
+}) => (tools: true, search: true, stake: !isUk);
 
-/// The top-level Home actions, laid out horizontally: Tools (a catalog of the
+/// The top-level Home actions in a two-column grid: Tools (a catalog of the
 /// remaining tools), Search (token info / favorites) and Stake (staking pools).
-/// The row collapses to whichever actions [homeActionVisibility] allows.
+/// The grid collapses to whichever actions [homeActionVisibility] allows.
 class _HomeActions extends StatelessWidget {
   const _HomeActions();
 
   @override
   Widget build(BuildContext context) {
     final isUk = context.watch<UkComplianceService>().isUk;
-    final solana = context.watch<WalletService>().solanaFeaturesEnabled;
-    final vis = homeActionVisibility(isUk: isUk, solana: solana);
+    final vis = homeActionVisibility(isUk: isUk);
     final l10n = context.l10n;
 
     final actions = <Widget>[
@@ -141,9 +114,13 @@ class _HomeActions extends StatelessWidget {
           icon: Icons.handyman_outlined,
           title: l10n.homeToolsCardTitle,
           description: l10n.homeToolsCardDesc,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ToolsScreen()),
-          ),
+          onTap: () async {
+            if (!await ensureSolanaWalletContext(context)) return;
+            if (!context.mounted) return;
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const ToolsScreen()));
+          },
         ),
       if (vis.search)
         _HomeActionCard(
@@ -159,28 +136,38 @@ class _HomeActions extends StatelessWidget {
           icon: Icons.layers_outlined,
           title: l10n.homeStakeCardTitle,
           description: l10n.homeStakeCardDesc,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => Scaffold(
-                backgroundColor: TibaneColors.black,
-                appBar: AppBar(title: Text(l10n.homeStakingPoolsTitle)),
-                body: const SafeArea(child: StakingPoolsScreen()),
+          onTap: () async {
+            if (!await ensureSolanaWalletContext(context)) return;
+            if (!context.mounted) return;
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => Scaffold(
+                  backgroundColor: TibaneColors.black,
+                  appBar: AppBar(title: Text(l10n.homeStakingPoolsTitle)),
+                  body: const SafeArea(child: StakingPoolsScreen()),
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
     ];
 
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < actions.length; i++) ...[
-            if (i > 0) const SizedBox(width: 12),
-            Expanded(child: actions[i]),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const gap = 12.0;
+        final cardWidth = actions.length == 1
+            ? constraints.maxWidth
+            : (constraints.maxWidth - gap) / 2;
+
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final action in actions)
+              SizedBox(width: cardWidth, child: action),
           ],
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -204,34 +191,46 @@ class _HomeActionCard extends StatelessWidget {
     return TibaneCard(
       onTap: onTap,
       padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(9),
-            decoration: BoxDecoration(
-              color: TibaneColors.orange.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(9),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 148),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: TibaneColors.orange.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Icon(icon, color: TibaneColors.orange, size: 22),
             ),
-            child: Icon(icon, color: TibaneColors.orange, size: 22),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            title,
-            style: context.textTheme.titleMedium?.copyWith(
-              color: TibaneColors.text,
-              fontWeight: FontWeight.w700,
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: FittedBox(
+                alignment: Alignment.centerLeft,
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: context.textTheme.titleMedium?.copyWith(
+                    color: TibaneColors.text,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            description,
-            style: context.textTheme.bodySmall?.copyWith(
-              color: TibaneColors.textMuted,
-              height: 1.4,
+            const SizedBox(height: 6),
+            Text(
+              description,
+              style: context.textTheme.bodySmall?.copyWith(
+                color: TibaneColors.textMuted,
+                height: 1.4,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

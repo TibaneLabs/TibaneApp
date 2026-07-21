@@ -62,9 +62,11 @@ class LanguageScreen extends StatelessWidget {
     );
   }
 
-  void _select(BuildContext context, Locale? locale) {
-    context.read<LocaleController>().setLocale(locale);
-    Navigator.of(context).maybePop();
+  Future<void> _select(BuildContext context, Locale? locale) async {
+    final navigator = Navigator.of(context);
+    await context.read<LocaleController>().setLocale(locale);
+    if (!context.mounted || !navigator.mounted) return;
+    await navigator.maybePop();
   }
 }
 
@@ -104,7 +106,10 @@ class _LanguageOption extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     subtitle!,
-                    style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+                    style: monoStyle(
+                      fontSize: 11,
+                      color: TibaneColors.textMuted,
+                    ),
                   ),
                 ],
               ],

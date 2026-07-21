@@ -11,7 +11,7 @@ import 'package:tibaneapp/l10n/gen/app_localizations.dart';
 void main() {
   // One accessor per sampled key, spanning batches: contacts/home (a9),
   // swap (a5a), staking (a6), settings (P0), tokens (P1), wallet mgmt (a3),
-  // networks/nfts (a4), clawd (a8), fees (a5b), backup (a2).
+  // nfts (a4), clawd (a8), fees (a5b), backup (a2).
   final samples = <String Function(AppLocalizations)>[
     (l) => l.contactsTitle,
     (l) => l.homeToolsSection,
@@ -21,7 +21,6 @@ void main() {
     (l) => l.settingsLanguageTitle,
     (l) => l.tokensTitle,
     (l) => l.walletsMgmtTitle,
-    (l) => l.networksTitle,
     (l) => l.nftsTitle,
     (l) => l.clawdAgentsEmpty,
     (l) => l.feeShareSectionShareholders,

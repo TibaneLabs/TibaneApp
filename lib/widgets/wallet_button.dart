@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../constants/solana_constants.dart';
 import '../l10n/l10n.dart';
 import '../screens/wallet/inapp_create_screen.dart';
 import '../screens/wallet/widgets/account_switcher_sheet.dart';
@@ -43,7 +42,10 @@ class WalletButton extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   l10n.walletButtonConnecting,
-                  style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+                  style: const TextStyle(
+                    color: TibaneColors.textMuted,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
@@ -102,9 +104,9 @@ class _ConnectButton extends StatelessWidget {
 
   void _openInAppFlow(BuildContext context, WalletService wallet) {
     if (!wallet.libwallet.hasWallet) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const InAppCreateScreen()),
-      );
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const InAppCreateScreen()));
       return;
     }
     // Lockless: an in-app wallet already exists on this device — just make it
@@ -131,9 +133,7 @@ class _ConnectButton extends StatelessWidget {
     if (!ok) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text(
-            wallet.mwa.error ?? l10n.walletButtonNoWalletInstalled,
-          ),
+          content: Text(wallet.mwa.error ?? l10n.walletButtonNoWalletInstalled),
         ),
       );
     }
@@ -169,7 +169,9 @@ class _ConnectButton extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 l10n.walletButtonConnectSubtitle,
-                style: context.textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
+                style: context.textTheme.bodyMedium?.copyWith(
+                  color: TibaneColors.textMuted,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
@@ -279,55 +281,48 @@ class _ConnectedButton extends StatelessWidget {
 
   const _ConnectedButton({required this.wallet});
 
+  String _shortAddress(String addr) {
+    if (addr.length <= 8) return addr;
+    return '${addr.substring(0, 4)}...${addr.substring(addr.length - 4)}';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final account = wallet.currentAccount;
+    final activeAddress =
+        isBitcoinFamilyChain(account?.chain) &&
+            (account?.address.isNotEmpty ?? false)
+        ? account!.address
+        : wallet.publicKey ?? account?.address ?? '';
+    final addressLabel = activeAddress.isEmpty
+        ? ''
+        : _shortAddress(activeAddress);
+    final label = addressLabel.isEmpty ? '...' : addressLabel;
+
     return Material(
-      color: TibaneColors.card,
-      borderRadius: BorderRadius.circular(8),
+      color: Colors.transparent,
       child: InkWell(
         onTap: () => showAccountSwitcher(context),
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           decoration: BoxDecoration(
+            color: TibaneColors.orange.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: TibaneColors.border),
+            border: Border.all(
+              color: TibaneColors.orange.withValues(alpha: 0.36),
+            ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Green dot
-              Container(
-                width: 6,
-                height: 6,
-                decoration: const BoxDecoration(
-                  color: TibaneColors.cyan,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (wallet.chiefPussyBalance > BigInt.zero) ...[
-                Text(
-                  formatTokenAmount(
-                    wallet.chiefPussyBalance,
-                    6,
-                    displayDecimals: 0,
-                  ),
-                  style: monoStyle(fontSize: 12, color: TibaneColors.gold),
-                ),
-                const SizedBox(width: 6),
-                const Text(
-                  '|',
-                  style: TextStyle(color: TibaneColors.textDim, fontSize: 12),
-                ),
-                const SizedBox(width: 6),
-              ],
-              Text(wallet.shortAddress, style: monoStyle(fontSize: 12)),
-            ],
+          child: Text(
+            label,
+            style: monoStyle(
+              fontSize: 13.2,
+              color: TibaneColors.text,
+            ).copyWith(fontWeight: FontWeight.w600),
           ),
         ),
       ),
     );
   }
-
 }

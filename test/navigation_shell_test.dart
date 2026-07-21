@@ -8,18 +8,18 @@ import 'package:tibaneapp/main.dart';
 void main() {
   group('shellBackAction — system back routing (D-nav-3)', () {
     test('active tab has a pushed route -> pop within the tab', () {
-      expect(
-        shellBackAction(activeTabCanPop: true),
-        ShellBackAction.popTab,
-      );
+      expect(shellBackAction(activeTabCanPop: true), ShellBackAction.popTab);
     });
 
-    test('active tab is at its root -> exit the app (pre-migration parity)', () {
-      expect(
-        shellBackAction(activeTabCanPop: false),
-        ShellBackAction.exitApp,
-      );
-    });
+    test(
+      'active tab is at its root -> exit the app (pre-migration parity)',
+      () {
+        expect(
+          shellBackAction(activeTabCanPop: false),
+          ShellBackAction.exitApp,
+        );
+      },
+    );
   });
 
   group('browserTabState — lazy build + pause', () {
@@ -59,6 +59,18 @@ void main() {
       s = browserTabState(wasVisited: s.visited, activeIndex: 3); // elsewhere
       expect(s.visited, isTrue);
       expect(s.active, isFalse);
+    });
+  });
+
+  group('bottomTabTapPopsToRoot', () {
+    test('Home, Wallet, and Settings reset their tab stacks', () {
+      expect(bottomTabTapPopsToRoot(0), isTrue);
+      expect(bottomTabTapPopsToRoot(1), isTrue);
+      expect(bottomTabTapPopsToRoot(3), isTrue);
+    });
+
+    test('Browse keeps its browser state', () {
+      expect(bottomTabTapPopsToRoot(2), isFalse);
     });
   });
 }

@@ -4,27 +4,46 @@ import 'package:libwallet/libwallet.dart';
 import 'package:tibaneapp/services/wallet/libwallet_backend.dart';
 
 Wallet _walletWithKeys(List<WalletKey> keys) => Wallet(
-      id: 'wallet-id',
-      name: 'test',
-      curve: 'ed25519',
-      protocol: 'frost',
-      threshold: 1,
-      gen: 1,
-      pubkey: '',
-      chaincode: '',
-      created: DateTime.utc(2026, 1, 1),
-      modified: DateTime.utc(2026, 1, 1),
-      keys: keys,
-    );
+  id: 'wallet-id',
+  name: 'test',
+  curve: 'ed25519',
+  protocol: 'frost',
+  threshold: 1,
+  gen: 1,
+  pubkey: '',
+  chaincode: '',
+  created: DateTime.utc(2026, 1, 1),
+  modified: DateTime.utc(2026, 1, 1),
+  keys: keys,
+);
 
 WalletKey _key({
   required String id,
   required String type,
   required String key,
-}) =>
-    WalletKey(id: id, wallet: 'wallet-id', type: type, key: key, gen: 1);
+}) => WalletKey(id: id, wallet: 'wallet-id', type: type, key: key, gen: 1);
 
 void main() {
+  group('defaultAccountTypesForCurve', () {
+    test('ed25519 exposes Solana', () {
+      expect(
+        LibwalletBackend.defaultAccountTypesForCurve('ed25519'),
+        equals(['solana']),
+      );
+    });
+
+    test('secp256k1 exposes Ethereum; Bitcoin is a network context', () {
+      expect(
+        LibwalletBackend.defaultAccountTypesForCurve('secp256k1'),
+        equals(['ethereum']),
+      );
+    });
+
+    test('unknown curve exposes no default account types', () {
+      expect(LibwalletBackend.defaultAccountTypesForCurve('unknown'), isEmpty);
+    });
+  });
+
   group('LibwalletBackend.buildReshareOldKeys', () {
     test(
       'recovery path (storeKeyPriv=null) omits StoreKey, keeps RemoteKey + Password',
@@ -48,8 +67,10 @@ void main() {
           freshRemoteKeyResource: 'FRESH_REMOTE_SESSION',
         );
 
-        expect(reshareOld.map((k) => k.type).toList(),
-            equals(['RemoteKey', 'Password']));
+        expect(
+          reshareOld.map((k) => k.type).toList(),
+          equals(['RemoteKey', 'Password']),
+        );
         expect(reshareOld[0].id, equals('rk-id'));
         expect(reshareOld[0].key, equals('FRESH_REMOTE_SESSION'));
         expect(reshareOld[1].id, equals('pw-id'));
@@ -73,34 +94,41 @@ void main() {
           freshRemoteKeyResource: 'FRESH_REMOTE_SESSION',
         );
 
-        expect(reshareOld.map((k) => k.type).toList(),
-            equals(['StoreKey', 'RemoteKey', 'Password']));
+        expect(
+          reshareOld.map((k) => k.type).toList(),
+          equals(['StoreKey', 'RemoteKey', 'Password']),
+        );
         expect(reshareOld[0].id, equals('sk-id'));
-        expect(reshareOld[0].key, equals('STORE_PRIVATE_64_BYTES'),
-            reason: 'must be the 64-byte private, not the wallet row public');
+        expect(
+          reshareOld[0].key,
+          equals('STORE_PRIVATE_64_BYTES'),
+          reason: 'must be the 64-byte private, not the wallet row public',
+        );
         expect(reshareOld[1].id, equals('rk-id'));
         expect(reshareOld[1].key, equals('FRESH_REMOTE_SESSION'));
         expect(reshareOld[2].id, equals('pw-id'));
       },
     );
 
-    test('falls back to stored RemoteKey row when no fresh session supplied',
-        () {
-      final wallet = _walletWithKeys([
-        _key(id: 'sk-id', type: 'StoreKey', key: 'STORE_PUBLIC_X509'),
-        _key(id: 'rk-id', type: 'RemoteKey', key: 'OLD_REMOTE_SESSION'),
-        _key(id: 'pw-id', type: 'Password', key: 'unused'),
-      ]);
+    test(
+      'falls back to stored RemoteKey row when no fresh session supplied',
+      () {
+        final wallet = _walletWithKeys([
+          _key(id: 'sk-id', type: 'StoreKey', key: 'STORE_PUBLIC_X509'),
+          _key(id: 'rk-id', type: 'RemoteKey', key: 'OLD_REMOTE_SESSION'),
+          _key(id: 'pw-id', type: 'Password', key: 'unused'),
+        ]);
 
-      final reshareOld = LibwalletBackend.buildReshareOldKeys(
-        wallet: wallet,
-        password: 'pw',
-        storeKeyPriv: 'priv',
-      );
+        final reshareOld = LibwalletBackend.buildReshareOldKeys(
+          wallet: wallet,
+          password: 'pw',
+          storeKeyPriv: 'priv',
+        );
 
-      final remote = reshareOld.firstWhere((k) => k.type == 'RemoteKey');
-      expect(remote.key, equals('OLD_REMOTE_SESSION'));
-    });
+        final remote = reshareOld.firstWhere((k) => k.type == 'RemoteKey');
+        expect(remote.key, equals('OLD_REMOTE_SESSION'));
+      },
+    );
 
     test('omits RemoteKey entirely when wallet has no RemoteKey row', () {
       final wallet = _walletWithKeys([
@@ -114,8 +142,10 @@ void main() {
         storeKeyPriv: 'priv',
       );
 
-      expect(reshareOld.map((k) => k.type).toList(),
-          equals(['StoreKey', 'Password']));
+      expect(
+        reshareOld.map((k) => k.type).toList(),
+        equals(['StoreKey', 'Password']),
+      );
     });
 
     test('throws when wallet has no StoreKey row (existence check)', () {

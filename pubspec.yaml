@@ -57,4 +57,5 @@ flutter:
 
   assets:
     - assets/
+    - assets/account_pfps/
     - assets/icons/
