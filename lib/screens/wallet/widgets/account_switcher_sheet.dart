@@ -371,18 +371,37 @@ class _SubSectionLabel extends StatelessWidget {
   }
 }
 
-/// A switchable account row. Main wallet contexts (a wallet's per-chain
-/// receive addresses) render compactly — network logo + address. User-created
-/// additional accounts render detailed — avatar + name + chain label + address.
-class _AccountTile extends StatelessWidget {
+/// A switchable account row. Main wallet contexts (a wallet's per-chain receive
+/// addresses) render compactly — network logo + address (the logo signals the
+/// chain). User-created additional accounts render detailed — avatar + name +
+/// chain label + address. Shows a spinner and blocks re-taps while switching.
+class _AccountTile extends StatefulWidget {
   final UnifiedAccount account;
   final bool isCurrent;
 
   const _AccountTile({required this.account, required this.isCurrent});
 
   @override
-  Widget build(BuildContext context) {
+  State<_AccountTile> createState() => _AccountTileState();
+}
+
+class _AccountTileState extends State<_AccountTile> {
+  bool _switching = false;
+
+  Future<void> _onTap() async {
+    if (_switching || widget.isCurrent) return;
+    setState(() => _switching = true);
     final wallet = context.read<WalletService>();
+    await _switchAccount(context, wallet, widget.account);
+    // On success _switchAccount pops the sheet (this tile unmounts); on failure
+    // it stays put, so clear the spinner.
+    if (mounted) setState(() => _switching = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final account = widget.account;
+    final isCurrent = widget.isCurrent;
     final compact = account.isMainWalletContext;
     final radius = compact ? 10.0 : 12.0;
     return Padding(
@@ -395,8 +414,7 @@ class _AccountTile extends StatelessWidget {
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(radius),
-          onTap:
-              isCurrent ? null : () => _switchAccount(context, wallet, account),
+          onTap: (isCurrent || _switching) ? null : _onTap,
           child: Padding(
             padding: compact
                 ? const EdgeInsets.symmetric(horizontal: 12, vertical: 9)
@@ -408,14 +426,7 @@ class _AccountTile extends StatelessWidget {
                 Expanded(
                   child: compact ? _compactContent() : _detailedContent(),
                 ),
-                if (isCurrent) ...[
-                  if (compact) const SizedBox(width: 8),
-                  Icon(
-                    Icons.check_circle,
-                    color: TibaneColors.orange,
-                    size: compact ? 19 : 20,
-                  ),
-                ],
+                _trailing(compact),
               ],
             ),
           ),
@@ -424,7 +435,32 @@ class _AccountTile extends StatelessWidget {
     );
   }
 
+  Widget _trailing(bool compact) {
+    final size = compact ? 19.0 : 20.0;
+    if (_switching) {
+      return Padding(
+        padding: EdgeInsets.only(left: compact ? 8 : 0),
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: const CircularProgressIndicator(
+            strokeWidth: 2,
+            color: TibaneColors.orange,
+          ),
+        ),
+      );
+    }
+    if (widget.isCurrent) {
+      return Padding(
+        padding: EdgeInsets.only(left: compact ? 8 : 0),
+        child: Icon(Icons.check_circle, color: TibaneColors.orange, size: size),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
   Widget _leading() {
+    final account = widget.account;
     if (account.isMainWalletContext) {
       return _NetworkLogo(
         asset: networkLogoAssetForChain(account.chain),
@@ -433,7 +469,7 @@ class _AccountTile extends StatelessWidget {
     }
     return AccountAvatar(
       asset: account.avatarAsset,
-      active: isCurrent,
+      active: widget.isCurrent,
       fallbackIcon: account.isInApp
           ? Icons.account_circle_outlined
           : Icons.account_balance_wallet_outlined,
@@ -441,6 +477,7 @@ class _AccountTile extends StatelessWidget {
   }
 
   Widget _compactContent() {
+    final account = widget.account;
     final displayAddress = _shortDisplayAddress(account);
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -464,6 +501,7 @@ class _AccountTile extends StatelessWidget {
   }
 
   Widget _detailedContent() {
+    final account = widget.account;
     final displayAddress = _shortDisplayAddress(account);
     final title =
         account.accountName.isNotEmpty ? account.accountName : account.label;
