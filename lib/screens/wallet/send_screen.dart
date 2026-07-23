@@ -13,6 +13,7 @@ import '../../services/balances_store.dart';
 import '../../services/jupiter_service.dart';
 import '../../services/solana_common.dart';
 import '../../services/wallet/send_asset.dart';
+import '../../services/wallet/unified_account.dart' show chainLabel;
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
@@ -116,6 +117,67 @@ SendAddressFamily? sendAddressFamilyForAccountChain(String? chain) {
     default:
       return null;
   }
+}
+
+/// A specific coin within the Bitcoin address family. [SendAddressFamily]
+/// collapses BTC/BCH/DOGE/LTC into a single `bitcoin` member; this enum keeps
+/// them apart for the send-side cross-coin guard (they share one secp256k1
+/// account but have distinct, incompatible address formats).
+enum BitcoinCoin { bitcoin, bitcoinCash, dogecoin, litecoin }
+
+/// The [BitcoinCoin] a bitcoin-family account [chain] denotes, or null when the
+/// chain isn't bitcoin-family.
+BitcoinCoin? bitcoinCoinForChain(String? chain) => switch (chain) {
+  'bitcoin' => BitcoinCoin.bitcoin,
+  'bitcoin-cash' => BitcoinCoin.bitcoinCash,
+  'dogecoin' => BitcoinCoin.dogecoin,
+  'litecoin' => BitcoinCoin.litecoin,
+  _ => null,
+};
+
+String _chainForBitcoinCoin(BitcoinCoin coin) => switch (coin) {
+  BitcoinCoin.bitcoin => 'bitcoin',
+  BitcoinCoin.bitcoinCash => 'bitcoin-cash',
+  BitcoinCoin.dogecoin => 'dogecoin',
+  BitcoinCoin.litecoin => 'litecoin',
+};
+
+/// The set of bitcoin-family coins [input] could be a valid recipient for.
+///
+/// bech32 (`bc1…`/`ltc1…`) and CashAddr (`bitcoincash:…`) carry a unique,
+/// self-describing prefix, so they resolve to exactly one coin. Legacy base58
+/// addresses are identified by version byte — but **Bitcoin and Bitcoin Cash
+/// legacy addresses share the same version bytes and are indistinguishable**,
+/// so a legacy P2PKH/P2SH resolves to `{bitcoin, bitcoinCash}`. Returns an
+/// empty set when [input] isn't a recognizable bitcoin-family address (the
+/// caller then leaves it to the server's `Transaction:validate`).
+@visibleForTesting
+Set<BitcoinCoin> bitcoinCoinsForAddress(String input) {
+  final lower = input.trim().toLowerCase();
+  if (lower.startsWith('bc1')) return const {BitcoinCoin.bitcoin};
+  if (lower.startsWith('ltc1')) return const {BitcoinCoin.litecoin};
+  if (lower.startsWith('bitcoincash:') || lower.startsWith('bchtest:')) {
+    return const {BitcoinCoin.bitcoinCash};
+  }
+  try {
+    final decoded = base58Decode(input.trim());
+    if (decoded.length == 25) {
+      switch (decoded.first) {
+        case 0: // P2PKH — BTC and BCH legacy are byte-identical here
+        case 5: // P2SH  — BTC and BCH legacy are byte-identical here
+          return const {BitcoinCoin.bitcoin, BitcoinCoin.bitcoinCash};
+        case 22: // Dogecoin P2SH
+        case 30: // Dogecoin P2PKH
+          return const {BitcoinCoin.dogecoin};
+        case 48: // Litecoin P2PKH
+        case 50: // Litecoin P2SH
+          return const {BitcoinCoin.litecoin};
+      }
+    }
+  } catch (_) {
+    return const {};
+  }
+  return const {};
 }
 
 @visibleForTesting
@@ -513,14 +575,35 @@ class _SendScreenState extends State<SendScreen> {
     AppLocalizations l10n,
     SendAddressFamily activeFamily,
   ) {
-    final detected = detectSendAddressFamily(_recipientAddressForValidation());
-    if (detected == null || detected == activeFamily) return null;
-    return l10n.sendRecipientWrongNetwork(
-      _familyLabel(l10n, detected),
-      activeFamily == SendAddressFamily.bitcoin
-          ? _activeNetworkName(l10n)
-          : _familyLabel(l10n, activeFamily),
+    final recipient = _recipientAddressForValidation();
+    final detected = detectSendAddressFamily(recipient);
+    // Cross-family mismatch (e.g. a Solana address on an Ethereum account).
+    if (detected != null && detected != activeFamily) {
+      return l10n.sendRecipientWrongNetwork(
+        _familyLabel(l10n, detected),
+        activeFamily == SendAddressFamily.bitcoin
+            ? _activeNetworkName(l10n)
+            : _familyLabel(l10n, activeFamily),
+      );
+    }
+    // Within the Bitcoin family (BTC/BCH/DOGE/LTC all map to one
+    // SendAddressFamily.bitcoin) the family check can't tell the coins apart.
+    // Guard at the coin level: block a recipient that is provably a *different*
+    // bitcoin-family coin than the active account. The BTC/BCH legacy pair is
+    // byte-identical and stays ambiguous — left to the server's validate.
+    final activeCoin = bitcoinCoinForChain(
+      context.read<WalletService>().currentAccount?.chain,
     );
+    if (activeCoin != null) {
+      final possible = bitcoinCoinsForAddress(recipient);
+      if (possible.isNotEmpty && !possible.contains(activeCoin)) {
+        return l10n.sendRecipientWrongNetwork(
+          chainLabel(_chainForBitcoinCoin(possible.first)),
+          _activeNetworkName(l10n),
+        );
+      }
+    }
+    return null;
   }
 
   Future<void> _setMax() async {
@@ -565,7 +648,11 @@ class _SendScreenState extends State<SendScreen> {
     final addr = (typed == _resolvedName && _resolvedAddress != null)
         ? _resolvedAddress!
         : typed;
-    if (addr.length < 32) {
+    // Reject anything that isn't a recognizable address for a supported chain.
+    // (Replaces a `length < 32` heuristic that false-rejected short legacy
+    // Bitcoin P2PKH addresses.) The server's validate is the authoritative
+    // network-specific check.
+    if (detectSendAddressFamily(addr) == null) {
       setState(() => _error = context.l10n.sendInvalidRecipient);
       return;
     }
