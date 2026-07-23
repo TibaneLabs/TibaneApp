@@ -228,21 +228,29 @@ class AccountsService extends ChangeNotifier {
           addresses[displayId] = cached;
           continue;
         }
-        try {
-          final formats = await client.accounts.addressFormats(
-            account.id,
-            network: networkId,
-          );
-          final address = _pickDefaultBitcoinFamilyAddress(formats.formats);
-          if (address != null && address.isNotEmpty) {
-            addresses[displayId] = address;
-            _bitcoinAddressCache[cacheKey] = address;
+        // Retry once: a single transient addressFormats failure would
+        // otherwise leave this coin's context address-less until a later
+        // refresh (F7). The account is still shown (progressive load); this
+        // just improves the odds of resolving its address on this pass.
+        String? address;
+        for (var attempt = 0; attempt < 2; attempt++) {
+          try {
+            final formats = await client.accounts.addressFormats(
+              account.id,
+              network: networkId,
+            );
+            address = _pickDefaultBitcoinFamilyAddress(formats.formats);
+            if (address != null && address.isNotEmpty) break;
+          } catch (e) {
+            debugPrint(
+              'AccountsService: could not resolve ${context.label} address '
+              'for ${account.id} (attempt ${attempt + 1}): $e',
+            );
           }
-        } catch (e) {
-          debugPrint(
-            'AccountsService: could not resolve ${context.label} address for '
-            '${account.id}: $e',
-          );
+        }
+        if (address != null && address.isNotEmpty) {
+          addresses[displayId] = address;
+          _bitcoinAddressCache[cacheKey] = address;
         }
       }
     }
