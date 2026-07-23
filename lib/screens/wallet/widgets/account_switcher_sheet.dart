@@ -70,18 +70,26 @@ String? _shortDisplayAddress(UnifiedAccount account) {
   return _short(account.address);
 }
 
-Color _accountTileBaseColor() =>
-    Color.lerp(TibaneColors.darker, Colors.black, 0.15)!;
+// Cached tile colors — Color.lerp allocates, and these are constant per theme,
+// so compute once instead of on every tile build.
+final Color _accountTileBase = Color.lerp(
+  TibaneColors.darker,
+  Colors.black,
+  0.15,
+)!;
+
+final Color _accountMutedText = Color.lerp(
+  TibaneColors.textMuted,
+  TibaneColors.text,
+  0.50,
+)!;
 
 Color _accountTileColor(bool isCurrent) => isCurrent
     ? Color.alphaBlend(
         TibaneColors.orange.withValues(alpha: 0.10),
-        _accountTileBaseColor(),
+        _accountTileBase,
       )
-    : _accountTileBaseColor();
-
-Color _accountMutedTextColor() =>
-    Color.lerp(TibaneColors.textMuted, TibaneColors.text, 0.50)!;
+    : _accountTileBase;
 
 BorderSide _accountTileBorder(bool isCurrent) => isCurrent
     ? BorderSide(color: TibaneColors.orange.withValues(alpha: 0.74), width: 1.1)
@@ -117,7 +125,7 @@ Future<void> _switchAccount(
   } else {
     showWalletError(
       context,
-      wallet.libwallet.error ?? 'Could not switch account',
+      wallet.libwallet.error ?? context.l10n.accountSwitcherSwitchFailed,
     );
   }
 }
@@ -220,10 +228,9 @@ class AccountSwitcherSheet extends StatelessWidget {
                         ),
                       const SizedBox(height: 8),
                       if (target != null)
-                        _ActionTile(
+                        _PrimaryActionTile(
                           icon: Icons.add_circle_outline,
                           label: l10n.accountSwitcherAddAccount,
-                          primary: true,
                           onTap: () => _showAddAccount(context, wallet, target),
                         ),
                       if (showMwaConnect)
@@ -311,7 +318,7 @@ class AccountSwitcherSheet extends StatelessWidget {
     } else {
       showWalletError(
         context,
-        wallet.libwallet.error ?? 'Could not add account',
+        wallet.libwallet.error ?? l10n.accountSwitcherAddFailed,
       );
     }
   }
@@ -416,7 +423,7 @@ class _AccountTile extends StatelessWidget {
             displayAddress ?? '...',
             style: monoStyle(
               fontSize: 12.5,
-              color: _accountMutedTextColor(),
+              color: _accountMutedText,
             ).copyWith(fontWeight: FontWeight.w600),
             overflow: TextOverflow.ellipsis,
           ),
@@ -464,7 +471,7 @@ class _AccountTile extends StatelessWidget {
                         text: ' · $displayAddress',
                         style: monoStyle(
                           fontSize: 11,
-                          color: _accountMutedTextColor(),
+                          color: _accountMutedText,
                         ),
                       ),
                   ],
@@ -500,8 +507,7 @@ class _CopyAddressButton extends StatelessWidget {
           width: 18,
           height: 18,
           child: Center(
-            child:
-                Icon(Icons.copy, size: 16.8, color: _accountMutedTextColor()),
+            child: Icon(Icons.copy, size: 16.8, color: _accountMutedText),
           ),
         ),
       ),
@@ -560,56 +566,69 @@ class _NetworkLogoFallback extends StatelessWidget {
   }
 }
 
+/// The prominent orange call-to-action (the "Add account" button).
+class _PrimaryActionTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _PrimaryActionTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Material(
+        color: TibaneColors.orange,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: TibaneColors.black, size: 19),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: TibaneColors.black,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A secondary action row (connect external / disconnect).
 class _ActionTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
   final bool destructive;
-  final bool primary;
 
   const _ActionTile({
     required this.icon,
     required this.label,
     required this.onTap,
     this.destructive = false,
-    this.primary = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (primary) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Material(
-          color: TibaneColors.orange,
-          borderRadius: BorderRadius.circular(10),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(10),
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, color: TibaneColors.black, size: 19),
-                  const SizedBox(width: 8),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: TibaneColors.black,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
     final color = destructive ? TibaneColors.error : TibaneColors.text;
     return Material(
       color: Colors.transparent,

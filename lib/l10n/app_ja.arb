@@ -422,6 +422,8 @@
   "accountSwitcherNoWalletApp": "互換性のあるウォレットアプリがインストールされていません。",
   "accountSwitcherCopyAddress": "アドレスをコピー",
   "accountSwitcherDisconnect": "外部接続を切断",
+  "accountSwitcherSwitchFailed": "アカウントを切り替えられませんでした",
+  "accountSwitcherAddFailed": "アカウントを追加できませんでした",
   "accountSwitcherAccountName": "アカウント名",
   "accountSwitcherChain": "チェーン",
   "accountSwitcherAvatar": "アカウントPFP",

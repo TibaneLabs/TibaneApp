@@ -1191,6 +1191,8 @@
   "accountSwitcherNoWalletApp": "No compatible wallet app is installed.",
   "accountSwitcherCopyAddress": "Copy address",
   "accountSwitcherDisconnect": "Disconnect external",
+  "accountSwitcherSwitchFailed": "Could not switch account",
+  "accountSwitcherAddFailed": "Could not add account",
   "accountSwitcherAccountName": "Account name",
   "accountSwitcherChain": "Chain",
   "accountSwitcherAvatar": "Account pfp",

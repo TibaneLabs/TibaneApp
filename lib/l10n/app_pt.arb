@@ -422,6 +422,8 @@
   "accountSwitcherNoWalletApp": "Nenhum aplicativo de carteira compatível está instalado.",
   "accountSwitcherCopyAddress": "Copiar endereço",
   "accountSwitcherDisconnect": "Desconectar externo",
+  "accountSwitcherSwitchFailed": "Não foi possível trocar de conta",
+  "accountSwitcherAddFailed": "Não foi possível adicionar a conta",
   "accountSwitcherAccountName": "Nome da conta",
   "accountSwitcherChain": "Blockchain",
   "accountSwitcherAvatar": "PFP da conta",

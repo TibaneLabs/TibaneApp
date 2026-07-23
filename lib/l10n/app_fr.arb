@@ -422,6 +422,8 @@
   "accountSwitcherNoWalletApp": "Aucune application de portefeuille compatible n'est installée.",
   "accountSwitcherCopyAddress": "Copier l'adresse",
   "accountSwitcherDisconnect": "Déconnecter l'externe",
+  "accountSwitcherSwitchFailed": "Impossible de changer de compte",
+  "accountSwitcherAddFailed": "Impossible d'ajouter le compte",
   "accountSwitcherAccountName": "Nom du compte",
   "accountSwitcherChain": "Chaîne",
   "accountSwitcherAvatar": "PFP du compte",
