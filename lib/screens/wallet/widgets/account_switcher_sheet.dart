@@ -15,6 +15,7 @@ import '../../../widgets/network_logos.dart';
 import '../../../widgets/wallet_error_display.dart';
 import '../../../utils/context_extensions.dart';
 import 'account_avatar.dart';
+import 'account_switcher_view_model.dart';
 
 /// Open the account switcher (Atonline-parity §4.1/§4.2, Phase 4b-2): the unified
 /// list of in-app accounts (across all wallets) + the connected MWA account,
@@ -120,104 +121,6 @@ Future<void> _switchAccount(
   }
 }
 
-class _AccountSwitcherGroup {
-  final String walletName;
-  final List<UnifiedAccount> mainAccounts;
-  final List<UnifiedAccount> additionalAccounts;
-
-  const _AccountSwitcherGroup({
-    required this.walletName,
-    required this.mainAccounts,
-    required this.additionalAccounts,
-  });
-}
-
-List<_AccountSwitcherGroup> _buildAccountGroups(
-  WalletService wallet,
-  AppLocalizations l10n,
-) {
-  final logicalWallets = buildLogicalWallets(
-    wallet.accountsService.walletsById.values,
-  );
-  final usedIds = <String>{};
-  final groups = <_AccountSwitcherGroup>[];
-
-  for (final logicalWallet in logicalWallets) {
-    final accounts = wallet.accounts
-        .where(
-          (account) =>
-              account.isInApp &&
-              account.walletId != null &&
-              logicalWallet.containsWallet(account.walletId!),
-        )
-        .toList();
-    if (accounts.isEmpty) continue;
-    for (final account in accounts) {
-      usedIds.add(account.id);
-    }
-    final main =
-        accounts.where((account) => account.isMainWalletContext).toList()
-          ..sort(_compareAccountsForSwitcher);
-    final additional =
-        accounts.where((account) => !account.isMainWalletContext).toList()
-          ..sort(_compareAccountsForSwitcher);
-    groups.add(
-      _AccountSwitcherGroup(
-        walletName: logicalWallet.displayName(l10n.walletsMgmtUnnamed),
-        mainAccounts: main,
-        additionalAccounts: additional,
-      ),
-    );
-  }
-
-  final leftovers =
-      wallet.accounts
-          .where((account) => account.isInApp && !usedIds.contains(account.id))
-          .toList()
-        ..sort(_compareAccountsForSwitcher);
-  if (leftovers.isNotEmpty) {
-    groups.add(
-      _AccountSwitcherGroup(
-        walletName: l10n.walletsMgmtUnnamed,
-        mainAccounts: leftovers
-            .where((account) => account.isMainWalletContext)
-            .toList(),
-        additionalAccounts: leftovers
-            .where((account) => !account.isMainWalletContext)
-            .toList(),
-      ),
-    );
-  }
-  return groups;
-}
-
-int _compareAccountsForSwitcher(UnifiedAccount a, UnifiedAccount b) {
-  final chain = _chainRank(a.chain).compareTo(_chainRank(b.chain));
-  if (chain != 0) return chain;
-  final index = (a.accountIndex ?? 0).compareTo(b.accountIndex ?? 0);
-  if (index != 0) return index;
-  return a.id.compareTo(b.id);
-}
-
-int _chainRank(String chain) {
-  switch (chain) {
-    case 'solana':
-      return 0;
-    case 'ethereum':
-      return 1;
-    case 'bitcoin':
-      return 2;
-    case 'bitcoin-cash':
-      return 3;
-    case 'dogecoin':
-      return 4;
-    case 'litecoin':
-      return 5;
-    default:
-      return 99;
-  }
-}
-
 class AccountSwitcherSheet extends StatelessWidget {
   const AccountSwitcherSheet({super.key});
 
@@ -230,7 +133,11 @@ class AccountSwitcherSheet extends StatelessWidget {
         final current = wallet.currentAccount;
         final target = addAccountTarget(accounts, current);
         final showMwaConnect = Platform.isAndroid && !wallet.mwa.isConnected;
-        final groups = _buildAccountGroups(wallet, l10n);
+        final groups = buildAccountGroups(
+          accounts: wallet.accounts,
+          wallets: wallet.accountsService.walletsById.values,
+          unnamedLabel: l10n.walletsMgmtUnnamed,
+        );
         final mwaAccounts = accounts.where((account) => account.isMwa).toList();
         return SafeArea(
           child: Column(
@@ -367,7 +274,7 @@ class AccountSwitcherSheet extends StatelessWidget {
     final l10n = context.l10n;
     final groups = buildLogicalWallets(
       wallet.accountsService.walletsById.values,
-    ).where((group) => _creationChains(group).isNotEmpty).toList();
+    ).where((group) => creationChains(group).isNotEmpty).toList();
     if (groups.isEmpty) {
       context.showSnackBar(SnackBar(content: Text(l10n.accountsEmptyTitle)));
       return;
@@ -393,7 +300,7 @@ class AccountSwitcherSheet extends StatelessWidget {
     final ok = await wallet.addAccount(
       walletId: result.walletId,
       name: result.name,
-      type: _accountType(result.chain),
+      type: accountTypeForChain(result.chain),
       preferredChain: result.chain,
       avatarAsset: result.avatarAsset,
     );
@@ -448,9 +355,9 @@ class _AddAccountDialogState extends State<_AddAccountDialog> {
   late final TextEditingController _nameCtrl;
 
   LogicalWallet get _selectedGroup => widget.groups.firstWhere(
-    (group) => group.id == _selectedGroupId,
-    orElse: () => widget.groups.first,
-  );
+        (group) => group.id == _selectedGroupId,
+        orElse: () => widget.groups.first,
+      );
 
   @override
   void initState() {
@@ -464,8 +371,8 @@ class _AddAccountDialogState extends State<_AddAccountDialog> {
           orElse: () => widget.groups.first,
         )
         .id;
-    _selectedChains = _creationChains(_selectedGroup);
-    _selectedChain = _initialChain(_selectedChains, widget.target.chain);
+    _selectedChains = creationChains(_selectedGroup);
+    _selectedChain = initialChain(_selectedChains, widget.target.chain);
     _nameCtrl = TextEditingController(text: _suggestName());
   }
 
@@ -480,7 +387,9 @@ class _AddAccountDialogState extends State<_AddAccountDialog> {
     if (walletForChain == null) return 0;
     return widget.wallet.accountsService.rawAccounts
         .where(
-          (a) => a.wallet == walletForChain.id && a.type == _accountType(chain),
+          (a) =>
+              a.wallet == walletForChain.id &&
+              a.type == accountTypeForChain(chain),
         )
         .length;
   }
@@ -491,8 +400,8 @@ class _AddAccountDialogState extends State<_AddAccountDialog> {
   void _selectGroup(String groupId) {
     setState(() {
       _selectedGroupId = groupId;
-      _selectedChains = _creationChains(_selectedGroup);
-      _selectedChain = _initialChain(_selectedChains, _selectedChain);
+      _selectedChains = creationChains(_selectedGroup);
+      _selectedChain = initialChain(_selectedChains, _selectedChain);
       _nameCtrl.text = _suggestName();
     });
   }
@@ -602,25 +511,6 @@ class _AddAccountDialogState extends State<_AddAccountDialog> {
   }
 }
 
-List<String> _creationChains(LogicalWallet group) => group.chains
-    .where(
-      (chain) =>
-          (chain == 'solana' || chain == 'ethereum') &&
-          group.walletForChain(chain) != null,
-    )
-    .toList();
-
-String _initialChain(List<String> chains, String? preferred) {
-  if (isBitcoinFamilyChain(preferred) && chains.contains('ethereum')) {
-    return 'ethereum';
-  }
-  if (preferred != null && chains.contains(preferred)) return preferred;
-  return chains.first;
-}
-
-String _accountType(String chain) =>
-    isBitcoinFamilyChain(chain) ? 'ethereum' : chain;
-
 class _SectionTitle extends StatelessWidget {
   final String text;
 
@@ -655,9 +545,8 @@ class _AccountTile extends StatelessWidget {
 
     final wallet = context.read<WalletService>();
     final displayAddress = _shortDisplayAddress(account);
-    final title = account.accountName.isNotEmpty
-        ? account.accountName
-        : account.label;
+    final title =
+        account.accountName.isNotEmpty ? account.accountName : account.label;
     final copyIconColor = _accountMutedTextColor();
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -669,9 +558,8 @@ class _AccountTile extends StatelessWidget {
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: isCurrent
-              ? null
-              : () => _switchAccount(context, wallet, account),
+          onTap:
+              isCurrent ? null : () => _switchAccount(context, wallet, account),
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Row(
@@ -789,9 +677,8 @@ class _NativeContextTile extends StatelessWidget {
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
-          onTap: isCurrent
-              ? null
-              : () => _switchAccount(context, wallet, account),
+          onTap:
+              isCurrent ? null : () => _switchAccount(context, wallet, account),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             child: Row(
