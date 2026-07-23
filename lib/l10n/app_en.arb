@@ -97,6 +97,7 @@
     "description": "Generic 'To' label (e.g. recipient)."
   },
   "labelNetwork": "Network",
+  "labelChain": "Chain",
   "@labelNetwork": {
     "description": "Generic 'Network' (blockchain) label."
   },

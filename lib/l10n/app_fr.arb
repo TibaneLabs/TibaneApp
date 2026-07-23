@@ -25,6 +25,7 @@
   "labelFrom": "De",
   "labelTo": "À",
   "labelNetwork": "Réseau",
+  "labelChain": "Chaîne",
   "labelTransaction": "Transaction",
   "backToHome": "Retour à l'accueil",
   "viewOnExplorer": "Voir sur l'explorateur",

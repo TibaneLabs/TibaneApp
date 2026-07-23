@@ -158,7 +158,7 @@ class _AddAccountDialogState extends State<AddAccountDialog> {
             DropdownButtonFormField<String>(
               key: ValueKey(_selectedGroupId),
               initialValue: _selectedChain,
-              decoration: InputDecoration(labelText: l10n.labelNetwork),
+              decoration: InputDecoration(labelText: l10n.labelChain),
               items: [
                 for (final chain in _selectedChains)
                   DropdownMenuItem(

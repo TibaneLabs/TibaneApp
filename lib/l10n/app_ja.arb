@@ -25,6 +25,7 @@
   "labelFrom": "送信元",
   "labelTo": "送信先",
   "labelNetwork": "ネットワーク",
+  "labelChain": "チェーン",
   "labelTransaction": "取引",
   "backToHome": "ホームに戻る",
   "viewOnExplorer": "エクスプローラーで表示",
