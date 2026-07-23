@@ -531,6 +531,9 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
+/// A switchable account row. Main wallet contexts (a wallet's per-chain
+/// receive addresses) render compactly — network logo + address. User-created
+/// additional accounts render detailed — avatar + name + chain label + address.
 class _AccountTile extends StatelessWidget {
   final UnifiedAccount account;
   final bool isCurrent;
@@ -539,112 +542,40 @@ class _AccountTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (account.isMainWalletContext) {
-      return _NativeContextTile(account: account, isCurrent: isCurrent);
-    }
-
     final wallet = context.read<WalletService>();
-    final displayAddress = _shortDisplayAddress(account);
-    final title =
-        account.accountName.isNotEmpty ? account.accountName : account.label;
-    final copyIconColor = _accountMutedTextColor();
+    final compact = account.isMainWalletContext;
+    final radius = compact ? 10.0 : 12.0;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: EdgeInsets.only(bottom: compact ? 6 : 8),
       child: Material(
         color: _accountTileColor(isCurrent),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(radius),
           side: _accountTileBorder(isCurrent),
         ),
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(radius),
           onTap:
               isCurrent ? null : () => _switchAccount(context, wallet, account),
           child: Padding(
-            padding: const EdgeInsets.all(14),
+            padding: compact
+                ? const EdgeInsets.symmetric(horizontal: 12, vertical: 9)
+                : const EdgeInsets.all(14),
             child: Row(
               children: [
-                AccountAvatar(
-                  asset: account.avatarAsset,
-                  active: isCurrent,
-                  fallbackIcon: account.isInApp
-                      ? Icons.account_circle_outlined
-                      : Icons.account_balance_wallet_outlined,
-                ),
-                const SizedBox(width: 14),
+                _leading(),
+                SizedBox(width: compact ? 10 : 14),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          color: TibaneColors.text,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
-                        ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text.rich(
-                              TextSpan(
-                                children: [
-                                  TextSpan(
-                                    text: chainLabel(account.chain),
-                                    style: monoStyle(
-                                      fontSize: 11,
-                                      color: chainColor(account.chain),
-                                    ).copyWith(fontWeight: FontWeight.w600),
-                                  ),
-                                  if (displayAddress != null)
-                                    TextSpan(
-                                      text: ' · $displayAddress',
-                                      style: monoStyle(
-                                        fontSize: 11,
-                                        color: _accountMutedTextColor(),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (displayAddress != null) ...[
-                            const SizedBox(width: 2),
-                            Tooltip(
-                              message: context.l10n.accountSwitcherCopyAddress,
-                              child: InkResponse(
-                                radius: 14,
-                                onTap: () =>
-                                    _copyAccountAddress(context, account),
-                                child: SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: Center(
-                                    child: Icon(
-                                      Icons.copy,
-                                      size: 16.8,
-                                      color: copyIconColor,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
+                  child: compact ? _compactContent() : _detailedContent(),
                 ),
-                if (isCurrent)
-                  const Icon(
+                if (isCurrent) ...[
+                  if (compact) const SizedBox(width: 8),
+                  Icon(
                     Icons.check_circle,
                     color: TibaneColors.orange,
-                    size: 20,
+                    size: compact ? 19 : 20,
                   ),
+                ],
               ],
             ),
           ),
@@ -652,87 +583,119 @@ class _AccountTile extends StatelessWidget {
       ),
     );
   }
+
+  Widget _leading() {
+    if (account.isMainWalletContext) {
+      return _NetworkLogo(
+        asset: networkLogoAssetForChain(account.chain),
+        chain: account.chain,
+      );
+    }
+    return AccountAvatar(
+      asset: account.avatarAsset,
+      active: isCurrent,
+      fallbackIcon: account.isInApp
+          ? Icons.account_circle_outlined
+          : Icons.account_balance_wallet_outlined,
+    );
+  }
+
+  Widget _compactContent() {
+    final displayAddress = _shortDisplayAddress(account);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            displayAddress ?? '...',
+            style: monoStyle(
+              fontSize: 12.5,
+              color: _accountMutedTextColor(),
+            ).copyWith(fontWeight: FontWeight.w600),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (displayAddress != null) ...[
+          const SizedBox(width: 2),
+          _CopyAddressButton(account: account),
+        ],
+      ],
+    );
+  }
+
+  Widget _detailedContent() {
+    final displayAddress = _shortDisplayAddress(account);
+    final title =
+        account.accountName.isNotEmpty ? account.accountName : account.label;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: TibaneColors.text,
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: chainLabel(account.chain),
+                      style: monoStyle(
+                        fontSize: 11,
+                        color: chainColor(account.chain),
+                      ).copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    if (displayAddress != null)
+                      TextSpan(
+                        text: ' · $displayAddress',
+                        style: monoStyle(
+                          fontSize: 11,
+                          color: _accountMutedTextColor(),
+                        ),
+                      ),
+                  ],
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (displayAddress != null) ...[
+              const SizedBox(width: 2),
+              _CopyAddressButton(account: account),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
 }
 
-class _NativeContextTile extends StatelessWidget {
+/// Small copy-to-clipboard affordance shared by both tile variants.
+class _CopyAddressButton extends StatelessWidget {
   final UnifiedAccount account;
-  final bool isCurrent;
 
-  const _NativeContextTile({required this.account, required this.isCurrent});
+  const _CopyAddressButton({required this.account});
 
   @override
   Widget build(BuildContext context) {
-    final wallet = context.read<WalletService>();
-    final displayAddress = _shortDisplayAddress(account);
-    final logoAsset = networkLogoAssetForChain(account.chain);
-    final copyIconColor = _accountMutedTextColor();
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Material(
-        color: _accountTileColor(isCurrent),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: _accountTileBorder(isCurrent),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap:
-              isCurrent ? null : () => _switchAccount(context, wallet, account),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            child: Row(
-              children: [
-                _NetworkLogo(asset: logoAsset, chain: account.chain),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          displayAddress ?? '...',
-                          style: monoStyle(
-                            fontSize: 12.5,
-                            color: _accountMutedTextColor(),
-                          ).copyWith(fontWeight: FontWeight.w600),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (displayAddress != null) ...[
-                        const SizedBox(width: 2),
-                        Tooltip(
-                          message: context.l10n.accountSwitcherCopyAddress,
-                          child: InkResponse(
-                            radius: 14,
-                            onTap: () => _copyAccountAddress(context, account),
-                            child: SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: Center(
-                                child: Icon(
-                                  Icons.copy,
-                                  size: 16.8,
-                                  color: copyIconColor,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                if (isCurrent) ...[
-                  const SizedBox(width: 8),
-                  const Icon(
-                    Icons.check_circle,
-                    color: TibaneColors.orange,
-                    size: 19,
-                  ),
-                ],
-              ],
-            ),
+    return Tooltip(
+      message: context.l10n.accountSwitcherCopyAddress,
+      child: InkResponse(
+        radius: 14,
+        onTap: () => _copyAccountAddress(context, account),
+        child: SizedBox(
+          width: 18,
+          height: 18,
+          child: Center(
+            child:
+                Icon(Icons.copy, size: 16.8, color: _accountMutedTextColor()),
           ),
         ),
       ),
