@@ -178,23 +178,20 @@ class AccountSwitcherSheet extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       for (final group in groups) ...[
-                        if (group.mainAccounts.isNotEmpty) ...[
-                          _SectionTitle(
-                            l10n.accountSwitcherMainWallet(group.walletName),
+                        // One header per wallet (the wallet name), then its main
+                        // per-chain contexts, then an inline divider + its
+                        // user-created accounts.
+                        _SectionTitle(group.walletName),
+                        const SizedBox(height: 8),
+                        for (final account in group.mainAccounts)
+                          _AccountTile(
+                            account: account,
+                            isCurrent: account.id == current?.id,
                           ),
-                          const SizedBox(height: 8),
-                          for (final account in group.mainAccounts)
-                            _AccountTile(
-                              account: account,
-                              isCurrent: account.id == current?.id,
-                            ),
-                        ],
                         if (group.additionalAccounts.isNotEmpty) ...[
-                          const SizedBox(height: 10),
-                          _SectionTitle(
-                            l10n.accountSwitcherAdditionalAccounts(
-                              group.walletName,
-                            ),
+                          const SizedBox(height: 6),
+                          _SubSectionLabel(
+                            l10n.accountSwitcherAdditionalHeader,
                           ),
                           const SizedBox(height: 8),
                           for (final account in group.additionalAccounts)
@@ -340,6 +337,36 @@ class _SectionTitle extends StatelessWidget {
           color: TibaneColors.textMuted,
         ).copyWith(fontWeight: FontWeight.w700),
       ),
+    );
+  }
+}
+
+/// A lighter inline divider label for the "New accounts" subsection under a
+/// wallet's header.
+class _SubSectionLabel extends StatelessWidget {
+  final String text;
+
+  const _SubSectionLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          text,
+          style: monoStyle(
+            fontSize: 10,
+            color: TibaneColors.textMuted,
+          ).copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Divider(
+            color: TibaneColors.textMuted.withValues(alpha: 0.22),
+            height: 1,
+          ),
+        ),
+      ],
     );
   }
 }

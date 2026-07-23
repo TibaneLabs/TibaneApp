@@ -1170,23 +1170,8 @@
   },
   "accountSwitcherEmpty": "No accounts yet",
   "accountSwitcherAddAccount": "Add account",
-  "accountSwitcherMainWallet": "Main wallet - {wallet}",
-  "@accountSwitcherMainWallet": {
-    "placeholders": {
-      "wallet": {
-        "type": "String"
-      }
-    }
-  },
-  "accountSwitcherAdditionalAccounts": "New accounts - {wallet}",
-  "@accountSwitcherAdditionalAccounts": {
-    "placeholders": {
-      "wallet": {
-        "type": "String"
-      }
-    }
-  },
   "accountSwitcherExternalAccounts": "External accounts",
+  "accountSwitcherAdditionalHeader": "New accounts",
   "accountSwitcherConnectExternal": "Connect external (Seed Vault)",
   "accountSwitcherNoWalletApp": "No compatible wallet app is installed.",
   "accountSwitcherCopyAddress": "Copy address",
