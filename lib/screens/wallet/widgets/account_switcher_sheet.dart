@@ -16,6 +16,7 @@ import '../../../widgets/wallet_error_display.dart';
 import '../../../utils/context_extensions.dart';
 import 'account_avatar.dart';
 import 'account_switcher_view_model.dart';
+import 'add_account_dialog.dart';
 
 /// Open the account switcher (Atonline-parity §4.1/§4.2, Phase 4b-2): the unified
 /// list of in-app accounts (across all wallets) + the connected MWA account,
@@ -285,9 +286,9 @@ class AccountSwitcherSheet extends StatelessWidget {
     if (!context.mounted) {
       return;
     }
-    final result = await showDialog<_AddAccountResult>(
+    final result = await showDialog<AddAccountResult>(
       context: context,
-      builder: (_) => _AddAccountDialog(
+      builder: (_) => AddAccountDialog(
         wallet: wallet,
         target: target,
         groups: groups,
@@ -313,201 +314,6 @@ class AccountSwitcherSheet extends StatelessWidget {
         wallet.libwallet.error ?? 'Could not add account',
       );
     }
-  }
-}
-
-class _AddAccountResult {
-  final String walletId;
-  final String chain;
-  final String name;
-  final String avatarAsset;
-
-  const _AddAccountResult({
-    required this.walletId,
-    required this.chain,
-    required this.name,
-    required this.avatarAsset,
-  });
-}
-
-class _AddAccountDialog extends StatefulWidget {
-  final WalletService wallet;
-  final UnifiedAccount target;
-  final List<LogicalWallet> groups;
-  final String initialAvatarAsset;
-
-  const _AddAccountDialog({
-    required this.wallet,
-    required this.target,
-    required this.groups,
-    required this.initialAvatarAsset,
-  });
-
-  @override
-  State<_AddAccountDialog> createState() => _AddAccountDialogState();
-}
-
-class _AddAccountDialogState extends State<_AddAccountDialog> {
-  late String _selectedGroupId;
-  late List<String> _selectedChains;
-  late String _selectedChain;
-  late String _selectedAvatarAsset;
-  late final TextEditingController _nameCtrl;
-
-  LogicalWallet get _selectedGroup => widget.groups.firstWhere(
-        (group) => group.id == _selectedGroupId,
-        orElse: () => widget.groups.first,
-      );
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedAvatarAsset = widget.initialAvatarAsset;
-    _selectedGroupId = widget.groups
-        .firstWhere(
-          (group) =>
-              widget.target.walletId != null &&
-              group.containsWallet(widget.target.walletId!),
-          orElse: () => widget.groups.first,
-        )
-        .id;
-    _selectedChains = creationChains(_selectedGroup);
-    _selectedChain = initialChain(_selectedChains, widget.target.chain);
-    _nameCtrl = TextEditingController(text: _suggestName());
-  }
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    super.dispose();
-  }
-
-  int _existingCount(LogicalWallet group, String chain) {
-    final walletForChain = group.walletForChain(chain);
-    if (walletForChain == null) return 0;
-    return widget.wallet.accountsService.rawAccounts
-        .where(
-          (a) =>
-              a.wallet == walletForChain.id &&
-              a.type == accountTypeForChain(chain),
-        )
-        .length;
-  }
-
-  String _suggestName() =>
-      suggestAccountName(_existingCount(_selectedGroup, _selectedChain));
-
-  void _selectGroup(String groupId) {
-    setState(() {
-      _selectedGroupId = groupId;
-      _selectedChains = creationChains(_selectedGroup);
-      _selectedChain = initialChain(_selectedChains, _selectedChain);
-      _nameCtrl.text = _suggestName();
-    });
-  }
-
-  void _selectChain(String chain) {
-    setState(() {
-      _selectedChain = chain;
-      _nameCtrl.text = _suggestName();
-    });
-  }
-
-  void _submit() {
-    final name = _nameCtrl.text.trim();
-    final walletForChain = _selectedGroup.walletForChain(_selectedChain);
-    if (name.isEmpty || walletForChain == null) {
-      Navigator.pop(context);
-      return;
-    }
-    Navigator.pop(
-      context,
-      _AddAccountResult(
-        walletId: walletForChain.id,
-        chain: _selectedChain,
-        name: name,
-        avatarAsset: _selectedAvatarAsset,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    return AlertDialog(
-      backgroundColor: TibaneColors.card,
-      title: Text(l10n.accountSwitcherAddAccount),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            DropdownButtonFormField<String>(
-              initialValue: _selectedGroupId,
-              decoration: InputDecoration(labelText: l10n.labelWallet),
-              items: [
-                for (final group in widget.groups)
-                  DropdownMenuItem(
-                    value: group.id,
-                    child: Text(group.displayName(l10n.walletsMgmtUnnamed)),
-                  ),
-              ],
-              onChanged: (v) {
-                if (v == null) return;
-                _selectGroup(v);
-              },
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              key: ValueKey(_selectedGroupId),
-              initialValue: _selectedChain,
-              decoration: InputDecoration(labelText: l10n.labelNetwork),
-              items: [
-                for (final chain in _selectedChains)
-                  DropdownMenuItem(
-                    value: chain,
-                    child: Text(chainLabel(chain)),
-                  ),
-              ],
-              onChanged: (v) {
-                if (v == null) return;
-                _selectChain(v);
-              },
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _nameCtrl,
-              decoration: InputDecoration(
-                labelText: l10n.accountSwitcherAccountName,
-              ),
-              onSubmitted: (_) => _submit(),
-            ),
-            const SizedBox(height: 16),
-            AccountAvatarSelector(
-              label: l10n.accountSwitcherAvatar,
-              selectedAsset: _selectedAvatarAsset,
-              onSelected: (asset) {
-                if (!mounted) return;
-                setState(() => _selectedAvatarAsset = asset);
-              },
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(l10n.actionCancel),
-        ),
-        TextButton(
-          onPressed: _submit,
-          child: Text(
-            l10n.actionCreate,
-            style: const TextStyle(color: TibaneColors.orange),
-          ),
-        ),
-      ],
-    );
   }
 }
 
