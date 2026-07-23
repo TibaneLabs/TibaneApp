@@ -80,6 +80,26 @@ enum AccountSwitchRoute { alreadyCurrent, sameWallet, crossWallet }
 ///
 /// Signing uses libwallet 0.3.5's direct `Account:sign*` endpoints with the
 /// cached StoreKey + Password shares — no pending-request ceremony.
+/// Outcome of [LibwalletBackend.planDefaultAccounts]: which default account
+/// types each wallet still needs, and which wallets already have all of theirs.
+class DefaultAccountPlan {
+  final Map<String, List<String>> toCreate;
+  final Set<String> ensured;
+  const DefaultAccountPlan({required this.toCreate, required this.ensured});
+}
+
+/// Result of [LibwalletBackend.ensureDefaultAccountsForWallets]: the resolved
+/// account list plus the wallet ids now known to have all their default
+/// accounts (for the caller to persist, so the backfill runs at most once).
+class EnsureDefaultsResult {
+  final List<Account> accounts;
+  final Set<String> ensuredWalletIds;
+  const EnsureDefaultsResult({
+    required this.accounts,
+    required this.ensuredWalletIds,
+  });
+}
+
 class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   @override
   String get id => 'inapp';
@@ -1480,28 +1500,57 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// Ensure each wallet exposes the native account row expected for its curve.
   /// Bitcoin is shown as a network context over the secp256k1/Ethereum account,
   /// so there is no separate `bitcoin` Account row to create here.
-  Future<List<Account>> ensureDefaultAccountsForWallets({
+  /// Ensure each wallet has its default chain account(s). This is a backfill
+  /// safety net — new wallets already get their defaults at creation time — so
+  /// it is gated by [alreadyEnsured]: wallets known to have their defaults are
+  /// skipped entirely, and a fresh `accounts.list()` is re-read before any
+  /// creation (verify-before-create) so a transiently-partial [accounts]
+  /// snapshot can't mint duplicate default accounts on the refresh read path.
+  ///
+  /// Returns the (possibly extended) account list plus the set of wallet ids
+  /// now known to have all their defaults, for the caller to persist.
+  Future<EnsureDefaultsResult> ensureDefaultAccountsForWallets({
     required List<Account> accounts,
     required Map<String, Wallet> walletsById,
+    Set<String> alreadyEnsured = const {},
   }) async {
+    var out = List<Account>.of(accounts);
+    var plan = planDefaultAccounts(
+      accounts: out,
+      walletsById: walletsById,
+      alreadyEnsured: alreadyEnsured,
+    );
+    final ensured = <String>{...plan.ensured};
+    if (plan.toCreate.isEmpty) {
+      return EnsureDefaultsResult(accounts: out, ensuredWalletIds: ensured);
+    }
+
     final client = await _getClient();
-    final out = List<Account>.of(accounts);
-    for (final wallet in walletsById.values) {
-      final defaultTypes = defaultAccountTypesForCurve(wallet.curve);
-      if (defaultTypes.isEmpty) continue;
-      for (final type in defaultTypes) {
-        final hasType = out.any(
-          (account) => account.wallet == wallet.id && account.type == type,
-        );
-        if (hasType) continue;
+    // Verify-before-create: the passed-in list may have been transiently
+    // partial. Re-read the authoritative list and recompute what's genuinely
+    // missing before creating anything.
+    out = _mergeAccountsById(out, await client.accounts.list());
+    plan = planDefaultAccounts(
+      accounts: out,
+      walletsById: walletsById,
+      alreadyEnsured: alreadyEnsured,
+    );
+    ensured
+      ..clear()
+      ..addAll(plan.ensured);
+
+    for (final entry in plan.toCreate.entries) {
+      final wallet = walletsById[entry.key]!;
+      for (final type in entry.value) {
         try {
-          final created = await _createDefaultAccount(
-            client,
-            wallet: wallet,
-            type: type,
-            existing: out,
+          out.add(
+            await _createDefaultAccount(
+              client,
+              wallet: wallet,
+              type: type,
+              existing: out,
+            ),
           );
-          out.add(created);
           debugPrint(
             '[accounts] created default $type account for wallet ${wallet.id}',
           );
@@ -1512,8 +1561,62 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
           );
         }
       }
+      // Flag the wallet as ensured only once all its defaults are present, so a
+      // failed create is retried on a later refresh instead of being skipped.
+      if (defaultAccountTypesForCurve(
+        wallet.curve,
+      ).every((t) => out.any((a) => a.wallet == wallet.id && a.type == t))) {
+        ensured.add(wallet.id);
+      }
     }
-    return out;
+    return EnsureDefaultsResult(accounts: out, ensuredWalletIds: ensured);
+  }
+
+  /// Append accounts from [additions] to [base] whose id isn't already present.
+  static List<Account> _mergeAccountsById(
+    List<Account> base,
+    List<Account> additions,
+  ) {
+    final ids = base.map((a) => a.id).toSet();
+    return [
+      ...base,
+      for (final a in additions)
+        if (ids.add(a.id)) a,
+    ];
+  }
+
+  /// Pure decision for [ensureDefaultAccountsForWallets]: given the current
+  /// [accounts], the [walletsById], and the [alreadyEnsured] wallet ids, decide
+  /// which default account types each wallet still needs and which wallets are
+  /// already fully satisfied. Wallets in [alreadyEnsured] are treated as
+  /// satisfied without inspecting [accounts].
+  @visibleForTesting
+  static DefaultAccountPlan planDefaultAccounts({
+    required List<Account> accounts,
+    required Map<String, Wallet> walletsById,
+    required Set<String> alreadyEnsured,
+  }) {
+    final toCreate = <String, List<String>>{};
+    final ensured = <String>{};
+    for (final wallet in walletsById.values) {
+      final types = defaultAccountTypesForCurve(wallet.curve);
+      if (types.isEmpty) continue;
+      if (alreadyEnsured.contains(wallet.id)) {
+        ensured.add(wallet.id);
+        continue;
+      }
+      final missing = [
+        for (final type in types)
+          if (!accounts.any((a) => a.wallet == wallet.id && a.type == type))
+            type,
+      ];
+      if (missing.isEmpty) {
+        ensured.add(wallet.id);
+      } else {
+        toCreate[wallet.id] = missing;
+      }
+    }
+    return DefaultAccountPlan(toCreate: toCreate, ensured: ensured);
   }
 
   Future<Account> _createDefaultAccount(

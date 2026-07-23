@@ -35,6 +35,9 @@ class AccountsService extends ChangeNotifier {
   static const _prefsCurrentAccountId = 'current_account_id';
   static const _prefsAccountPreferredChains = 'account_preferred_chains';
   static const _prefsAccountAvatarAssets = 'account_avatar_assets_v1';
+  // Wallet ids whose default accounts have been ensured. Additive-only; gates
+  // the [refresh] default-account backfill so it runs at most once per wallet.
+  static const _prefsDefaultsEnsured = 'wallet_defaults_ensured_v1';
 
   // Raw libwallet accounts AFTER filtering out phantoms — the authoritative
   // list the management screens render. Built once per [refresh].
@@ -73,11 +76,30 @@ class AccountsService extends ChangeNotifier {
   Future<void> refresh({required bool preferMwa}) async {
     try {
       final client = await _libwallet.ensureClient();
+      final prefs = await SharedPreferences.getInstance();
       final wallets = {for (final w in await client.wallets.list()) w.id: w};
-      final rawList = await _libwallet.ensureDefaultAccountsForWallets(
+      // Bootstrap default accounts at most once per wallet. Gating on a
+      // persisted set (plus verify-before-create in the backend) stops a
+      // transiently-partial accounts.list() from minting duplicate default
+      // accounts on this hot read path. New wallets already get their defaults
+      // at creation time, so this is only a backfill for older/edge wallets;
+      // existing wallets auto-flag on the first refresh (defaults present).
+      final alreadyEnsured =
+          (prefs.getStringList(_prefsDefaultsEnsured) ?? const <String>[])
+              .toSet();
+      final ensure = await _libwallet.ensureDefaultAccountsForWallets(
         accounts: await client.accounts.list(),
         walletsById: wallets,
+        alreadyEnsured: alreadyEnsured,
       );
+      final rawList = ensure.accounts;
+      final ensuredNow = alreadyEnsured.union(ensure.ensuredWalletIds);
+      if (ensuredNow.length != alreadyEnsured.length) {
+        await prefs.setStringList(
+          _prefsDefaultsEnsured,
+          ensuredNow.toList(growable: false),
+        );
+      }
       // Filter phantom accounts only (curve/type mismatch, non-0x EVM address,
       // or "N/A") — determined purely from the list() data, so this never hides
       // a real wallet.
@@ -97,11 +119,23 @@ class AccountsService extends ChangeNotifier {
       if (dropped > 0) {
         debugPrint('[accounts] dropped $dropped phantom account(s)');
       }
+      // Observability for the isUsableAccount(wallet == null) filter: log any
+      // account hidden because its parent wallet is absent from wallets.list(),
+      // so a real-wallet regression stays diagnosable (see the BTL7hA incident).
+      final orphaned = rawList
+          .where((a) => wallets[a.wallet] == null)
+          .map((a) => a.id)
+          .toList();
+      if (orphaned.isNotEmpty) {
+        debugPrint(
+          '[accounts] hid ${orphaned.length} account(s) with no parent '
+          'wallet: $orphaned',
+        );
+      }
       _rawAccounts = filtered;
       _walletsById = wallets;
       final bitcoinFamily = await _resolveBitcoinFamily(filtered, wallets);
 
-      final prefs = await SharedPreferences.getInstance();
       final preferredChains = _decodePreferredChains(
         prefs.getString(_prefsAccountPreferredChains),
       );

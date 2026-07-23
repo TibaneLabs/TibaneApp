@@ -3,10 +3,14 @@ import 'package:libwallet/libwallet.dart';
 
 import 'package:tibaneapp/services/wallet/libwallet_backend.dart';
 
-Wallet _walletWithKeys(List<WalletKey> keys) => Wallet(
-  id: 'wallet-id',
+Wallet _walletWithKeys(
+  List<WalletKey> keys, {
+  String id = 'wallet-id',
+  String curve = 'ed25519',
+}) => Wallet(
+  id: id,
   name: 'test',
-  curve: 'ed25519',
+  curve: curve,
   protocol: 'frost',
   threshold: 1,
   gen: 1,
@@ -22,6 +26,25 @@ WalletKey _key({
   required String type,
   required String key,
 }) => WalletKey(id: id, wallet: 'wallet-id', type: type, key: key, gen: 1);
+
+Account _account({
+  required String id,
+  required String wallet,
+  required String type,
+}) => Account(
+  id: id,
+  wallet: wallet,
+  name: '',
+  index: 0,
+  type: type,
+  path: '',
+  address: '',
+  uri: '',
+  pubkey: '',
+  chaincode: '',
+  created: DateTime.utc(2026, 1, 1),
+  updated: DateTime.utc(2026, 1, 1),
+);
 
 void main() {
   group('defaultAccountTypesForCurve', () {
@@ -182,6 +205,59 @@ void main() {
         ),
         throwsA(isA<StateError>()),
       );
+    });
+  });
+
+  group('LibwalletBackend.planDefaultAccounts', () {
+    final ed = _walletWithKeys([], id: 'sol-wallet', curve: 'ed25519');
+    final secp = _walletWithKeys([], id: 'evm-wallet', curve: 'secp256k1');
+
+    test('a wallet missing its default type is scheduled for creation', () {
+      final plan = LibwalletBackend.planDefaultAccounts(
+        accounts: const [],
+        walletsById: {ed.id: ed, secp.id: secp},
+        alreadyEnsured: const {},
+      );
+      expect(plan.toCreate[ed.id], ['solana']);
+      expect(plan.toCreate[secp.id], ['ethereum']);
+      expect(plan.ensured, isEmpty);
+    });
+
+    test('a wallet that already has its default type is ensured, not created', () {
+      final plan = LibwalletBackend.planDefaultAccounts(
+        accounts: [
+          _account(id: 'a1', wallet: ed.id, type: 'solana'),
+          _account(id: 'a2', wallet: secp.id, type: 'ethereum'),
+        ],
+        walletsById: {ed.id: ed, secp.id: secp},
+        alreadyEnsured: const {},
+      );
+      expect(plan.toCreate, isEmpty);
+      expect(plan.ensured, {ed.id, secp.id});
+    });
+
+    test('an already-ensured wallet is skipped even when the list looks partial',
+        () {
+      // Simulates a transiently-partial accounts.list(): the default row is
+      // absent, but the persisted flag prevents a duplicate-creating backfill.
+      final plan = LibwalletBackend.planDefaultAccounts(
+        accounts: const [],
+        walletsById: {secp.id: secp},
+        alreadyEnsured: {secp.id},
+      );
+      expect(plan.toCreate, isEmpty);
+      expect(plan.ensured, {secp.id});
+    });
+
+    test('a wallet whose curve has no default types is ignored', () {
+      final unknown = _walletWithKeys([], id: 'x', curve: 'unknown');
+      final plan = LibwalletBackend.planDefaultAccounts(
+        accounts: const [],
+        walletsById: {unknown.id: unknown},
+        alreadyEnsured: const {},
+      );
+      expect(plan.toCreate, isEmpty);
+      expect(plan.ensured, isEmpty);
     });
   });
 }
