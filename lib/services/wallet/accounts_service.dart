@@ -268,7 +268,16 @@ class AccountsService extends ChangeNotifier {
       final targetNetworkId = networkId ?? acct.networkId;
       if (targetNetworkId != null) {
         await _libwallet.setCurrentNetwork(targetNetworkId);
-      } else if (cur == null || cur.type != networkTypeForChain(acct.chain)) {
+      } else if (cur == null ||
+          !accountMatchesNetwork(
+            acct,
+            cur.type,
+            networkChainId: cur.chainId,
+          )) {
+        // Compare on the account's specific chain, not just NetworkType: two
+        // bitcoin-family coins share NetworkType.bitcoin, so a type-only check
+        // would treat a BTC→LTC switch as a no-op and leave the wrong network
+        // active.
         try {
           final compatible = networksForAccount(
             acct,

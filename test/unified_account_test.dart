@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:libwallet/libwallet.dart' show Account, NetworkType, Wallet;
+import 'package:libwallet/libwallet.dart'
+    show Account, Network, NetworkType, Wallet;
 import 'package:tibaneapp/services/wallet/unified_account.dart';
 
 /// Unit tests for the account-centric model (Atonline-parity Phase 4b-1). The
@@ -47,6 +48,25 @@ Wallet _wallet({
   created: DateTime(2020),
   modified: DateTime(2020),
   keys: const [],
+);
+
+Network _network({
+  required String id,
+  required NetworkType type,
+  required String chainId,
+}) => Network(
+  id: id,
+  type: type,
+  chainId: chainId,
+  name: id,
+  rpc: '',
+  currencySymbol: '',
+  currencyDecimals: 8,
+  blockExplorer: '',
+  testNet: false,
+  priority: 0,
+  created: DateTime(2020),
+  updated: DateTime(2020),
 );
 
 void main() {
@@ -822,6 +842,20 @@ void main() {
         isFalse,
       );
       expect(accountMatchesNetwork(btc, NetworkType.evm), isFalse);
+    });
+    test('networksForAccount resolves a bitcoin account to its own coin only', () {
+      final btc = buildUnifiedAccounts(
+        inappAccounts: [_acct(id: 'b', wallet: 'w2', type: 'ethereum')],
+        walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+      ).firstWhere((a) => a.chain == 'bitcoin');
+      final networks = [
+        _network(id: 'btc-net', type: NetworkType.bitcoin, chainId: 'bitcoin'),
+        _network(id: 'ltc-net', type: NetworkType.bitcoin, chainId: 'litecoin'),
+        _network(id: 'doge-net', type: NetworkType.bitcoin, chainId: 'dogecoin'),
+      ];
+      // Not just any NetworkType.bitcoin network — only the account's own coin
+      // (guards the F6 regression where a BTC→LTC switch was a no-op).
+      expect(networksForAccount(btc, networks).map((n) => n.id), ['btc-net']);
     });
   });
 

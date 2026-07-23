@@ -34,21 +34,19 @@ Map<String, String> ensureAccountAvatarAssignments({
   required Map<String, String> existingAssignments,
   math.Random? random,
 }) {
-  final ids = accountIds.toList(growable: false);
   final allowedAssets = kAccountAvatarAssets.toSet();
-  final assignments = <String, String>{};
-  final used = <String>{};
-
-  for (final id in ids) {
-    final existing = existingAssignments[id];
-    if (existing != null && allowedAssets.contains(existing)) {
-      assignments[id] = existing;
-      used.add(existing);
-    }
-  }
+  // Additive: preserve every existing valid assignment (verify-before-delete —
+  // a transiently-partial account list must not orphan a stored choice), then
+  // fill in any account id that doesn't have one yet. Pruning stale entries is
+  // done only on an explicit account removal, never here on a refresh.
+  final assignments = <String, String>{
+    for (final entry in existingAssignments.entries)
+      if (allowedAssets.contains(entry.value)) entry.key: entry.value,
+  };
+  final used = assignments.values.toSet();
 
   final rng = random ?? math.Random();
-  for (final id in ids) {
+  for (final id in accountIds) {
     if (assignments.containsKey(id)) continue;
     final asset = pickAccountAvatarAsset(usedAssets: used, random: rng);
     assignments[id] = asset;

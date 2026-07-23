@@ -30,5 +30,33 @@ void main() {
       expect(assigned['eth'], isNotNull);
       expect(assigned['eth'], isNot(assigned['sol']));
     });
+
+    test('preserves assignments for ids absent from the current list', () {
+      // A transiently-partial account list (only 'sol' present) must NOT drop
+      // the stored choice for 'eth' — verify-before-delete (F3).
+      final assigned = ensureAccountAvatarAssignments(
+        accountIds: const ['sol'],
+        existingAssignments: const {
+          'sol': 'assets/account_pfps/account_pfp_01.png',
+          'eth': 'assets/account_pfps/account_pfp_02.png',
+        },
+        random: math.Random(1),
+      );
+
+      expect(assigned['sol'], 'assets/account_pfps/account_pfp_01.png');
+      expect(assigned['eth'], 'assets/account_pfps/account_pfp_02.png');
+    });
+
+    test('drops an existing assignment whose asset is no longer valid', () {
+      final assigned = ensureAccountAvatarAssignments(
+        accountIds: const ['sol'],
+        existingAssignments: const {'sol': 'assets/account_pfps/gone.png'},
+        random: math.Random(1),
+      );
+
+      // The stale asset is replaced with a valid one for the still-present id.
+      expect(assigned['sol'], isNot('assets/account_pfps/gone.png'));
+      expect(kAccountAvatarAssets.contains(assigned['sol']), isTrue);
+    });
   });
 }

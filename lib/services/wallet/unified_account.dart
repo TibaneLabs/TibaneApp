@@ -556,8 +556,15 @@ List<Network> networksForAccount(UnifiedAccount account, List<Network> all) {
     final exact = all.where((n) => n.id == networkId).toList();
     if (exact.isNotEmpty) return exact;
   }
-  final t = networkTypeForChain(account.chain);
-  return all.where((n) => n.type == t).toList();
+  // Match on the account's specific chain — not just NetworkType — so a
+  // bitcoin-family account (BTC/BCH/DOGE/LTC all share NetworkType.bitcoin)
+  // resolves only its own coin's network(s), never a sibling coin's.
+  return all
+      .where(
+        (n) =>
+            accountMatchesNetwork(account, n.type, networkChainId: n.chainId),
+      )
+      .toList();
 }
 
 /// Whether [networkType] matches [account]'s chain — i.e. the account is
