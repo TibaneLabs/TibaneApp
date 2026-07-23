@@ -525,16 +525,19 @@ class _CopyAddressButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A >=40px hit target (the icon stays small). InkResponse wins the hit test
+    // over the surrounding switch InkWell, so a copy tap never triggers a
+    // switch.
     return Tooltip(
       message: context.l10n.accountSwitcherCopyAddress,
       child: InkResponse(
-        radius: 14,
+        radius: 22,
         onTap: () => _copyAccountAddress(context, account),
         child: SizedBox(
-          width: 18,
-          height: 18,
+          width: 40,
+          height: 40,
           child: Center(
-            child: Icon(Icons.copy, size: 16.8, color: _accountMutedText),
+            child: Icon(Icons.copy, size: 17, color: _accountMutedText),
           ),
         ),
       ),
