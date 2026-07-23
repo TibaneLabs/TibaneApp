@@ -10,10 +10,7 @@ import 'package:tibaneapp/services/wallet/secure_keystore.dart';
 void main() {
   group('pickNextActive', () {
     test('returns the first remaining wallet that is not the removed one', () {
-      expect(
-        LibwalletBackend.pickNextActive(['A', 'B', 'C'], 'A'),
-        'B',
-      );
+      expect(LibwalletBackend.pickNextActive(['A', 'B', 'C'], 'A'), 'B');
     });
 
     test('skips the removed id wherever it sits in the list', () {
@@ -30,6 +27,20 @@ void main() {
 
     test('returns the first when the removed id is not present', () {
       expect(LibwalletBackend.pickNextActive(['A', 'B'], 'C'), 'A');
+    });
+
+    test('skips every removed id when removing a logical wallet group', () {
+      expect(
+        LibwalletBackend.pickNextActiveAfterRemoving(
+          ['A', 'B', 'C'],
+          {'A', 'B'},
+        ),
+        'C',
+      );
+      expect(
+        LibwalletBackend.pickNextActiveAfterRemoving(['A', 'B'], {'A', 'B'}),
+        isNull,
+      );
     });
   });
 

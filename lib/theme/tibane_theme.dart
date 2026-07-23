@@ -52,9 +52,12 @@ class TibaneColors {
   // Per-chain accent colors for labels/badges. Saturated brand hues chosen to
   // read clearly on the dark tile backgrounds (the muted-gray default washes
   // out). See [chainColor].
-  static const solana = Color(0xFF0E9E63); // Solana teal-green (deep)
+  static const solana = Color(0xFFA78BFA); // Solana lilac
   static const ethereum = Color(0xFF627EEA); // Ethereum brand blue
   static const bitcoin = Color(0xFFD9820A); // bitcoin orange (deep)
+  static const bitcoinCash = Color(0xFF34D7B1);
+  static const dogecoin = Color(0xFFC99722);
+  static const litecoin = Color(0xFF3B82C4);
 }
 
 /// Brand accent color for a chain `type` (`solana` / `ethereum` / `bitcoin`),
@@ -68,6 +71,12 @@ Color chainColor(String chain) {
       return TibaneColors.ethereum;
     case 'bitcoin':
       return TibaneColors.bitcoin;
+    case 'bitcoin-cash':
+      return TibaneColors.bitcoinCash;
+    case 'dogecoin':
+      return TibaneColors.dogecoin;
+    case 'litecoin':
+      return TibaneColors.litecoin;
     default:
       return TibaneColors.textMuted;
   }

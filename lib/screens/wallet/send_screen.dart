@@ -11,7 +11,9 @@ import '../../constants/solana_constants.dart';
 import '../../l10n/l10n.dart';
 import '../../services/balances_store.dart';
 import '../../services/jupiter_service.dart';
+import '../../services/solana_common.dart';
 import '../../services/wallet/send_asset.dart';
+import '../../services/wallet/unified_account.dart' show chainLabel;
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
@@ -56,6 +58,141 @@ String formatSendUsd(double v) {
 @visibleForTesting
 String formatSendAmountGrouped(double v, int decimals) =>
     formatAmountGrouped(v, maxDecimals: decimals);
+
+enum SendAddressFamily { solana, ethereum, bitcoin }
+
+@visibleForTesting
+SendAddressFamily? detectSendAddressFamily(String input) {
+  final address = input.trim();
+  if (address.isEmpty || address.contains('.')) return null;
+  if (RegExp(r'^0x[0-9a-fA-F]{40}$').hasMatch(address)) {
+    return SendAddressFamily.ethereum;
+  }
+  final lower = address.toLowerCase();
+  if (RegExp(
+    r'^(bc1|tb1|bcrt1|ltc1)[ac-hj-np-z02-9]{11,87}$',
+  ).hasMatch(lower)) {
+    return SendAddressFamily.bitcoin;
+  }
+  if (RegExp(r'^(bitcoincash|bchtest):[a-z0-9]{20,}$').hasMatch(lower)) {
+    return SendAddressFamily.bitcoin;
+  }
+  try {
+    final decoded = base58Decode(address);
+    if (decoded.length == 25 &&
+        const {
+          0, // Bitcoin/BCH legacy P2PKH
+          5, // Bitcoin/BCH legacy P2SH
+          22, // Dogecoin P2SH
+          30, // Dogecoin P2PKH
+          48, // Litecoin P2PKH
+          50, // Litecoin P2SH
+          58, // Litecoin testnet P2SH
+          111, // Bitcoin-family testnet P2PKH
+          113, // Dogecoin testnet P2PKH
+          196, // Bitcoin-family testnet P2SH
+        }.contains(decoded.first)) {
+      return SendAddressFamily.bitcoin;
+    }
+    if (decoded.length == 32) return SendAddressFamily.solana;
+  } catch (_) {
+    return null;
+  }
+  return null;
+}
+
+@visibleForTesting
+SendAddressFamily? sendAddressFamilyForAccountChain(String? chain) {
+  switch (chain) {
+    case 'solana':
+      return SendAddressFamily.solana;
+    case 'ethereum':
+    case 'evm':
+      return SendAddressFamily.ethereum;
+    case 'bitcoin':
+    case 'bitcoin-cash':
+    case 'dogecoin':
+    case 'litecoin':
+      return SendAddressFamily.bitcoin;
+    default:
+      return null;
+  }
+}
+
+/// A specific coin within the Bitcoin address family. [SendAddressFamily]
+/// collapses BTC/BCH/DOGE/LTC into a single `bitcoin` member; this enum keeps
+/// them apart for the send-side cross-coin guard (they share one secp256k1
+/// account but have distinct, incompatible address formats).
+enum BitcoinCoin { bitcoin, bitcoinCash, dogecoin, litecoin }
+
+/// The [BitcoinCoin] a bitcoin-family account [chain] denotes, or null when the
+/// chain isn't bitcoin-family.
+BitcoinCoin? bitcoinCoinForChain(String? chain) => switch (chain) {
+  'bitcoin' => BitcoinCoin.bitcoin,
+  'bitcoin-cash' => BitcoinCoin.bitcoinCash,
+  'dogecoin' => BitcoinCoin.dogecoin,
+  'litecoin' => BitcoinCoin.litecoin,
+  _ => null,
+};
+
+String _chainForBitcoinCoin(BitcoinCoin coin) => switch (coin) {
+  BitcoinCoin.bitcoin => 'bitcoin',
+  BitcoinCoin.bitcoinCash => 'bitcoin-cash',
+  BitcoinCoin.dogecoin => 'dogecoin',
+  BitcoinCoin.litecoin => 'litecoin',
+};
+
+/// The set of bitcoin-family coins [input] could be a valid recipient for.
+///
+/// bech32 (`bc1…`/`ltc1…`) and CashAddr (`bitcoincash:…`) carry a unique,
+/// self-describing prefix, so they resolve to exactly one coin. Legacy base58
+/// addresses are identified by version byte — but **Bitcoin and Bitcoin Cash
+/// legacy addresses share the same version bytes and are indistinguishable**,
+/// so a legacy P2PKH/P2SH resolves to `{bitcoin, bitcoinCash}`. Returns an
+/// empty set when [input] isn't a recognizable bitcoin-family address (the
+/// caller then leaves it to the server's `Transaction:validate`).
+@visibleForTesting
+Set<BitcoinCoin> bitcoinCoinsForAddress(String input) {
+  final lower = input.trim().toLowerCase();
+  if (lower.startsWith('bc1')) return const {BitcoinCoin.bitcoin};
+  if (lower.startsWith('ltc1')) return const {BitcoinCoin.litecoin};
+  if (lower.startsWith('bitcoincash:') || lower.startsWith('bchtest:')) {
+    return const {BitcoinCoin.bitcoinCash};
+  }
+  try {
+    final decoded = base58Decode(input.trim());
+    if (decoded.length == 25) {
+      switch (decoded.first) {
+        case 0: // P2PKH — BTC and BCH legacy are byte-identical here
+        case 5: // P2SH  — BTC and BCH legacy are byte-identical here
+          return const {BitcoinCoin.bitcoin, BitcoinCoin.bitcoinCash};
+        case 22: // Dogecoin P2SH
+        case 30: // Dogecoin P2PKH
+          return const {BitcoinCoin.dogecoin};
+        case 48: // Litecoin P2PKH
+        case 50: // Litecoin P2SH
+          return const {BitcoinCoin.litecoin};
+      }
+    }
+  } catch (_) {
+    return const {};
+  }
+  return const {};
+}
+
+@visibleForTesting
+SendAddressFamily? sendAddressFamilyForNetworkType(NetworkType? type) {
+  switch (type) {
+    case NetworkType.solana:
+      return SendAddressFamily.solana;
+    case NetworkType.evm:
+      return SendAddressFamily.ethereum;
+    case NetworkType.bitcoin:
+      return SendAddressFamily.bitcoin;
+    default:
+      return null;
+  }
+}
 
 class SendScreen extends StatefulWidget {
   /// Optional SPL mint to send instead of native SOL. When null the
@@ -118,7 +255,14 @@ class _SendScreenState extends State<SendScreen> {
   List<Asset> _assets = const [];
   bool _loadingHoldings = true;
 
-  bool get _isSolana => (_net?.type ?? NetworkType.solana) == NetworkType.solana;
+  SendAddressFamily _activeFamily(WalletService wallet) {
+    return sendAddressFamilyForNetworkType(_net?.type) ??
+        sendAddressFamilyForNetworkType(
+          wallet.libwallet.currentNetwork?.type,
+        ) ??
+        sendAddressFamilyForAccountChain(wallet.currentAccount?.chain) ??
+        SendAddressFamily.solana;
+  }
 
   @override
   void initState() {
@@ -154,7 +298,7 @@ class _SendScreenState extends State<SendScreen> {
 
   Future<void> _loadHoldings() async {
     final wallet = context.read<WalletService>();
-    final addr = wallet.publicKey;
+    final addr = wallet.publicKey ?? wallet.currentAccount?.address;
     if (addr == null) {
       if (mounted) setState(() => _loadingHoldings = false);
       return;
@@ -200,8 +344,9 @@ class _SendScreenState extends State<SendScreen> {
         // decimals (the fallback constant is authoritative here). The wSOL
         // price is fetched for the native-send USD estimate (SPL rows carry
         // their own priceUsd from the store).
-        final solPrice =
-            (await JupiterService().fetchTokenPrices([wsolMint]))[wsolMint];
+        final solPrice = (await JupiterService().fetchTokenPrices([
+          wsolMint,
+        ]))[wsolMint];
         if (!mounted) return;
         applyNative(fallbackDec, fallbackSym, () {
           _nativePriceUsd = solPrice;
@@ -294,12 +439,15 @@ class _SendScreenState extends State<SendScreen> {
       _decimals = decimals;
       _imageUrl = imageUrl;
       _amountCtrl.clear();
-      _error = null;    });
+      _error = null;
+    });
   }
 
   Future<void> _openTokenPicker(List<TokenHolding> holdings) async {
     if (_sending) return;
     final wallet = context.read<WalletService>();
+    final activeFamily = _activeFamily(wallet);
+    final isSolana = activeFamily == SendAddressFamily.solana;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -311,10 +459,10 @@ class _SendScreenState extends State<SendScreen> {
         holdings: holdings,
         loading: _loadingHoldings,
         nativeSymbol: _nativeSymbol,
-        nativeName: _isSolana ? 'Solana' : (_net?.name ?? _nativeSymbol),
+        nativeName: isSolana ? 'Solana' : (_net?.name ?? _nativeSymbol),
         nativeDecimals: _nativeDecimals,
         nativeUiBalance: _nativeUiBalance(wallet),
-        nativeIconMint: _isSolana ? wsolMint : '',
+        nativeIconMint: isSolana ? wsolMint : '',
         selectedMint: _mint,
         onSelect: (mint, symbol, decimals, imageUrl) {
           Navigator.pop(ctx);
@@ -337,16 +485,13 @@ class _SendScreenState extends State<SendScreen> {
     final looksLikeName =
         raw.contains('.') && !raw.startsWith('0x') && raw.length < 64;
     if (!looksLikeName) {
-      if (_resolvedAddress != null ||
-          _resolvingName != null ||
-          _resolveError != null) {
-        setState(() {
-          _resolvingName = null;
-          _resolvedAddress = null;
-          _resolvedName = null;
-          _resolveError = null;
-        });
-      }
+      _resolveDebounce?.cancel();
+      setState(() {
+        _resolvingName = null;
+        _resolvedAddress = null;
+        _resolvedName = null;
+        _resolveError = null;
+      });
       return;
     }
     if (raw == _resolvedName || raw == _resolvingName) return;
@@ -387,6 +532,80 @@ class _SendScreenState extends State<SendScreen> {
     }
   }
 
+  String _recipientAddressForValidation() {
+    final typed = _addrCtrl.text.trim();
+    if (typed == _resolvedName && _resolvedAddress != null) {
+      return _resolvedAddress!;
+    }
+    return typed;
+  }
+
+  String _familyLabel(AppLocalizations l10n, SendAddressFamily family) {
+    switch (family) {
+      case SendAddressFamily.solana:
+        return l10n.sendNetworkSolana;
+      case SendAddressFamily.ethereum:
+        return l10n.sendNetworkEthereum;
+      case SendAddressFamily.bitcoin:
+        return l10n.sendNetworkBitcoin;
+    }
+  }
+
+  String _recipientHelper(AppLocalizations l10n, SendAddressFamily family) {
+    switch (family) {
+      case SendAddressFamily.solana:
+        return l10n.sendRecipientHelperSolana;
+      case SendAddressFamily.ethereum:
+        return l10n.sendRecipientHelperEthereum;
+      case SendAddressFamily.bitcoin:
+        return l10n.sendRecipientHelperNetwork(_activeNetworkName(l10n));
+    }
+  }
+
+  String _activeNetworkName(AppLocalizations l10n) {
+    final net = _net;
+    if (net != null && net.name.isNotEmpty) return net.name;
+    final current = context.read<WalletService>().currentAccount;
+    return current?.networkName ??
+        current?.networkSymbol ??
+        _familyLabel(l10n, SendAddressFamily.bitcoin);
+  }
+
+  String? _recipientNetworkWarning(
+    AppLocalizations l10n,
+    SendAddressFamily activeFamily,
+  ) {
+    final recipient = _recipientAddressForValidation();
+    final detected = detectSendAddressFamily(recipient);
+    // Cross-family mismatch (e.g. a Solana address on an Ethereum account).
+    if (detected != null && detected != activeFamily) {
+      return l10n.sendRecipientWrongNetwork(
+        _familyLabel(l10n, detected),
+        activeFamily == SendAddressFamily.bitcoin
+            ? _activeNetworkName(l10n)
+            : _familyLabel(l10n, activeFamily),
+      );
+    }
+    // Within the Bitcoin family (BTC/BCH/DOGE/LTC all map to one
+    // SendAddressFamily.bitcoin) the family check can't tell the coins apart.
+    // Guard at the coin level: block a recipient that is provably a *different*
+    // bitcoin-family coin than the active account. The BTC/BCH legacy pair is
+    // byte-identical and stays ambiguous — left to the server's validate.
+    final activeCoin = bitcoinCoinForChain(
+      context.read<WalletService>().currentAccount?.chain,
+    );
+    if (activeCoin != null) {
+      final possible = bitcoinCoinsForAddress(recipient);
+      if (possible.isNotEmpty && !possible.contains(activeCoin)) {
+        return l10n.sendRecipientWrongNetwork(
+          chainLabel(_chainForBitcoinCoin(possible.first)),
+          _activeNetworkName(l10n),
+        );
+      }
+    }
+    return null;
+  }
+
   Future<void> _setMax() async {
     final wallet = context.read<WalletService>();
     try {
@@ -417,12 +636,23 @@ class _SendScreenState extends State<SendScreen> {
   );
 
   Future<void> _send() async {
+    final wallet = context.read<WalletService>();
+    final activeFamily = _activeFamily(wallet);
+    final networkWarning = _recipientNetworkWarning(context.l10n, activeFamily);
+    if (networkWarning != null) {
+      setState(() => _error = networkWarning);
+      return;
+    }
     final typed = _addrCtrl.text.trim();
     // If the user typed a name that resolved, use the resolved address.
     final addr = (typed == _resolvedName && _resolvedAddress != null)
         ? _resolvedAddress!
         : typed;
-    if (addr.length < 32) {
+    // Reject anything that isn't a recognizable address for a supported chain.
+    // (Replaces a `length < 32` heuristic that false-rejected short legacy
+    // Bitcoin P2PKH addresses.) The server's validate is the authoritative
+    // network-specific check.
+    if (detectSendAddressFamily(addr) == null) {
       setState(() => _error = context.l10n.sendInvalidRecipient);
       return;
     }
@@ -441,10 +671,10 @@ class _SendScreenState extends State<SendScreen> {
     // keys come out.
     setState(() {
       _sending = true;
-      _error = null;    });
+      _error = null;
+    });
     TransactionSimulation? sim;
     try {
-      final wallet = context.read<WalletService>();
       sim = await wallet.libwallet.simulateSend(
         to: addr,
         amount: amount,
@@ -488,7 +718,6 @@ class _SendScreenState extends State<SendScreen> {
       _error = null;
     });
 
-    final wallet = context.read<WalletService>();
     try {
       final tx = await wallet.libwallet.sendWithKeys(
         to: addr,
@@ -505,7 +734,7 @@ class _SendScreenState extends State<SendScreen> {
       // Replace the form with a full-screen success view (From / To / tx +
       // explorer link + share). Its own buttons own the return navigation.
       _showSuccessScreen(
-        from: wallet.publicKey,
+        from: wallet.currentAccount?.address ?? wallet.publicKey,
         to: addr,
         hash: tx.hash,
         amountUi: amountFloat,
@@ -551,6 +780,8 @@ class _SendScreenState extends State<SendScreen> {
     TransactionSimulation sim,
     String? recipientName,
   ) {
+    final activeFamily = _activeFamily(context.read<WalletService>());
+    final isSolana = activeFamily == SendAddressFamily.solana;
     return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -567,7 +798,7 @@ class _SendScreenState extends State<SendScreen> {
         imageUrl: _imageUrl,
         // Native SOL resolves its bundled logo via wsolMint; other chains'
         // natives fall back to the symbol placeholder. Mirrors _TokenSelector.
-        iconMint: _mint ?? (_isSolana ? wsolMint : ''),
+        iconMint: _mint ?? (isSolana ? wsolMint : ''),
         net: _net,
         sim: sim,
       ),
@@ -615,9 +846,15 @@ class _SendScreenState extends State<SendScreen> {
     final l10n = context.l10n;
     final wallet = context.watch<WalletService>();
     final store = context.watch<BalancesStore>();
+    final activeFamily = _activeFamily(wallet);
+    final isSolana = activeFamily == SendAddressFamily.solana;
+    final recipientNetworkWarning = _recipientNetworkWarning(
+      l10n,
+      activeFamily,
+    );
     // Solana SPL rows come from the shared store; non-Solana tokens are the
     // getAssets-derived rows loaded locally in _loadHoldings.
-    final holdings = _isSolana ? store.holdings : _holdings;
+    final holdings = isSolana ? store.holdings : _holdings;
     final selectedBalance = _selectedBalance(wallet, holdings);
     final price = _selectedPriceUsd(holdings);
     final amountUi = parseAmount(_amountCtrl.text);
@@ -637,7 +874,7 @@ class _SendScreenState extends State<SendScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _TokenSelector(
-                  iconMint: _mint ?? (_isSolana ? wsolMint : ''),
+                  iconMint: _mint ?? (isSolana ? wsolMint : ''),
                   symbol: _symbol,
                   imageUrl: _imageUrl,
                   loading: _loadingHoldings,
@@ -651,7 +888,7 @@ class _SendScreenState extends State<SendScreen> {
                   decoration: InputDecoration(
                     labelText: l10n.sendRecipientLabel,
                     labelStyle: const TextStyle(color: TibaneColors.textMuted),
-                    helperText: l10n.sendRecipientHelper,
+                    helperText: _recipientHelper(l10n, activeFamily),
                     suffixIcon: IconButton(
                       icon: const Icon(Icons.paste, size: 18),
                       onPressed: _sending
@@ -685,6 +922,28 @@ class _SendScreenState extends State<SendScreen> {
                         style: const TextStyle(
                           color: TibaneColors.textMuted,
                           fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else if (recipientNetworkWarning != null) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        color: TibaneColors.warning,
+                        size: 15,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          recipientNetworkWarning,
+                          style: const TextStyle(
+                            color: TibaneColors.warning,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     ],
@@ -733,7 +992,10 @@ class _SendScreenState extends State<SendScreen> {
                     labelStyle: const TextStyle(color: TibaneColors.textMuted),
                     suffixIcon: TextButton(
                       onPressed: _sending ? null : _setMax,
-                      child: Text(l10n.sendMax, style: const TextStyle(fontSize: 12)),
+                      child: Text(
+                        l10n.sendMax,
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     ),
                   ),
                 ),
@@ -742,7 +1004,10 @@ class _SendScreenState extends State<SendScreen> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: Text(
-                      l10n.sendBalanceLabel(_fmtBalance(selectedBalance), _symbol),
+                      l10n.sendBalanceLabel(
+                        _fmtBalance(selectedBalance),
+                        _symbol,
+                      ),
                       style: const TextStyle(
                         color: TibaneColors.textMuted,
                         fontSize: 12,
@@ -775,7 +1040,9 @@ class _SendScreenState extends State<SendScreen> {
                 ],
                 const Spacer(),
                 FilledButton(
-                  onPressed: _sending ? null : _send,
+                  onPressed: _sending || recipientNetworkWarning != null
+                      ? null
+                      : _send,
                   style: FilledButton.styleFrom(
                     backgroundColor: TibaneColors.orange,
                     foregroundColor: TibaneColors.black,
@@ -857,15 +1124,15 @@ class _SendReviewSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              l10n.sendReviewTitle,
-              style: context.textTheme.titleLarge,
-            ),
+            Text(l10n.sendReviewTitle, style: context.textTheme.titleLarge),
             const SizedBox(height: 6),
             Text(
               l10n.sendReviewSubtitle,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+              style: const TextStyle(
+                color: TibaneColors.textMuted,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 28),
             // Token logo with a soft brand glow.
@@ -901,7 +1168,10 @@ class _SendReviewSheet extends StatelessWidget {
             const SizedBox(height: 24),
             Text(
               l10n.labelTo,
-              style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+              style: const TextStyle(
+                color: TibaneColors.textMuted,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 8),
             _recipientPill(recipientName ?? l10n.sendRecipientPill),
@@ -1103,9 +1373,7 @@ class _SendSuccessScreen extends StatelessWidget {
     } catch (e) {
       logError('[SendSuccess._share] share error: $e');
       if (!context.mounted) return;
-      context.showSnackBar(
-        SnackBar(content: Text(l10n.sendShareFailed)),
-      );
+      context.showSnackBar(SnackBar(content: Text(l10n.sendShareFailed)));
     }
   }
 
@@ -1113,7 +1381,9 @@ class _SendSuccessScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final url = explorerTxUrl(net, txHash);
-    final exName = net == null ? null : explorerNameFor(net!.type, net!.chainId);
+    final exName = net == null
+        ? null
+        : explorerNameFor(net!.type, net!.chainId);
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: Text(l10n.sendTitle(symbol))),
@@ -1164,7 +1434,8 @@ class _SendSuccessScreen extends StatelessWidget {
                       icon: Icons.south_west,
                       label: l10n.labelTo,
                       value: toAddress,
-                      onTap: () => copyWithToast(context, toAddress, l10n.labelAddress),
+                      onTap: () =>
+                          copyWithToast(context, toAddress, l10n.labelAddress),
                     ),
                     const SizedBox(height: 12),
                     txReceiptCard(
@@ -1420,10 +1691,7 @@ class _SendTokenPicker extends StatelessWidget {
       ),
       title: Row(
         children: [
-          Text(
-            symbol,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
+          Text(symbol, style: const TextStyle(fontWeight: FontWeight.w600)),
           if (selected) ...[
             const SizedBox(width: 6),
             const Icon(Icons.check, size: 14, color: TibaneColors.cyan),
@@ -1443,10 +1711,7 @@ class _SendTokenPicker extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Text(
-            _formatBalance(uiBalance),
-            style: monoStyle(fontSize: 12),
-          ),
+          Text(_formatBalance(uiBalance), style: monoStyle(fontSize: 12)),
           if (valueUsd != null)
             Text(
               '\$${valueUsd.toStringAsFixed(2)}',

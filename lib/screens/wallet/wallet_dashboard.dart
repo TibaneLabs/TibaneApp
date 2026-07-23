@@ -174,10 +174,13 @@ class _WalletDashboardState extends State<WalletDashboard> {
                     ? networkLogoAsset(net)
                     : null;
                 // Resolve the on-chain mint to push to TokenDetailScreen.
-                // Native rows (SOL, ETH, etc.) carry a synthetic ".NATIVE"
-                // sentinel and don't get a token-info page — leave them
-                // non-tappable.
-                final detailMint = isNativeRow ? null : h.mint;
+                // Native SOL opens a compact SOL detail page through wSOL's
+                // mint; native rows for other chains stay non-tappable.
+                final detailMint = isSolanaNative
+                    ? wsolMint
+                    : isNativeRow
+                    ? null
+                    : h.mint;
                 // The mint we hand to TokenIcon: for Solana-native, use
                 // wsolMint so the bundled sol.png wins; otherwise pass
                 // the row's mint untouched (synthetic `.NATIVE` sentinel
@@ -547,13 +550,18 @@ class _ActionButton extends StatelessWidget {
                     color: TibaneColors.orange.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, color: TibaneColors.orange, size: 20),
+                  child: Icon(icon, color: TibaneColors.orange, size: 26.5),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   label,
-                  style: const TextStyle(
-                    fontSize: 13,
+                  style: TextStyle(
+                    color: Color.lerp(
+                      TibaneColors.textMuted,
+                      TibaneColors.text,
+                      0.10,
+                    ),
+                    fontSize: 16.4,
                     fontWeight: FontWeight.w500,
                   ),
                 ),

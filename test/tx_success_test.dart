@@ -36,13 +36,25 @@ void main() {
   });
 
   group('explorerNameFor', () {
-    test('maps known chains, null otherwise', () {
+    test('uses Solscan for Solana and the existing EVM explorers', () {
       expect(explorerNameFor(NetworkType.solana, 'mainnet'), 'Solscan');
       expect(explorerNameFor(NetworkType.evm, '1'), 'Etherscan');
       expect(explorerNameFor(NetworkType.evm, '56'), 'BscScan');
       expect(explorerNameFor(NetworkType.evm, '137'), 'Polygonscan');
       expect(explorerNameFor(NetworkType.evm, '8453'), isNull);
       expect(explorerNameFor(NetworkType.bitcoin, ''), isNull);
+    });
+  });
+
+  group('Solscan URL helpers', () {
+    test('builds Solscan transaction, account and token URLs', () {
+      expect(solscanTxUrl('abc'), 'https://solscan.io/tx/abc');
+      expect(solscanAccountUrl('holder'), 'https://solscan.io/account/holder');
+      expect(solscanTokenUrl('mint'), 'https://solscan.io/token/mint');
+      expect(
+        solscanTokenUrl('mint', holders: true),
+        'https://solscan.io/token/mint#holders',
+      );
     });
   });
 }

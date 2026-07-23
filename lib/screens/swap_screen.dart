@@ -111,7 +111,6 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   int _slippageBps = 100;
   static const _slippagePresets = <int>[50, 100, 300];
 
-
   // Cached `maxSpendable` (UI units) for the current native-SOL input + the
   // mint it was computed for. The displayed SOL holding is over-reserved (a
   // flat 0.01 SOL via Jupiter's fetchHoldings) vs libwallet's precise
@@ -136,7 +135,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     final wallet = context.read<WalletService>();
     final isSolanaNet =
         (wallet.libwallet.currentNetwork?.type ?? lw.NetworkType.solana) ==
-            lw.NetworkType.solana;
+        lw.NetworkType.solana;
 
     // Default output: ChiefPussy on Solana (Tibane's featured token, and only
     // valid there — it's an SPL token). On other chains leave the output unset
@@ -482,7 +481,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   /// native asset (mint = the OKX `'NATIVE'` sentinel) + each token (mint = its
   /// contract), with real on-chain decimals. Jupiter is Solana-only, so this is
   /// the EVM/other-chain equivalent.
-  Future<List<TokenHolding>> _holdingsFromLibwallet(WalletService wallet) async {
+  Future<List<TokenHolding>> _holdingsFromLibwallet(
+    WalletService wallet,
+  ) async {
     final net = wallet.libwallet.currentNetwork;
     final assets = await wallet.libwallet.getAssets();
     final out = <TokenHolding>[];
@@ -521,10 +522,11 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     // the Max value (and let a manual near-max amount revert on-chain as 0xb).
     final isNativeSol = _selectedInput!.mint == wsolMint;
     final ceiling =
-        (isNativeSol && _maxSpendableUi != null &&
-                _maxSpendableForMint == _selectedInput!.mint)
-            ? _maxSpendableUi!
-            : _selectedInput!.uiBalance;
+        (isNativeSol &&
+            _maxSpendableUi != null &&
+            _maxSpendableForMint == _selectedInput!.mint)
+        ? _maxSpendableUi!
+        : _selectedInput!.uiBalance;
     if (amountFloat > ceiling) {
       debugPrint(
         '[swap.validate] EXCEEDS amount=$amountFloat ceiling=$ceiling '
@@ -533,9 +535,11 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         'symbol=${_selectedInput!.symbol} dec=${_selectedInput!.decimals}',
       );
       final l10n = context.l10n;
-      setState(() => _quoteError = isNativeSol && _maxSpendableUi != null
-          ? l10n.swapExceedsSpendableMax
-          : l10n.swapExceedsBalance);
+      setState(
+        () => _quoteError = isNativeSol && _maxSpendableUi != null
+            ? l10n.swapExceedsSpendableMax
+            : l10n.swapExceedsBalance,
+      );
       return;
     }
 
@@ -607,10 +611,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         address: inTokenAddr,
         decimals: _selectedInput!.decimals,
       ),
-      tokenOut: SwapTokenRef(
-        address: outTokenAddr,
-        decimals: _outputDecimals,
-      ),
+      tokenOut: SwapTokenRef(address: outTokenAddr, decimals: _outputDecimals),
       amountIn: rawAmount.toString(),
       slippageBps: _slippageBps,
     );
@@ -795,13 +796,15 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
           final st = await _confirmOkxOrder(wallet, result.orderId);
           if (!mounted) return;
           if (st == null || !st.success) {
-            setState(() => _error = st != null && st.failed
-                ? 'Swap failed${st.reason.isNotEmpty ? ': ${st.reason}' : ''} '
-                    '— your funds were not moved.'
-                : st != null && st.pending
-                    ? 'Swap is still pending after 40s — check the explorer '
+            setState(
+              () => _error = st != null && st.failed
+                  ? 'Swap failed${st.reason.isNotEmpty ? ': ${st.reason}' : ''}. '
+                        'Your funds were not moved.'
+                  : st != null && st.pending
+                  ? 'Swap is still pending after 40s. Check the explorer '
                         'before retrying so you don’t double-spend.'
-                    : l10n.swapNotConfirmed);
+                  : l10n.swapNotConfirmed,
+            );
             return;
           }
           if (st.txHash.isNotEmpty) signature = st.txHash;
@@ -967,7 +970,10 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     );
   }
 
-  Future<String> _executeSwapJupiter(WalletService wallet, BatchAuth auth) async {
+  Future<String> _executeSwapJupiter(
+    WalletService wallet,
+    BatchAuth auth,
+  ) async {
     final q = _jupiterQuote!;
     final txBytes = base64Decode(q.transaction);
     final signedBytes = await signOne(
@@ -1013,8 +1019,10 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   /// no EVM RPC client in-app to check the receipt directly). Returns a record
   /// of the final state, or null on error / empty orderId. (libwallet 0.4.73
   /// doesn't export the `SwapOrderStatus` type, so we map it to a record.)
-  Future<({bool success, bool pending, bool failed, String txHash, String reason})?>
-      _confirmOkxOrder(WalletService wallet, String orderId) async {
+  Future<
+    ({bool success, bool pending, bool failed, String txHash, String reason})?
+  >
+  _confirmOkxOrder(WalletService wallet, String orderId) async {
     if (orderId.isEmpty) return null;
     try {
       final client = await wallet.libwallet.ensureClient();
@@ -1359,7 +1367,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
               const Spacer(),
               if (_selectedInput != null)
                 Text(
-                  l10n.commonBalanceLabel(_formatBalance(_selectedInput!.uiBalance)),
+                  l10n.commonBalanceLabel(
+                    _formatBalance(_selectedInput!.uiBalance),
+                  ),
                   style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
             ],
@@ -1419,7 +1429,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                             ),
                           const SizedBox(width: 8),
                           Text(
-                            _loadingHoldings ? l10n.swapLoadingTokens : l10n.swapSelectToken,
+                            _loadingHoldings
+                                ? l10n.swapLoadingTokens
+                                : l10n.swapSelectToken,
                             style: TextStyle(color: TibaneColors.textMuted),
                           ),
                         ],
@@ -1590,7 +1602,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
   Widget _buildQuoteDetails(AppLocalizations l10n) {
     if (_lwQuote != null) return _buildLwQuoteDetails(_lwQuote!, l10n);
-    if (_jupiterQuote != null) return _buildJupiterQuoteDetails(_jupiterQuote!, l10n);
+    if (_jupiterQuote != null) {
+      return _buildJupiterQuoteDetails(_jupiterQuote!, l10n);
+    }
     return const SizedBox.shrink();
   }
 
@@ -1672,9 +1686,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
   Future<void> _promptCustomSlippage() async {
     final l10n = context.l10n;
-    final ctrl = TextEditingController(
-      text: (_slippageBps / 100).toString(),
-    );
+    final ctrl = TextEditingController(text: (_slippageBps / 100).toString());
     final bps = await showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1726,10 +1738,17 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         if (q.inUsdValue != null)
           _quoteRow(l10n.swapYouPay, '\$${q.inUsdValue!.toStringAsFixed(2)}'),
         if (q.outUsdValue != null)
-          _quoteRow(l10n.swapYouReceive, '\$${q.outUsdValue!.toStringAsFixed(2)}'),
+          _quoteRow(
+            l10n.swapYouReceive,
+            '\$${q.outUsdValue!.toStringAsFixed(2)}',
+          ),
         _quoteRow(l10n.swapPriceImpact, '${q.priceImpactPct}%'),
         if (q.gasless)
-          _quoteRow(l10n.swapGas, l10n.swapGasless, valueColor: TibaneColors.cyan),
+          _quoteRow(
+            l10n.swapGas,
+            l10n.swapGasless,
+            valueColor: TibaneColors.cyan,
+          ),
         _quoteRow(l10n.swapFee, '0.5%'),
       ],
     );
@@ -2088,7 +2107,9 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
       final meta = await rpc.getAsset(mint);
       if (!mounted) return;
       if (meta == null) {
-        context.showSnackBar(SnackBar(content: Text(context.l10n.tokenNotFound)));
+        context.showSnackBar(
+          SnackBar(content: Text(context.l10n.tokenNotFound)),
+        );
         return;
       }
       widget.onSelect(
@@ -2155,94 +2176,98 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
               onMintSubmitted: _selectByMint,
               emptyBody: widget.isSolana
                   ? ListView(
-                controller: scrollController,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                    child: Text(
-                      l10n.swapPopular,
-                      style: monoStyle(
-                        fontSize: 10,
-                        color: TibaneColors.textDim,
-                      ),
-                    ),
-                  ),
-                  for (final token in commonTokens)
-                    ListTile(
-                      leading: TokenIcon(
-                        imageUrl: token.imageUrl,
-                        mint: token.mint,
-                        symbol: token.symbol,
-                        size: 36,
-                      ),
-                      title: Text(
-                        token.symbol,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        token.name,
-                        style: TextStyle(
-                          color: TibaneColors.textMuted,
-                          fontSize: 12,
-                        ),
-                      ),
-                      onTap: () {
-                        // SOL=9, USDC/USDT/pump=6
-                        final decimals = token.mint == wsolMint ? 9 : 6;
-                        widget.onSelect(
-                          token.mint,
-                          token.symbol,
-                          token.name,
-                          token.imageUrl,
-                          decimals,
-                        );
-                      },
-                    ),
-                  if (favorites.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                      child: Text(
-                        l10n.swapFavorites,
-                        style: monoStyle(
-                          fontSize: 10,
-                          color: TibaneColors.textDim,
-                        ),
-                      ),
-                    ),
-                    for (final fav in favorites)
-                      // Skip if already in common tokens.
-                      if (!commonTokens.any((c) => c.mint == fav.mint))
-                        ListTile(
-                          leading: TokenIcon(
-                            imageUrl: fav.imageUrl,
-                            mint: fav.mint,
-                            symbol: fav.symbol ?? '?',
-                            size: 36,
-                          ),
-                          title: Text(
-                            fav.symbol ?? shortenAddress(fav.mint),
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Text(
-                            fav.name ?? fav.mint,
-                            style: TextStyle(
-                              color: TibaneColors.textMuted,
-                              fontSize: 12,
+                      controller: scrollController,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                          child: Text(
+                            l10n.swapPopular,
+                            style: monoStyle(
+                              fontSize: 10,
+                              color: TibaneColors.textDim,
                             ),
                           ),
-                          onTap: () {
-                            widget.onSelect(
-                              fav.mint,
-                              fav.symbol ?? shortenAddress(fav.mint),
-                              fav.name ?? fav.mint,
-                              fav.imageUrl,
-                              6,
-                            );
-                          },
                         ),
-                  ],
-                ],
-              )
+                        for (final token in commonTokens)
+                          ListTile(
+                            leading: TokenIcon(
+                              imageUrl: token.imageUrl,
+                              mint: token.mint,
+                              symbol: token.symbol,
+                              size: 36,
+                            ),
+                            title: Text(
+                              token.symbol,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              token.name,
+                              style: TextStyle(
+                                color: TibaneColors.textMuted,
+                                fontSize: 12,
+                              ),
+                            ),
+                            onTap: () {
+                              // SOL=9, USDC/USDT/pump=6
+                              final decimals = token.mint == wsolMint ? 9 : 6;
+                              widget.onSelect(
+                                token.mint,
+                                token.symbol,
+                                token.name,
+                                token.imageUrl,
+                                decimals,
+                              );
+                            },
+                          ),
+                        if (favorites.isNotEmpty) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                            child: Text(
+                              l10n.swapFavorites,
+                              style: monoStyle(
+                                fontSize: 10,
+                                color: TibaneColors.textDim,
+                              ),
+                            ),
+                          ),
+                          for (final fav in favorites)
+                            // Skip if already in common tokens.
+                            if (!commonTokens.any((c) => c.mint == fav.mint))
+                              ListTile(
+                                leading: TokenIcon(
+                                  imageUrl: fav.imageUrl,
+                                  mint: fav.mint,
+                                  symbol: fav.symbol ?? '?',
+                                  size: 36,
+                                ),
+                                title: Text(
+                                  fav.symbol ?? shortenAddress(fav.mint),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  fav.name ?? fav.mint,
+                                  style: TextStyle(
+                                    color: TibaneColors.textMuted,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                onTap: () {
+                                  widget.onSelect(
+                                    fav.mint,
+                                    fav.symbol ?? shortenAddress(fav.mint),
+                                    fav.name ?? fav.mint,
+                                    fav.imageUrl,
+                                    6,
+                                  );
+                                },
+                              ),
+                        ],
+                      ],
+                    )
                   : _evmEmptyBody(scrollController),
             ),
           ),
@@ -2263,7 +2288,9 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: Text(
-            tokens.isEmpty ? l10n.swapPasteTokenAddressAbove : l10n.swapYourTokens,
+            tokens.isEmpty
+                ? l10n.swapPasteTokenAddressAbove
+                : l10n.swapYourTokens,
             style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
           ),
         ),
@@ -2286,8 +2313,13 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
                 fontSize: 12,
               ),
             ),
-            onTap: () =>
-                widget.onSelect(h.mint, h.symbol, h.name, h.imageUrl, h.decimals),
+            onTap: () => widget.onSelect(
+              h.mint,
+              h.symbol,
+              h.name,
+              h.imageUrl,
+              h.decimals,
+            ),
           ),
       ],
     );
@@ -2417,7 +2449,10 @@ class _SwapReviewSheet extends StatelessWidget {
             Text(
               l10n.swapReviewSubtitle,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
+              style: const TextStyle(
+                color: TibaneColors.textMuted,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 28),
             _swapPairRow(
@@ -2560,7 +2595,9 @@ class _SwapSuccessScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final url = explorerTxUrl(net, signature);
-    final exName = net == null ? null : explorerNameFor(net!.type, net!.chainId);
+    final exName = net == null
+        ? null
+        : explorerNameFor(net!.type, net!.chainId);
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: Text(l10n.swapButton)),
@@ -2666,7 +2703,10 @@ class _SwapUnavailableInRegion extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               context.l10n.swapUkUnavailableBody,
-              style: const TextStyle(color: TibaneColors.textMuted, height: 1.5),
+              style: const TextStyle(
+                color: TibaneColors.textMuted,
+                height: 1.5,
+              ),
               textAlign: TextAlign.center,
             ),
           ],

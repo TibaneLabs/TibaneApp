@@ -222,11 +222,10 @@ class WalletService extends ChangeNotifier {
     _kind = _parseKind(prefs.getString('wallet_backend'));
     await _mwa.tryRestore();
     await _libwallet.tryRestore();
-    // libwallet's built-in default is Ethereum mainnet, so a fresh
-    // install (no wallet, no explicit pick) shows the wrong network
-    // chip on the dashboard. Normalize to Solana mainnet on every
-    // cold start — ensureSolanaDefault no-ops once the user has
-    // explicitly picked a network via NetworksScreen.
+    // libwallet's built-in default is Ethereum mainnet, so a fresh install can
+    // boot into the wrong family before an account is active. Normalize to
+    // Solana mainnet on cold start; account switches still move libwallet to a
+    // compatible default network for the selected account family.
     unawaited(_libwallet.ensureSolanaDefault());
     // A persisted `mwa` selection with no restored MWA session would leave the
     // app stuck on "Connect" despite an in-app wallet being present — fall back.
@@ -312,16 +311,21 @@ class WalletService extends ChangeNotifier {
     required String walletId,
     required String name,
     required String type,
+    String? preferredChain,
+    String? avatarAsset,
   }) async {
     final acct = await _accountsService.createAccount(
       walletId: walletId,
       name: name,
       type: type,
+      preferredChain: preferredChain,
+      avatarAsset: avatarAsset,
     );
     if (acct == null) return false;
     await refreshAccounts();
     for (final a in _accountsService.accounts) {
-      if (a.accountId == acct.id) {
+      if (a.accountId == acct.id &&
+          (preferredChain == null || a.chain == preferredChain)) {
         await setCurrentAccount(a);
         break;
       }
@@ -340,7 +344,13 @@ class WalletService extends ChangeNotifier {
     if (acct.isMwa) await _setKind(WalletKind.mwa);
     final ok = await _accountsService.setCurrent(acct, networkId: networkId);
     if (!ok) return false;
-    if (acct.isInApp) await _setKind(WalletKind.inapp);
+    if (acct.isInApp) {
+      await _setKind(WalletKind.inapp);
+      // Rebuild the selected account after libwallet has switched network /
+      // account so address fields are rendered in the active chain context
+      // (especially Bitcoin, whose receive address is network-shaped).
+      await refreshAccounts();
+    }
     if (isConnected) refreshBalances();
     notifyListeners();
     return true;
@@ -527,9 +537,9 @@ class WalletService extends ChangeNotifier {
       );
       return;
     }
-    // The dashboard fires this from initState before NetworkChip /
-    // ensureSolanaDefault populate the cached network, so `currentNetwork`
-    // is null on first launch and the discovery would silently skip.
+    // The dashboard fires this from initState before ensureSolanaDefault
+    // populates the cached network, so `currentNetwork` is null on first launch
+    // and the discovery would silently skip.
     // Resolve it now so the gate uses the actual libwallet state.
     final net =
         _libwallet.currentNetwork ?? await _libwallet.refreshCurrentNetwork();
@@ -581,7 +591,7 @@ class WalletService extends ChangeNotifier {
         }
         debugPrint(
           '[holdings]   missing: ${entry.key} '
-          '(decimals=${entry.value.decimals} type=${entry.value.type}) — '
+          '(decimals=${entry.value.decimals} type=${entry.value.type}). '
           'registering…',
         );
         final added = await _libwallet.ensureTokenTracked(
@@ -743,6 +753,10 @@ class WalletService extends ChangeNotifier {
       // NOTE: a live WalletConnect bridge still exposes the previous account;
       // emitting accountsChanged to dApps on switch is tracked separately.
       resetSessionState();
+      if (addr == null) {
+        _assets = const [];
+        _dataReady = true;
+      }
     }
     notifyListeners();
   }

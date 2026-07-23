@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:libwallet/libwallet.dart' show NetworkType;
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../l10n/l10n.dart';
+import '../../services/wallet/unified_account.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import 'btc_addresses_screen.dart';
@@ -17,8 +19,10 @@ class ReceiveScreen extends StatefulWidget {
 }
 
 class _ReceiveScreenState extends State<ReceiveScreen> {
-  String? _type;
+  NetworkType? _networkType;
   String? _accountId;
+  String? _networkId;
+  String? _networkName;
   bool _loadingType = true;
 
   @override
@@ -27,11 +31,27 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     _resolveAccountType();
   }
 
-  /// Look up the active account's chain type so we can pick the right
-  /// receive flow. Bitcoin gets a dedicated HD address screen; everything
-  /// else falls back to the single-address QR view.
+  /// Look up the active network family so we can pick the right receive flow.
+  /// Bitcoin is a network context, not a separate app account, so it gets the
+  /// dedicated HD address screen when the current network is Bitcoin.
   Future<void> _resolveAccountType() async {
     final wallet = context.read<WalletService>();
+    final current = wallet.currentAccount;
+    final net =
+        await wallet.libwallet.refreshCurrentNetwork() ??
+        wallet.libwallet.currentNetwork;
+    if (current != null) {
+      if (!mounted) return;
+      setState(() {
+        _networkType = net?.type;
+        _accountId = current.accountId;
+        _networkId = current.networkId ?? net?.id;
+        _networkName =
+            current.networkName ?? current.networkSymbol ?? net?.name;
+        _loadingType = false;
+      });
+      return;
+    }
     final acctId = wallet.libwallet.accountId;
     if (acctId == null) {
       if (!mounted) return;
@@ -43,8 +63,10 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
       final acct = await client.accounts.get(acctId);
       if (!mounted) return;
       setState(() {
-        _type = acct.type;
+        _networkType = net?.type ?? networkTypeForChain(acct.type);
         _accountId = acct.id;
+        _networkId = net?.id;
+        _networkName = net?.name;
         _loadingType = false;
       });
     } catch (_) {
@@ -65,15 +87,38 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
         ),
       );
     }
-    if (_type == 'bitcoin' && _accountId != null) {
-      return BtcAddressesScreen(accountId: _accountId!);
+    if (_networkType == NetworkType.bitcoin && _accountId != null) {
+      return BtcAddressesScreen(
+        accountId: _accountId!,
+        networkId: _networkId,
+        networkName: _networkName ?? chainLabel('bitcoin'),
+      );
     }
 
     final wallet = context.watch<WalletService>();
-    final addr = wallet.publicKey ?? '';
-    final label = switch (_type) {
-      'ethereum' => l10n.receiveAddressLabelEvm,
-      'solana' => l10n.receiveAddressLabelSolana,
+    final activeNetworkType =
+        wallet.libwallet.currentNetwork?.type ?? _networkType;
+    final activeAccountId = wallet.currentAccount?.accountId ?? _accountId;
+    final activeNetworkId =
+        wallet.currentAccount?.networkId ??
+        wallet.libwallet.currentNetwork?.id ??
+        _networkId;
+    final activeNetworkName =
+        wallet.currentAccount?.networkName ??
+        wallet.libwallet.currentNetwork?.name ??
+        _networkName ??
+        chainLabel(wallet.currentAccount?.chain ?? 'bitcoin');
+    if (activeNetworkType == NetworkType.bitcoin && activeAccountId != null) {
+      return BtcAddressesScreen(
+        accountId: activeAccountId,
+        networkId: activeNetworkId,
+        networkName: activeNetworkName,
+      );
+    }
+    final addr = wallet.publicKey ?? wallet.currentAccount?.address ?? '';
+    final label = switch (activeNetworkType) {
+      NetworkType.evm => l10n.receiveAddressLabelEvm,
+      NetworkType.solana => l10n.receiveAddressLabelSolana,
       _ => l10n.receiveAddressLabel,
     };
     return Scaffold(
@@ -130,9 +175,9 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                           child: Text(
                             addr,
                             style: monoStyle(
-                              fontSize: 12,
-                              color: TibaneColors.textMuted,
-                            ),
+                              fontSize: 13.8,
+                              color: TibaneColors.text,
+                            ).copyWith(fontWeight: FontWeight.w600),
                             textAlign: TextAlign.center,
                           ),
                         ),

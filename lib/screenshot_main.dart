@@ -601,7 +601,7 @@ class _StubRpcService extends RpcService {
   }
 
   @override
-  Future<List<TokenHolder>> getTopHolders(String mint, {int limit = 20}) async {
+  Future<List<TokenHolder>> getTopHolders(String mint, {int limit = 10}) async {
     return [
       TokenHolder(
         address: _poolVault,

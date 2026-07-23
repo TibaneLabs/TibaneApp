@@ -2,7 +2,7 @@
   "@@locale": "en",
   "appTitle": "Tibane",
   "@appTitle": {
-    "description": "Application name shown as the OS task title. Brand name — not translated."
+    "description": "Application name shown as the OS task title. Brand name; not translated."
   },
   "actionCancel": "Cancel",
   "@actionCancel": {
@@ -32,6 +32,26 @@
   "@actionOk": {
     "description": "Generic OK button in dialogs."
   },
+  "bottomNavHomeLabel": "Home",
+  "@bottomNavHomeLabel": {
+    "description": "Bottom navigation label for the Home tab."
+  },
+  "bottomNavWalletLabel": "Wallet",
+  "@bottomNavWalletLabel": {
+    "description": "Bottom navigation label for the Wallet tab."
+  },
+  "bottomNavSwapLabel": "Swap",
+  "@bottomNavSwapLabel": {
+    "description": "Bottom navigation label shown instead of Wallet when the current account uses the external swap-first mode."
+  },
+  "bottomNavBrowseLabel": "Browser",
+  "@bottomNavBrowseLabel": {
+    "description": "Bottom navigation label for the in-app dApp browser tab."
+  },
+  "bottomNavSettingsLabel": "Settings",
+  "@bottomNavSettingsLabel": {
+    "description": "Bottom navigation label for the Settings tab."
+  },
   "settingsGeneralTitle": "General",
   "@settingsGeneralTitle": {
     "description": "Title of the Settings → General sub-screen."
@@ -54,7 +74,7 @@
   },
   "languageNameEnglish": "English",
   "@languageNameEnglish": {
-    "description": "Endonym for English. Shown natively in the language list — keep as 'English' in every locale."
+    "description": "Endonym for English. Shown natively in the language list; keep as 'English' in every locale."
   },
   "languageNameFrench": "Français",
   "@languageNameFrench": {
@@ -77,6 +97,7 @@
     "description": "Generic 'To' label (e.g. recipient)."
   },
   "labelNetwork": "Network",
+  "labelChain": "Chain",
   "@labelNetwork": {
     "description": "Generic 'Network' (blockchain) label."
   },
@@ -116,7 +137,33 @@
   },
   "sendRecipientHelper": "Solana address, .sol name, or .eth name",
   "@sendRecipientHelper": {
-    "description": "Helper text under the recipient field. '.sol' and '.eth' are name-service suffixes — keep them literally."
+    "description": "Helper text under the recipient field. '.sol' and '.eth' are name-service suffixes; keep them literally."
+  },
+  "sendRecipientHelperSolana": "Solana address or .sol name",
+  "sendRecipientHelperEthereum": "Ethereum address or .eth name",
+  "sendRecipientHelperBitcoin": "Bitcoin address",
+  "sendRecipientHelperNetwork": "{network} address",
+  "@sendRecipientHelperNetwork": {
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
+  },
+  "sendNetworkSolana": "Solana",
+  "sendNetworkEthereum": "Ethereum",
+  "sendNetworkBitcoin": "Bitcoin",
+  "sendRecipientWrongNetwork": "This looks like a {addressNetwork} address, but you are sending from {activeNetwork}. Check the selected account before continuing.",
+  "@sendRecipientWrongNetwork": {
+    "description": "Warning shown under the recipient field when the pasted address belongs to another chain family.",
+    "placeholders": {
+      "addressNetwork": {
+        "type": "String"
+      },
+      "activeNetwork": {
+        "type": "String"
+      }
+    }
   },
   "sendResolvingName": "Resolving {name}…",
   "@sendResolvingName": {
@@ -310,7 +357,7 @@
   "@receiveTitle": {
     "description": "Receive screen title / app bar."
   },
-  "receiveAddressLabelEvm": "Your EVM address",
+  "receiveAddressLabelEvm": "Your Ethereum address",
   "@receiveAddressLabelEvm": {
     "description": "Caption under the QR code for an EVM (Ethereum) account. 'EVM' is a proper noun."
   },
@@ -390,7 +437,7 @@
     "description": "Title of the discovered-token confirm dialog."
   },
   "inappCreateTitle": "Create in-app wallet",
-  "inappCreateIdentifierIntro": "Your keys are split into three shares: this device, a 2FA share (email or SMS), and a password. Any two can recover your wallet — no single point of failure.",
+  "inappCreateIdentifierIntro": "Your keys are split into three shares: this device, a 2FA share (email or SMS), and a password. Any two can recover your wallet. There is no single point of failure.",
   "inappCreateEmailLabel": "Email",
   "inappCreateImportLink": "Import existing wallet",
   "inappCreateCodeIntroEmail": "We sent a {length}-digit code to {target}. Enter it below to confirm.",
@@ -418,12 +465,16 @@
   "inappCreateVerify": "Verify",
   "inappCreateChangeDest": "Use a different email or phone",
   "inappCreateLowerSecurityWarning": "Lower-security wallet: this device has no biometric, so this wallet is protected by your password alone (with 2FA kept for recovery). Keep your password safe.",
-  "inappCreatePasswordIntro": "Set a password. This is the third share — without it, your device and 2FA share alone cannot sign.",
-  "inappCreateWalletNameHelper": "Shown in the wallet picker — purely for your reference.",
-  "inappCreateKeygenNote": "Solana + Ethereum accounts are created together in one keygen ceremony (no second verification code). Plan for the secp256k1 step to dominate the time (often a minute or more on mobile); keep the app open.",
+  "inappCreatePasswordIntro": "Set a password. This is the third share; without it, your device and 2FA share alone cannot sign.",
+  "inappCreateWalletNameHelper": "Shown in the wallet picker for your reference.",
+  "inappCreateKeygenNote": "Solana, Ethereum, Bitcoin, Bitcoin Cash, Dogecoin, and Litecoin wallets will be generated at the same time. This process can take 1 minute or more. Keep the app open.",
   "inappCreateGenerating": "Generating key shares…",
   "inappCreateCreating": "Creating…",
   "inappCreateButton": "Create wallet",
+  "postCreateBackupTitle": "Save your backup now",
+  "postCreateBackupBody": "To restore your wallet if you lose your phone, delete the app, or remove the wallet, you need the backup and password together.\n\nWithout both together, your funds may become inaccessible.",
+  "postCreateBackupButton": "Save backup",
+  "postCreateBackupSkip": "Skip",
   "inappCreateErrInvalidEmail": "Enter a valid email address",
   "inappCreateErrInvalidPhone": "Enter a valid phone number",
   "inappCreateErrCodeLength": "Code must be {length} digits",
@@ -448,14 +499,14 @@
   "inappUnlockChooserBody": "Both options verify with a 2FA code sent to your registered email or phone.",
   "inappUnlockSetupTitle": "Set up this device",
   "inappUnlockSetupBody": "First time using this wallet on this phone? Verify via 2FA to create this device's signing key.",
-  "inappUnlockRepairBody": "Restored from a backup and setup gets stuck (\"participant stopped responding\")? Your 2FA key may be out of sync — repair it from your backup first, then set up this device.",
+  "inappUnlockRepairBody": "Restored from a backup and setup gets stuck (\"participant stopped responding\")? Your 2FA key may be out of sync. Repair it from your backup first, then set up this device.",
   "inappUnlockRepairFixed": "2FA key repaired. Now verify again to set up this device.",
   "inappUnlockFlowRepairHeader": "Repair this wallet's 2FA key",
   "inappUnlockFlowRepairDescSend": "We'll send a 2FA code to repair your 2FA key from your backup. No password needed for this step.",
   "inappUnlockFlowRepairDescCode": "Enter the code we just sent. This re-syncs your 2FA key from your backup so setup can complete.",
   "inappUnlockFlowSetupDescSend": "Verify via 2FA to create this device's signing key. We'll send a code to your registered email or phone.",
-  "inappUnlockFlowSetupDescCode": "Enter the verification code we just sent to your registered email or phone — takes a few seconds after you verify.",
-  "inappUnlockSingleDeviceWarning": "A wallet signs on one device at a time. Setting up here makes this your signing device — if it was set up on another phone, that phone will need to set up again to sign.",
+  "inappUnlockFlowSetupDescCode": "Enter the verification code we just sent to your registered email or phone. It takes a few seconds after you verify.",
+  "inappUnlockSingleDeviceWarning": "A wallet signs on one device at a time. Setting up here makes this your signing device. If it was set up on another phone, that phone will need to set up again to sign.",
   "inappUnlockPasswordLabel": "Wallet password",
   "inappUnlockResendCode": "Resend code",
   "inappUnlockSendCode": "Send code",
@@ -470,12 +521,12 @@
       }
     }
   },
-  "resetPwIntroBody": "Forgot your password? Set a new one with 2FA — no old password needed. We'll send a verification code to the phone or email on this wallet. This re-keys the wallet using your device key + 2FA; your address and funds are unchanged.",
+  "resetPwIntroBody": "Forgot your password? Set a new one with 2FA. No old password needed. We'll send a verification code to the phone or email on this wallet. This re-keys the wallet using your device key + 2FA; your address and funds are unchanged.",
   "resetPwCodeIntro": "Enter the code we sent, then choose a new password.",
   "resetPwNewPasswordLabel": "New password (min 8 characters)",
   "resetPwConfirmLabel": "Confirm new password",
   "resetPwResetting": "Resetting…",
-  "resetPwSuccess": "Password reset — wallet unlocked",
+  "resetPwSuccess": "Password reset. Wallet unlocked.",
   "resetPwErrPasswordShort": "New password must be at least 8 characters",
   "copiedToast": "{label} copied",
   "@copiedToast": {
@@ -500,14 +551,6 @@
   "walletErrorHideDetails": "Hide details",
   "walletErrorTechnicalDetails": "Technical details",
   "walletErrorCopiedToClipboard": "Copied to clipboard",
-  "networkChipSwitchTooltip": "Switch network ({name})",
-  "@networkChipSwitchTooltip": {
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
   "tokenSearchHint": "Search by ticker, name or mint...",
   "tokenSearchPressEnter": "Press Enter to use this mint.",
   "tokenSearchNoResults": "No tokens match \"{query}\".",
@@ -520,12 +563,12 @@
   },
   "labelTransactionId": "Transaction ID",
   "mnemonicTitle": "Import mnemonic",
-  "mnemonicInputHint": "Paste your BIP-39 mnemonic from another wallet. The phrase is imported into libwallet and then upgraded in place to a 2-of-3 MPC wallet (device + 2FA + password) — its address does not change.",
+  "mnemonicInputHint": "Paste your BIP-39 mnemonic from another wallet. The phrase is imported into libwallet and then upgraded in place to a 2-of-3 MPC wallet (device + 2FA + password). Its address does not change.",
   "mnemonicFieldLabel": "Mnemonic (12 / 15 / 18 / 21 / 24 words)",
   "mnemonicPassphraseLabel": "BIP-39 passphrase (optional)",
   "mnemonicWalletTypeLabel": "Wallet type",
   "mnemonicCurveHintSolana": "Solana wallet (ed25519 derivation), m/44'/501'/0'.",
-  "mnemonicCurveHintEvm": "EVM / Bitcoin wallet (secp256k1 derivation) — one key serves both Ethereum and Bitcoin accounts. Best fit for phrases from MetaMask, Ledger, Trezor, or Bitcoin-only wallets.",
+  "mnemonicCurveHintEvm": "EVM / Bitcoin wallet (secp256k1 derivation). One key serves both Ethereum and Bitcoin accounts. Best fit for phrases from MetaMask, Ledger, Trezor, or Bitcoin-only wallets.",
   "mnemonicPasswordLabel": "Password (one of the three shares)",
   "mnemonicContinueButton": "Continue",
   "mnemonicInvalidWordCount": "Mnemonic must be 12/15/18/21/24 words",
@@ -541,7 +584,7 @@
     }
   },
   "mnemonicImporting": "Importing and securing your wallet…",
-  "mnemonicVerifyIdHint": "Your wallet is secured by a 3-share committee: this device, a 2FA share, and your password. Verify a 2FA share (email or SMS) to continue — any two of the three can recover it.",
+  "mnemonicVerifyIdHint": "Your wallet is secured by a 3-share committee: this device, a 2FA share, and your password. Verify a 2FA share (email or SMS) to continue. Any two of the three can recover it.",
   "mnemonicSendingCode": "Sending…",
   "mnemonicCodeSentEmail": "We sent a {count}-digit code to {recipient}. Enter it below to import your wallet.",
   "@mnemonicCodeSentEmail": {
@@ -571,19 +614,19 @@
   "mnemonicDoneBody": "Your mnemonic was imported and upgraded to a 2-of-3 MPC wallet (device + 2FA + password). The address is unchanged from the original seed.",
   "mnemonicImportFailed": "Import failed",
   "mnemonicStartOver": "Start over",
-  "exportPasswordHint": "Confirm your wallet password to display the encrypted backup. Keep this backup secret — anyone with it plus your password can restore your wallet.",
+  "exportPasswordHint": "Confirm your wallet password to display the encrypted backup. Keep this backup secret. Anyone with it plus your password can restore your wallet.",
   "exportEnterPassword": "Enter your wallet password",
   "exportExporting": "Exporting…",
   "exportShowBackupButton": "Show backup",
   "exportJsonHint": "Save this backup to a safe place (cloud drive, password manager, encrypted note). To restore, open it from the import flow on this or another device and enter the same password.",
   "exportPreparing": "Preparing…",
-  "exportShareButton": "Share backup file",
+  "exportShareButton": "Save backup",
   "exportCopyButton": "Copy to clipboard",
-  "exportCopyWarning": "Copy may not work for large backups on some Android devices — prefer Share.",
+  "exportCopyWarning": "Copy may not work for large backups on some Android devices. Use Save backup instead.",
   "exportCopiedSnack": "Backup copied to clipboard",
-  "exportShareErrorTitle": "Could not share backup",
+  "exportShareErrorTitle": "Could not save backup",
   "exportClipboardErrorTitle": "Clipboard rejected the backup",
-  "exportClipboardErrorBody": "Some devices block large payloads from the clipboard. Use the Share button instead. ({detail})",
+  "exportClipboardErrorBody": "Some devices block large payloads from the clipboard. Use Save backup instead. ({detail})",
   "@exportClipboardErrorBody": {
     "placeholders": {
       "detail": {
@@ -609,7 +652,7 @@
   "backupRestoreRestoring": "Restoring…",
   "backupRestoreButton": "Restore wallet",
   "backupRestoreSetupTitle": "One more step",
-  "backupRestoreSetupBody": "Wallet restored. But this device cannot sign transactions yet.\n\nFor security, your signing key is never included in a backup — it only ever lives on a device. Verify with a 2FA code to create this device's signing key and finish.\n\nYou can do this later from Security & Privacy, but you will not be able to send or sign until you do.",
+  "backupRestoreSetupBody": "Wallet restored. But this device cannot sign transactions yet.\n\nFor security, your signing key is never included in a backup. It only ever lives on a device. Verify with a 2FA code to create this device's signing key and finish.\n\nYou can do this later from Security & Privacy, but you will not be able to send or sign until you do.",
   "backupRestoreSetupLater": "Later",
   "backupRestoreSetupNow": "Set up now",
   "cloudBackupTitle": "Cloud backup",
@@ -672,10 +715,11 @@
     }
   },
   "bioMigTitle": "Secure your wallet",
-  "bioMigBody": "We are upgrading your wallet's security: each wallet's signing key moves behind this device's biometrics. Every wallet is secured separately, so you will see a biometric prompt for each wallet you have — that is expected. Your password still works as a backup.",
+  "bioMigBody": "We are upgrading your wallet's security: each wallet's signing key moves behind this device's biometrics. Every wallet is secured separately, so you will see a biometric prompt for each wallet you have. That is expected. Your password still works as a backup.",
   "bioMigButton": "Secure now",
   "bioMigPartialError": "Some keys could not be secured. Authenticate when prompted and try again.",
   "accountsTitle": "Accounts",
+  "accountsNewAccount": "New account",
   "accountsEmptyTitle": "No accounts yet",
   "accountsEmptySubtitle": "Tap \"New wallet\" once a wallet exists.",
   "accountsRemoveTitle": "Remove account?",
@@ -731,6 +775,16 @@
     }
   },
   "walletsMgmtNeeds2fa": "Needs 2FA to use on this device",
+  "walletGroupBody": "This app wallet was created once, but it contains separate technical keys. Solana uses ed25519, while Ethereum and Bitcoin-family networks use secp256k1. Backup, password, and 2FA still belong to the same wallet setup.",
+  "walletGroupTechnicalKeysTitle": "TECHNICAL KEYS",
+  "walletGroupTechnicalKeysLabel": "Technical keys: {curves}",
+  "@walletGroupTechnicalKeysLabel": {
+    "placeholders": {
+      "curves": {
+        "type": "String"
+      }
+    }
+  },
   "walletDetailsNoWallet": "No wallet selected",
   "walletDetailsCouldNotSwitch": "Could not switch to \"{name}\"",
   "@walletDetailsCouldNotSwitch": {
@@ -759,11 +813,29 @@
   "walletDetailsRenameFailed": "Rename failed",
   "walletDetailsRemoveFailed": "Remove failed",
   "walletDetailsUseButton": "Use this wallet",
-  "walletDetailsNeeds2faHint": "This wallet has no device key on this phone — using it will ask for 2FA to set one up.",
+  "walletDetailsNeeds2faHint": "This wallet has no device key on this phone. Using it will ask for 2FA to set one up.",
   "walletDetailsTransferButton": "Transfer to new device",
   "walletDetailsResetPasswordButton": "Forgot password? Reset via 2FA",
   "walletDetailsRemoveTitle": "Remove wallet?",
-  "walletDetailsRemoveBody": "This deletes the wallet from this device. If you have not backed it up, the funds will be irrecoverable. Continue?",
+  "walletDetailsRemoveBody": "Removing this wallet deletes its local wallet share from this device. To restore it later, you must have both the backup and its password. Without both, you may permanently lose access to your funds. 2FA alone cannot recover a removed wallet.",
+  "walletDetailsRemoveConfirmPhrase": "agree",
+  "walletDetailsRemoveConfirmInstruction": "Type \"{phrase}\" if you understand and still want to proceed.",
+  "@walletDetailsRemoveConfirmInstruction": {
+    "placeholders": {
+      "phrase": {
+        "type": "String"
+      }
+    }
+  },
+  "walletDetailsRemoveConfirmHint": "Type {phrase}",
+  "@walletDetailsRemoveConfirmHint": {
+    "placeholders": {
+      "phrase": {
+        "type": "String"
+      }
+    }
+  },
+  "walletDetailsRemoveConfirmButton": "Continue",
   "walletDetailsKeySharesSection": "KEY SHARES",
   "walletDetailsSharesDescription": "Any {n} of these {total} shares are enough to sign. No single party can move funds alone.",
   "@walletDetailsSharesDescription": {
@@ -824,10 +896,6 @@
   "walletScreenGateTitle": "Create your wallet",
   "walletScreenGateSubtitle": "Set up a secure MPC wallet with email or SMS recovery. Your keys are split across this device, a 2FA share, and a password.",
   "walletScreenGetStarted": "Get started",
-  "networksTitle": "Networks",
-  "networksEmpty": "No networks configured.",
-  "networksUnnamed": "(unnamed)",
-  "networksTestnet": "TEST",
   "nftsTitle": "NFTs",
   "nftsEmpty": "No NFTs on {network}",
   "@nftsEmpty": {
@@ -837,18 +905,140 @@
       }
     }
   },
-  "nftsSwitchHint": "Switch networks via the chip in the app bar to look on another chain.",
+  "nftsSwitchHint": "Switch accounts to look on another chain.",
   "nftsDetailTokenId": "Token ID",
   "nftsViewExternally": "View externally",
   "nftsTraitsLabel": "Traits",
   "btcAddrTitle": "Bitcoin addresses",
-  "btcAddrBest": "best",
-  "btcAddrFormatDefault": "Default",
+  "btcAddrTitleForNetwork": "{network} addresses",
+  "@btcAddrTitleForNetwork": {
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
+  },
+  "btcAddrBest": "recommended",
+  "btcAddrFormatDefault": "Native SegWit",
   "btcAddrFormatLabel": "Format",
   "btcAddrRotating": "Rotating…",
-  "btcAddrGetFresh": "Get a fresh one",
-  "btcAddrLegacyWarning": "Receiving on a legacy address will cost more in fees when you later spend the funds. Prefer the default (SegWit) format unless the sender explicitly requires legacy.",
-  "btcAddrAltFormatInfo": "This is the root receive address (m/0/0) rendered in an alternate format. Return to the default to use a fresh, rotated address.",
+  "btcAddrGetFresh": "New address",
+  "btcAddrFreshInfo": "Use a new receiving address for privacy. It belongs to this same Bitcoin account.",
+  "btcAddrFreshInfoForNetwork": "Use a new receiving address for privacy. It belongs to this same {network} account.",
+  "@btcAddrFreshInfoForNetwork": {
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
+  },
+  "btcAddrShowNextUnused": "Show next unused address",
+  "btcAddrReuseSafeForNetwork": "You can keep using the address above. It stays valid for this {network} account.",
+  "@btcAddrReuseSafeForNetwork": {
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
+  },
+  "btcAddrNextUnusedInfoForNetwork": "If you want more privacy, you can also use the next unused receiving address below. It still belongs to this same {network} account.",
+  "@btcAddrNextUnusedInfoForNetwork": {
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
+  },
+  "btcAddrNextUnusedSameAsCurrent": "The address above has not been used yet, so it is also the next unused address.",
+  "btcAddrNextUnusedLabel": "Next unused address",
+  "btcAddrNewAddressTitle": "New Bitcoin address",
+  "btcAddrNewAddressTitleForNetwork": "New {network} address",
+  "@btcAddrNewAddressTitleForNetwork": {
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
+  },
+  "btcAddrNewAddressBody": "This creates another receiving address for this same Bitcoin account. It does not create a separate account or a new wallet.",
+  "btcAddrNewAddressBodyForNetwork": "This creates another receiving address for this same {network} account. It does not create a separate account or a new wallet.",
+  "@btcAddrNewAddressBodyForNetwork": {
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
+  },
+  "btcAddrNewAddressAction": "Create address",
+  "btcAddrUseFormat": "Use this format",
+  "btcAddrFormatNativeSegwitTitle": "Native SegWit",
+  "btcAddrFormatNativeSegwitBody": "Recommended for most Bitcoin payments today. It starts with bc1, is widely supported, and usually has lower fees.",
+  "btcAddrFormatRecommendedTitle": "{format} (recommended)",
+  "@btcAddrFormatRecommendedTitle": {
+    "placeholders": {
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "btcAddrFormatRecommendedBody": "Recommended for most {network} payments. {format} is the safest default unless the sender asks for a different format.",
+  "@btcAddrFormatRecommendedBody": {
+    "placeholders": {
+      "network": {
+        "type": "String"
+      },
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "btcAddrFormatWrappedSegwitTitle": "SegWit (legacy-compatible)",
+  "btcAddrFormatWrappedSegwitBody": "Use this if the sender cannot send to a bc1 address but supports SegWit. It usually starts with 3 and is only for compatibility.",
+  "btcAddrFormatWrappedSegwitBodyForNetwork": "Use this for {network} only if the sender cannot use the recommended format but supports SegWit compatibility.",
+  "@btcAddrFormatWrappedSegwitBodyForNetwork": {
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
+  },
+  "btcAddrFormatLegacyTitle": "Legacy",
+  "btcAddrFormatLegacyBody": "Use only when the sender specifically requires an old Bitcoin address format. It usually starts with 1 and can cost more in fees later.",
+  "btcAddrFormatLegacyBodyForNetwork": "Use only when the sender specifically requires an old {network} address format. Legacy formats can cost more in fees later.",
+  "@btcAddrFormatLegacyBodyForNetwork": {
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
+  },
+  "btcAddrFormatGenericBody": "Use this only if the sender asks for this exact Bitcoin address format.",
+  "btcAddrFormatGenericBodyForNetwork": "Use this only if the sender asks for this exact {network} address format.",
+  "@btcAddrFormatGenericBodyForNetwork": {
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
+  },
+  "btcAddrLegacyWarning": "Legacy addresses can cost more in fees when you later spend the funds. Prefer Native SegWit unless the sender explicitly requires Legacy.",
+  "btcAddrLegacyWarningForNetwork": "Legacy {network} addresses can cost more in fees when you later spend the funds. Prefer the recommended format unless the sender explicitly requires Legacy.",
+  "@btcAddrLegacyWarningForNetwork": {
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
+  },
+  "btcAddrAltFormatInfo": "This shows the same Bitcoin account in another address format. Switch back to Native SegWit unless the sender asked for this format.",
+  "btcAddrAltFormatInfoForNetwork": "This shows the same {network} account in another address format. Switch back to the recommended format unless the sender asked for this format.",
+  "@btcAddrAltFormatInfoForNetwork": {
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
+  },
   "btcAddrReceiveHistory": "Receive history (m/0/*)",
   "btcAddrChangeHistory": "Change (m/1/*)",
   "btcAddrUnused": "unused",
@@ -981,48 +1171,21 @@
   },
   "accountSwitcherEmpty": "No accounts yet",
   "accountSwitcherAddAccount": "Add account",
+  "accountSwitcherExternalAccounts": "External accounts",
+  "accountSwitcherAdditionalHeader": "New accounts",
   "accountSwitcherConnectExternal": "Connect external (Seed Vault)",
   "accountSwitcherNoWalletApp": "No compatible wallet app is installed.",
   "accountSwitcherCopyAddress": "Copy address",
   "accountSwitcherDisconnect": "Disconnect external",
-  "accountSwitcherNoNetwork": "No {chain} network available",
-  "@accountSwitcherNoNetwork": {
-    "placeholders": {
-      "chain": {
-        "type": "String"
-      }
-    }
-  },
-  "accountSwitcherSelectNetwork": "Select {chain} network",
-  "@accountSwitcherSelectNetwork": {
-    "placeholders": {
-      "chain": {
-        "type": "String"
-      }
-    }
-  },
-  "accountSwitcherSelectNetworkHint": "This account connects on a {chain} network — pick one to continue.",
-  "@accountSwitcherSelectNetworkHint": {
-    "placeholders": {
-      "chain": {
-        "type": "String"
-      }
-    }
-  },
-  "accountSwitcherTestnet": "{symbol} · testnet",
-  "@accountSwitcherTestnet": {
-    "placeholders": {
-      "symbol": {
-        "type": "String"
-      }
-    }
-  },
+  "accountSwitcherSwitchFailed": "Could not switch account",
+  "accountSwitcherAddFailed": "Could not add account",
   "accountSwitcherAccountName": "Account name",
   "accountSwitcherChain": "Chain",
+  "accountSwitcherAvatar": "Account pfp",
   "authSignNoWallet": "No in-app wallet to sign with.",
-  "authSignNotSetUp": "This device isn't set up to sign this wallet yet — finish setup with a 2FA code.",
+  "authSignNotSetUp": "This device isn't set up to sign this wallet yet. Finish setup with a 2FA code.",
   "authSignNoWalletManage": "No in-app wallet to authorize.",
-  "authSignNotSetUpManage": "This device isn't set up for this wallet yet — finish setup with a 2FA code.",
+  "authSignNotSetUpManage": "This device isn't set up for this wallet yet. Finish setup with a 2FA code.",
   "authSignSetUp": "Set up",
   "authSignTitle": "Authorize transaction",
   "authSignPurpose": "sign this transaction",
@@ -1052,7 +1215,7 @@
   },
   "signSheetKeyRemote": "Recovery only (2FA)",
   "signSheetKeyDevice": "This device",
-  "signSheetKeyTitle": "Key {index} — {type}",
+  "signSheetKeyTitle": "Key {index}: {type}",
   "@signSheetKeyTitle": {
     "placeholders": {
       "index": {
@@ -1104,7 +1267,7 @@
     }
   },
   "swapUnavailableUnsupportedChain": "Swap is not supported on this chain.",
-  "swapUnavailableMissingApiKey": "Swap is not available — API key missing.",
+  "swapUnavailableMissingApiKey": "Swap is not available. API key missing.",
   "swapUnavailableDefault": "Swap is temporarily unavailable.",
   "swapUnavailableReason": "Swap unavailable: {reason}",
   "@swapUnavailableReason": {
@@ -1120,7 +1283,7 @@
   "swapExceedsBalance": "Amount exceeds balance",
   "swapExceedsSpendableMax": "Amount exceeds spendable max (keep some SOL for fees)",
   "swapMaxAmountUnavailable": "Max amount unavailable for this pair",
-  "swapNotConfirmed": "Swap was not confirmed on-chain — your funds were not moved. Please try again.",
+  "swapNotConfirmed": "Swap was not confirmed on-chain. Your funds were not moved. Please try again.",
   "swapUkUnavailableTitle": "Swap not available in your region",
   "swapUkUnavailableBody": "Tibane does not offer in-app token exchange in the United Kingdom. You can still use the in-app browser to access third-party services directly.",
   "feeShareTitle": "Fee Sharing",
@@ -1364,7 +1527,7 @@
   "stakingRewardsTooltip": "SOL balance the pool will distribute to stakers as rewards. Grows as the pool authority tops it up.",
   "stakingTau": "Tau",
   "stakingDecayPeriod": "Decay period",
-  "stakingTauTooltip": "Time-weighted decay constant. Your stake weight grows toward your full deposit over time at a rate set by tau — smaller tau ramps up faster.",
+  "stakingTauTooltip": "Time-weighted decay constant. Your stake weight grows toward your full deposit over time at a rate set by tau; a smaller tau ramps up faster.",
   "stakingMembers": "Members",
   "stakingMembersTooltip": "Number of unique wallets currently staked in this pool.",
   "stakingNoStakeInPool": "You have no stake in this pool",
@@ -1503,11 +1666,11 @@
   "stakingMintTooltip": "The SPL token mint this pool stakes. Every deposit and withdrawal uses this exact token.",
   "stakingAuthorityLabel": "Authority",
   "stakingAuthorityTooltip": "Wallet allowed to deposit reward SOL and update pool settings (min stake, lock duration, cooldown).",
-  "stakingTauInfoTooltip": "Decay constant. Your stake weight grows toward your full deposit at a rate set by tau — smaller tau ramps up faster.",
+  "stakingTauInfoTooltip": "Decay constant. Your stake weight grows toward your full deposit at a rate set by tau; a smaller tau ramps up faster.",
   "stakingLockLabel": "Lock",
   "stakingLockTooltip": "Minimum time your stake stays locked before you can request to unstake.",
   "stakingCooldownLabel": "Cooldown",
-  "stakingCooldownTooltip": "Waiting period between requesting and completing an unstake — the tokens are reserved during this window.",
+  "stakingCooldownTooltip": "Waiting period between requesting and completing an unstake. The tokens are reserved during this window.",
   "stakingBelowMinimum": "Below pool minimum: {amount} {symbol}",
   "@stakingBelowMinimum": {
     "placeholders": {
@@ -1551,13 +1714,13 @@
   "settingsActiveAccount": "Active account",
   "settingsSection": "Settings",
   "settingsWalletsAccountsTitle": "Wallets & Accounts",
-  "settingsWalletsAccountsSubtitle": "Accounts, networks, tokens, NFTs, contacts",
+  "settingsWalletsAccountsSubtitle": "Accounts, tokens, NFTs, contacts",
   "settingsSecurityPrivacyTitle": "Security & Privacy",
   "settingsSecurityPrivacySubtitle": "Password, biometrics, TSS shares, backups",
   "settingsConnectionsTitle": "Connections",
   "settingsConnectionsSubtitle": "WalletConnect, connected sites, agents",
   "settingsBrowserSubtitle": "Start page, favorites",
-  "settingsGeneralSubtitle": "Region, about",
+  "settingsGeneralSubtitle": "Region, language, about",
   "settingsHelpFaqSubtitle": "Backups, moving phones, passwords & 2FA",
   "settingsDisconnectDialogTitle": "Disconnect wallet?",
   "settingsDisconnectDialogBody": "You can reconnect by tapping the wallet button at the top.",
@@ -1592,28 +1755,28 @@
   "helpFaqIntro": "Common questions about backing up, moving to a new phone, and how your keys work.",
   "helpFaqBackupsGroup": "Backups",
   "helpFaqBackupHowQ": "How do I back up my wallet?",
-  "helpFaqBackupHowA": "Open your wallet, go to its details, and tap Export to save a backup file. Keep it somewhere safe and private. When your phone's system backup is on (iCloud on iPhone, Google on Android), the app also keeps an automatic copy there.\n\nAnyone who has your backup file AND your password can access your funds — treat both like cash.",
+  "helpFaqBackupHowA": "Open your wallet, go to its details, and tap Export to save a backup file. Keep it somewhere safe and private. When your phone's system backup is on (iCloud on iPhone, Google on Android), the app also keeps an automatic copy there.\n\nAnyone who has your backup file AND your password can access your funds. Treat both like cash.",
   "helpFaqRestoreHowQ": "How do I restore from a backup?",
   "helpFaqRestoreHowA": "When adding a wallet, choose Import wallet → Tibane backup, open your backup file (or paste the JSON), and enter the wallet's password. When it finishes, tap \"Set up now\" to create this phone's signing key with a 2FA code.",
-  "helpFaqRestoredCantSendQ": "I restored from a backup file but I can't send — why?",
-  "helpFaqRestoredCantSendA": "A backup file never contains a signing key (it's device-only for security), so a restore alone can't sign. Finish with \"Set up this device\": a quick 2FA verification creates a signing key on this phone. Until then, sending is blocked — if you try to send you'll see a \"Set up\" shortcut that takes you there.\n\n(Moving with \"Transfer to new device\" instead brings the signing key with it, so that path needs no extra setup.)",
+  "helpFaqRestoredCantSendQ": "I restored from a backup file but I can't send. Why?",
+  "helpFaqRestoredCantSendA": "A backup file never contains a signing key (it's device-only for security), so a restore alone can't sign. Finish with \"Set up this device\": a quick 2FA verification creates a signing key on this phone. Until then, sending is blocked. If you try to send, you'll see a \"Set up\" shortcut that takes you there.\n\n(Moving with \"Transfer to new device\" instead brings the signing key with it, so that path needs no extra setup.)",
   "helpFaqMovingPhoneGroup": "Moving to a new phone",
   "helpFaqMoveWalletQ": "How do I move my wallet to a new phone?",
-  "helpFaqMoveWalletA": "If you still have the old phone, use Transfer to new device — it's the smoothest way. On the old phone open the wallet and tap \"Transfer to new device\" to show a QR code; on the new phone choose \"Receive from another device\" and scan it, then enter the password. The signing key travels securely between the phones, so no 2FA code is needed.\n\nIf you only have a backup file, restore it on the new phone and then \"Set up this device\".",
+  "helpFaqMoveWalletA": "If you still have the old phone, use Transfer to new device. It is the smoothest way. On the old phone open the wallet and tap \"Transfer to new device\" to show a QR code; on the new phone choose \"Receive from another device\" and scan it, then enter the password. The signing key travels securely between the phones, so no 2FA code is needed.\n\nIf you only have a backup file, restore it on the new phone and then \"Set up this device\".",
   "helpFaqTwoPhonesQ": "Can I use the same wallet on two phones at the same time?",
   "helpFaqTwoPhonesA": "A wallet's signing key lives on one phone at a time. When you \"Set up this device\" on a new phone, that phone becomes the wallet's signing device and the previous phone will need to be set up again before it can sign. Plan to sign from one phone.",
   "helpFaqShareErrorQ": "My backup file gives an error about a \"share\" or \"party key\".",
-  "helpFaqShareErrorA": "That backup is out of date. Every time a wallet is set up on a device its keys are refreshed, which makes older backup files stale. Export a FRESH backup from the phone that currently works, then import that one. Don't use \"Repair 2FA key\" with an old file — it can push a stale key and break the phone that's working.",
+  "helpFaqShareErrorA": "That backup is out of date. Every time a wallet is set up on a device its keys are refreshed, which makes older backup files stale. Export a FRESH backup from the phone that currently works, then import that one. Don't use \"Repair 2FA key\" with an old file. It can push a stale key and break the phone that's working.",
   "helpFaqPassword2faGroup": "Password & 2FA",
   "helpFaqChangePasswordQ": "How do I change my password?",
   "helpFaqChangePasswordA": "Go to Settings → Security & Privacy → Change password. You'll confirm the change with a 2FA code.",
   "helpFaqForgotPasswordQ": "I forgot my password.",
   "helpFaqForgotPasswordA": "Open the wallet's details (or Security & Privacy) and choose \"Forgot password? Reset via 2FA\". Verify with a 2FA code and set a new password.",
   "helpFaqWhat2faQ": "What is the 2FA key, and what does \"Repair 2FA key\" do?",
-  "helpFaqWhat2faA": "Your 2FA key is a recovery key tied to your email or phone number. It's used to recover or repair a wallet — not for everyday signing. If setting up a restored wallet gets stuck (\"participant stopped responding\"), your 2FA key may be out of sync; \"Repair 2FA key\" re-syncs it from your backup so setup can finish. Only repair from the phone whose wallet currently works.",
+  "helpFaqWhat2faA": "Your 2FA key is a recovery key tied to your email or phone number. It is used to recover or repair a wallet, not for everyday signing. If setting up a restored wallet gets stuck (\"participant stopped responding\"), your 2FA key may be out of sync; \"Repair 2FA key\" re-syncs it from your backup so setup can finish. Only repair from the phone whose wallet currently works.",
   "helpFaqSigningSecurityGroup": "Signing & security",
   "helpFaqWhySignEveryTimeQ": "Why does every send ask for my password and fingerprint/face?",
-  "helpFaqWhySignEveryTimeA": "Your wallet is protected by three keys, and any two are needed to approve a transaction: this phone's key (unlocked with your fingerprint or face) plus your password. There is no \"unlock once\" — every transaction is approved on its own, so a lost or stolen phone can't sign without your password.",
+  "helpFaqWhySignEveryTimeA": "Your wallet is protected by three keys, and any two are needed to approve a transaction: this phone's key (unlocked with your fingerprint or face) plus your password. There is no \"unlock once\". Every transaction is approved on its own, so a lost or stolen phone can't sign without your password.",
   "securityChangePasswordTitle": "Change password",
   "securityChangePasswordSubtitle": "Set a new password. You'll need your current one.",
   "securityResetDeviceKeyTitle": "Reset this device's key",
@@ -1621,7 +1784,7 @@
   "securityReset2faTitle": "Reset 2FA key",
   "securityReset2faSubtitle": "Replace your email / SMS recovery key. Use if your 2FA may be compromised.",
   "securitySetUpSigningTitle": "Set up signing on this device",
-  "securitySetUpSigningSubtitle": "Restore this wallet's signing key here using 2FA — needed on a new phone or after reinstalling.",
+  "securitySetUpSigningSubtitle": "Restore this wallet's signing key here using 2FA. Needed on a new phone or after reinstalling.",
   "securityExternalWalletNotice": "Security options are managed by your external wallet. Switch to or create an in-app wallet to see password, key, and 2FA controls here.",
   "securityCloudBackupTitle": "Cloud backup",
   "securityCloudBackupSubtitle": "Auto-backup via iCloud Backup / Google Auto Backup",
@@ -1661,10 +1824,9 @@
   "walletsAccountsManageWalletsSubtitle": "Create, back up, or remove on-device wallets",
   "walletsAccountsReceiveFromDeviceTitle": "Receive wallet from another device",
   "walletsAccountsReceiveFromDeviceSubtitle": "Scan a QR to move a wallet from your old phone",
-  "walletsAccountsNetworksSubtitle": "Pick the active blockchain network",
   "walletsAccountsTokensSubtitle": "Add custom tokens or pick from the curated list",
   "walletsAccountsNftsTitle": "NFTs",
-  "walletsAccountsNftsSubtitle": "View NFTs held on the active network",
+  "walletsAccountsNftsSubtitle": "View NFTs held by the selected account",
   "walletsAccountsContactsSubtitle": "Saved addresses for sends and swaps",
   "walletsAccountsImportWalletTitle": "Import wallet",
   "walletsAccountsImportWalletSubtitle": "Seed phrase or encrypted backup file",
@@ -1672,7 +1834,7 @@
   "walletsAccountsExportWalletSubtitle": "Encrypted backup file (share or save to disk)",
   "aboutHeroTagline": "Building on Solana",
   "aboutStoryTitle": "The Story",
-  "aboutStoryParagraph1": "Tibane Labs is named after Tibane, a beloved cat who lived from the 1990s until 2019. Tibane was the grandmother's cat of Mark Karpeles, and the inspiration behind the company name \"Tibanne\" — the entity that once operated Mt.Gox.",
+  "aboutStoryParagraph1": "Tibane Labs is named after Tibane, a beloved cat who lived from the 1990s until 2019. Tibane was the grandmother's cat of Mark Karpeles, and the inspiration behind the company name \"Tibanne\", the entity that once operated Mt.Gox.",
   "aboutStoryParagraph2": "Today, Tibane Labs develops open-source tools and infrastructure for the Solana ecosystem, including time-weighted staking pools, a token incinerator, and analytics tools.",
   "aboutTokenLaunchLabel": "Launch",
   "aboutTokenSupplyLabel": "Supply",
@@ -1698,8 +1860,8 @@
   "clawdAgentsLoadError": "Could not load agents",
   "clawdAgentsEmpty": "No agent wallets yet",
   "clawdAgentsEmptyHint": "Provision one to give a Claude-driven agent a Solana wallet with hard spending limits and a kill-switch.",
-  "clawdAgentsLockedTooltip": "Locked — new sign-requests will be rejected",
-  "clawdAgentsUnlockedTooltip": "Unlocked — policy module gates each sign-request",
+  "clawdAgentsLockedTooltip": "Locked. New sign-requests will be rejected",
+  "clawdAgentsUnlockedTooltip": "Unlocked. Policy module gates each sign-request",
   "clawdCreateTitle": "Create agent wallet",
   "clawdCreateSchemeTitle": "Three-of-three EdDSA",
   "clawdCreateSchemeBody": "You hold one share, the agent holds one, our signer node holds the third. The agent cannot move funds alone; the policy module must approve every transfer.",
@@ -1730,7 +1892,7 @@
   "clawdPairingErrUnreachableTitle": "Could not reach the agent",
   "clawdPairingErrUnreachableBody": "The agent host did not answer within the timeout. Check your network connection, then open a fresh pairing URL from the agent and try again.",
   "clawdPairingErrTokenInvalidTitle": "Pairing code not recognised",
-  "clawdPairingErrTokenInvalidBody": "The agent does not recognise this token — the agent may have restarted, or the URL is for a different agent. Run `clawdwallet pair` again to get a fresh URL.",
+  "clawdPairingErrTokenInvalidBody": "The agent does not recognise this token. The agent may have restarted, or the URL is for a different agent. Run `clawdwallet pair` again to get a fresh URL.",
   "clawdPairingErrTokenExpiredTitle": "The pairing code expired",
   "clawdPairingErrTokenExpiredBody": "Pairing codes are valid for 5 minutes. Run `clawdwallet pair` again to get a fresh URL.",
   "clawdPairingErrTokenConsumedTitle": "This pairing code has already been used",
@@ -1741,7 +1903,7 @@
   "clawdPairingErrBadRequestBody": "The agent and the app may be running incompatible versions. Update the agent (and the app, if newer than what you installed) and try again.",
   "wcSessionsClipboardEmpty": "Clipboard is empty",
   "wcSessionsUriError": "URI must start with \"wc:\"",
-  "wcSessionsPairingInProgress": "Pairing in progress — wait for the dApp to send a session proposal",
+  "wcSessionsPairingInProgress": "Pairing in progress. Wait for the dApp to send a session proposal",
   "wcSessionsDisconnectTitle": "Disconnect session?",
   "wcSessionsDisconnectConfirm": "Disconnect from \"{name}\"?",
   "@wcSessionsDisconnectConfirm": {
@@ -1783,7 +1945,7 @@
   "browserApprovalSignMessage": "Sign message",
   "browserApprovalChainId": "Chain ID",
   "browserApprovalCurrency": "Currency",
-  "browserApprovalNetworkAlreadyExists": "This network is already in your wallet — approval is a no-op.",
+  "browserApprovalNetworkAlreadyExists": "This network is already in your wallet. Approval is a no-op.",
   "browserApprovalNetworkUnknown": "Chain ID {chainId} is not in the libwallet known-chain registry. Verify the network is legitimate before approving.",
   "@browserApprovalNetworkUnknown": {
     "placeholders": {
@@ -1792,7 +1954,7 @@
       }
     }
   },
-  "browserApprovalNetworkNameMismatch": "Chain ID {chainId} is registered as \"{knownName}\". This dApp is proposing a different name — possible phishing.",
+  "browserApprovalNetworkNameMismatch": "Chain ID {chainId} is registered as \"{knownName}\". This dApp is proposing a different name. Possible phishing.",
   "@browserApprovalNetworkNameMismatch": {
     "placeholders": {
       "chainId": {
@@ -1805,7 +1967,7 @@
   },
   "browserApprovalAddNetworkTitle": "Add network",
   "browserApprovalTokenId": "Token ID",
-  "browserApprovalAddressInvalid": "The contract address does not parse as a valid EVM address. Approving could add a phishing token — verify the address before continuing.",
+  "browserApprovalAddressInvalid": "The contract address does not parse as a valid EVM address. Approving could add a phishing token. Verify the address before continuing.",
   "browserApprovalAlreadyTracked": "This token is already tracked in your wallet. Approving is a no-op.",
   "browserApprovalAddNftTitle": "Add NFT collection",
   "browserApprovalAddTokenTitle": "Add token",
@@ -1843,7 +2005,6 @@
   "contactsSaveChanges": "Save changes",
   "contactsMemoLabel": "Memo (optional)",
   "homeHeroSubtitle": "Research, development and tools\nfor the Solana ecosystem",
-  "homeLiveOnSolana": "LIVE ON SOLANA",
   "homeToolsSection": "TOOLS",
   "homeIncineratorDescription": "Burn unwanted tokens, NFTs, and domains. Reclaim SOL from closed accounts.",
   "homeBadgeLive": "LIVE",
@@ -1858,7 +2019,10 @@
   "homeToolsCardDesc": "Explore all Tibane tools.",
   "homeStakeCardTitle": "Stake",
   "homeStakeCardDesc": "Stake tokens to earn rewards.",
-  "toolsEmpty": "No tools available for this account.",
+  "homeSolanaAccountUnavailable": "No Solana account is available for this wallet.",
+  "@homeSolanaAccountUnavailable": {
+    "description": "Snackbar shown when a Solana-only tool is tapped but the app cannot find a Solana context for the current wallet."
+  },
   "homeFairLaunch": "Fair launch on pump.fun",
   "homeAboutDescription": "Named after Tibane, a cat who lived from the 1990s to 2019 and inspired the company name Tibanne.",
   "tokenDetailTitle": "Token info",
@@ -1873,7 +2037,7 @@
   "tokenDetailBurned": "Burned",
   "tokenDetailMintAddressCopied": "Mint address copied",
   "tokenDetailTopHolders": "TOP HOLDERS",
-  "tokenDetailRecentTransactions": "RECENT TRANSACTIONS",
+  "tokenDetailAllHolders": "All holders",
   "favoritesEmpty": "No favorite tokens yet",
   "favoritesEmptyHint": "Search for a token and tap the star to add it",
   "labelPassword": "Password",
