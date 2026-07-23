@@ -2017,7 +2017,6 @@
   "contactsSaveChanges": "Save changes",
   "contactsMemoLabel": "Memo (optional)",
   "homeHeroSubtitle": "Research, development and tools\nfor the Solana ecosystem",
-  "homeLiveOnSolana": "LIVE ON SOLANA",
   "homeToolsSection": "TOOLS",
   "homeIncineratorDescription": "Burn unwanted tokens, NFTs, and domains. Reclaim SOL from closed accounts.",
   "homeBadgeLive": "LIVE",
@@ -2032,7 +2031,6 @@
   "homeToolsCardDesc": "Explore all Tibane tools.",
   "homeStakeCardTitle": "Stake",
   "homeStakeCardDesc": "Stake tokens to earn rewards.",
-  "toolsEmpty": "No tools available for this account.",
   "homeSolanaAccountUnavailable": "No Solana account is available for this wallet.",
   "@homeSolanaAccountUnavailable": {
     "description": "Snackbar shown when a Solana-only tool is tapped but the app cannot find a Solana context for the current wallet."
