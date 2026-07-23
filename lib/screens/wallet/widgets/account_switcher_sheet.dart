@@ -70,6 +70,60 @@ String? _shortDisplayAddress(UnifiedAccount account) {
   return _short(account.address);
 }
 
+/// Renders [address] middle-truncated to fill the available width — shows as
+/// many leading+trailing characters as fit, ellipsizing only the middle, and
+/// the full address when it fits. Falls back to [_short] when space is tight.
+class _AddressText extends StatelessWidget {
+  final String address;
+  final TextStyle style;
+
+  const _AddressText({required this.address, required this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
+    return LayoutBuilder(
+      builder: (context, constraints) => Text(
+        _fitAddress(address, style, constraints.maxWidth, scaler),
+        style: style,
+        maxLines: 1,
+        softWrap: false,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+}
+
+/// The widest `head…tail` slice of [address] that fits [maxWidth] in [style]'s
+/// (Space Mono, monospace) font. Returns the full address when it fits.
+String _fitAddress(
+  String address,
+  TextStyle style,
+  double maxWidth,
+  TextScaler scaler,
+) {
+  if (address.isEmpty || !maxWidth.isFinite || maxWidth <= 0) return address;
+  // Monospace: measure a 20-char sample to get the per-character advance
+  // (glyph + letterSpacing), then derive how many characters fit.
+  final probe = TextPainter(
+    text: TextSpan(text: '0' * 20, style: style),
+    textDirection: TextDirection.ltr,
+    textScaler: scaler,
+  )..layout();
+  final charWidth = probe.width / 20;
+  if (charWidth <= 0) return address;
+  final fitChars = maxWidth ~/ charWidth;
+  if (fitChars >= address.length) return address;
+  final maxChars = fitChars - 1; // 1-char safety margin against rounding
+  if (maxChars < 8) return _short(address); // too tight for a useful middle
+  const ellipsis = '...';
+  final keep = maxChars - ellipsis.length;
+  final head = (keep + 1) ~/ 2; // bias the head one longer on odd counts
+  final tail = keep - head;
+  return '${address.substring(0, head)}$ellipsis'
+      '${address.substring(address.length - tail)}';
+}
+
 // Cached tile colors — Color.lerp allocates, and these are constant per theme,
 // so compute once instead of on every tile build.
 final Color _accountTileBase = Color.lerp(
@@ -478,21 +532,19 @@ class _AccountTileState extends State<_AccountTile> {
 
   Widget _compactContent() {
     final account = widget.account;
-    final displayAddress = _shortDisplayAddress(account);
+    final address = account.address;
+    final style = monoStyle(
+      fontSize: 12.5,
+      color: _accountMutedText,
+    ).copyWith(fontWeight: FontWeight.w600);
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        Flexible(
-          child: Text(
-            displayAddress ?? '...',
-            style: monoStyle(
-              fontSize: 12.5,
-              color: _accountMutedText,
-            ).copyWith(fontWeight: FontWeight.w600),
-            overflow: TextOverflow.ellipsis,
-          ),
+        Expanded(
+          child: address.isEmpty
+              ? Text('...', style: style)
+              : _AddressText(address: address, style: style),
         ),
-        if (displayAddress != null) ...[
+        if (address.isNotEmpty) ...[
           const SizedBox(width: 2),
           _CopyAddressButton(account: account),
         ],
