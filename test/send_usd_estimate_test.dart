@@ -20,17 +20,20 @@ void main() {
       );
     });
 
-    test('null when neither a price nor a usable value/balance is available', () {
-      expect(
-        holdingUnitPriceUsd(priceUsd: null, valueUsd: null, uiBalance: 10),
-        isNull,
-      );
-      // Zero balance must not divide-by-zero into NaN/Infinity.
-      expect(
-        holdingUnitPriceUsd(priceUsd: null, valueUsd: 30, uiBalance: 0),
-        isNull,
-      );
-    });
+    test(
+      'null when neither a price nor a usable value/balance is available',
+      () {
+        expect(
+          holdingUnitPriceUsd(priceUsd: null, valueUsd: null, uiBalance: 10),
+          isNull,
+        );
+        // Zero balance must not divide-by-zero into NaN/Infinity.
+        expect(
+          holdingUnitPriceUsd(priceUsd: null, valueUsd: 30, uiBalance: 0),
+          isNull,
+        );
+      },
+    );
   });
 
   group('formatSendUsd', () {
@@ -75,12 +78,55 @@ void main() {
     });
   });
 
+  group('detectSendAddressFamily', () {
+    test('classifies Ethereum, Solana, and Bitcoin addresses', () {
+      expect(
+        detectSendAddressFamily('0x0000000000000000000000000000000000000000'),
+        SendAddressFamily.ethereum,
+      );
+      expect(
+        detectSendAddressFamily('So11111111111111111111111111111111111111112'),
+        SendAddressFamily.solana,
+      );
+      expect(
+        detectSendAddressFamily('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080'),
+        SendAddressFamily.bitcoin,
+      );
+      expect(
+        detectSendAddressFamily('1BoatSLRHtKNngkdXEeobR76b53LETtpyT'),
+        SendAddressFamily.bitcoin,
+      );
+    });
+
+    test('leaves names and malformed addresses unresolved', () {
+      expect(detectSendAddressFamily('alice.sol'), isNull);
+      expect(detectSendAddressFamily('not an address'), isNull);
+    });
+  });
+
+  group('sendAddressFamilyForNetworkType', () {
+    test('maps libwallet network families to send families', () {
+      expect(
+        sendAddressFamilyForNetworkType(NetworkType.solana),
+        SendAddressFamily.solana,
+      );
+      expect(
+        sendAddressFamilyForNetworkType(NetworkType.evm),
+        SendAddressFamily.ethereum,
+      );
+      expect(
+        sendAddressFamilyForNetworkType(NetworkType.bitcoin),
+        SendAddressFamily.bitcoin,
+      );
+    });
+  });
+
   group('explorerNameFor', () {
     test('Solana maps to Solscan', () {
       expect(explorerNameFor(NetworkType.solana, 'mainnet'), 'Solscan');
     });
 
-    test('known EVM chains map to their scanners', () {
+    test('known EVM chains keep their existing explorers', () {
       expect(explorerNameFor(NetworkType.evm, '1'), 'Etherscan');
       expect(explorerNameFor(NetworkType.evm, '56'), 'BscScan');
       expect(explorerNameFor(NetworkType.evm, '137'), 'Polygonscan');

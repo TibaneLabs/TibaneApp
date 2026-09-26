@@ -8,16 +8,18 @@ import '../../services/wallet/biometric.dart';
 import '../../services/wallet/creation.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
-import '../../widgets/keyboard_safe_form.dart';
-import 'inapp_import_screen.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../widgets/keyboard_safe_form.dart';
+import 'inapp_import_screen.dart';
+import 'post_create_backup_screen.dart';
 
 /// Three-step creation flow for the in-app MPC wallet:
 ///   1. Collect email or phone (international format) → libwallet sends a
 ///      verification code via mail or SMS, respectively.
 ///   2. Collect the verification code → libwallet returns a remoteKey.
 ///   3. Collect a password, then run the 2-of-3 wallet creation stream.
+///   4. Prompt the user to save an encrypted manual backup.
 class InAppCreateScreen extends StatefulWidget {
   const InAppCreateScreen({super.key});
 
@@ -25,7 +27,7 @@ class InAppCreateScreen extends StatefulWidget {
   State<InAppCreateScreen> createState() => _InAppCreateScreenState();
 }
 
-enum _Step { identifier, code, password, creating }
+enum _Step { identifier, code, password, creating, backup }
 
 enum _IdMode { email, phone }
 
@@ -133,7 +135,9 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
     final session = _session;
     if (session == null) return;
     if (code.length != session.length) {
-      setState(() => _error = l10n.inappCreateErrCodeLength(session.length.toString()));
+      setState(
+        () => _error = l10n.inappCreateErrCodeLength(session.length.toString()),
+      );
       return;
     }
     setState(() {
@@ -203,7 +207,11 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
       }
       await wallet.useLibwallet();
       if (!mounted) return;
-      Navigator.of(context).pop(true);
+      setState(() {
+        _busy = false;
+        _step = _Step.backup;
+        _progress = null;
+      });
     } catch (e) {
       logError('[InAppCreate._createWallet] create wallet error: $e');
       if (!mounted) return;
@@ -219,6 +227,12 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    if (_step == _Step.backup) {
+      return PostCreateBackupScreen(
+        onDone: () => Navigator.of(context).pop(true),
+      );
+    }
+
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: Text(l10n.inappCreateTitle)),
@@ -226,9 +240,9 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
         child: switch (_step) {
           _Step.identifier => KeyboardSafeForm(child: _buildIdentifier()),
           _Step.code => KeyboardSafeForm(child: _buildCode()),
-          _Step.password || _Step.creating => KeyboardSafeForm(
-            child: _buildPassword(),
-          ),
+          _Step.password ||
+          _Step.creating => KeyboardSafeForm(child: _buildPassword()),
+          _Step.backup => const SizedBox.shrink(),
         },
       ),
     );

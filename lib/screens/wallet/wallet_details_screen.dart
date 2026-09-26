@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
@@ -69,6 +71,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
   String? _loadError;
   bool _isActive = false;
   bool _hasShareHere = true;
+  bool _removing = false;
 
   @override
   void initState() {
@@ -125,10 +128,8 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     if (wallet == null) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ResetPasswordScreen(
-          walletId: wallet.id,
-          walletName: wallet.name,
-        ),
+        builder: (_) =>
+            ResetPasswordScreen(walletId: wallet.id, walletName: wallet.name),
       ),
     );
     if (mounted) _load();
@@ -254,48 +255,51 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
   }
 
   Future<void> _remove() async {
+    if (_removing) return;
     final wallet = _wallet;
     if (wallet == null) return;
     final l10n = context.l10n;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: TibaneColors.card,
-        title: Text(l10n.walletDetailsRemoveTitle),
-        content: Text(
-          l10n.walletDetailsRemoveBody,
-          style: const TextStyle(color: TibaneColors.textMuted),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.actionCancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              l10n.actionRemove,
-              style: const TextStyle(color: TibaneColors.error),
-            ),
-          ),
-        ],
-      ),
-    );
+    final confirmed = await _confirmRemoval(context, l10n);
     if (confirmed != true) return;
     if (!mounted) return;
     final ws = context.read<WalletService>();
+    setState(() => _removing = true);
     final ok = await ws.libwallet.removeWallet(wallet.id);
     if (!mounted) return;
     if (ok) {
-      ws.refreshBalances();
       Navigator.of(context).pop(true);
+      _refreshAfterRemoval(ws);
     } else {
+      setState(() => _removing = false);
       logError('[WalletDetails._remove] remove failed: ${ws.libwallet.error}');
       showWalletError(
         context,
         ws.libwallet.error ?? l10n.walletDetailsRemoveFailed,
       );
     }
+  }
+
+  void _refreshAfterRemoval(WalletService ws) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_refreshAfterRemovalNow(ws));
+    });
+  }
+
+  Future<void> _refreshAfterRemovalNow(WalletService ws) async {
+    await ws.refreshAccounts();
+    if (ws.isConnected) {
+      await ws.refreshBalances();
+    }
+  }
+
+  Future<bool?> _confirmRemoval(
+    BuildContext context,
+    AppLocalizations l10n,
+  ) async {
+    return showDialog<bool>(
+      context: context,
+      builder: (_) => _RemoveWalletDialog(l10n: l10n),
+    );
   }
 
   @override
@@ -364,7 +368,10 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _ActionsRow(onBackup: _backup, onRemove: _remove),
+                  _ActionsRow(
+                    onBackup: _removing ? null : _backup,
+                    onRemove: _removing ? null : _remove,
+                  ),
                 ],
               ),
             );
@@ -415,7 +422,11 @@ class _HeaderCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            l10n.walletDetailsWalletInfo(threshold, wallet.keys.length, sigAlgo),
+            l10n.walletDetailsWalletInfo(
+              threshold,
+              wallet.keys.length,
+              sigAlgo,
+            ),
             style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
           ),
         ],
@@ -620,6 +631,122 @@ class _AccountRow extends StatelessWidget {
   }
 }
 
+class _RemoveWalletDialog extends StatefulWidget {
+  final AppLocalizations l10n;
+
+  const _RemoveWalletDialog({required this.l10n});
+
+  @override
+  State<_RemoveWalletDialog> createState() => _RemoveWalletDialogState();
+}
+
+class _RemoveWalletDialogState extends State<_RemoveWalletDialog> {
+  late final TextEditingController _ctrl = TextEditingController();
+  bool _canContinue = false;
+
+  String get _phrase => widget.l10n.walletDetailsRemoveConfirmPhrase;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onChanged(String value) {
+    final next = value.trim() == _phrase;
+    if (next == _canContinue) return;
+    setState(() => _canContinue = next);
+  }
+
+  void _close(bool result) {
+    FocusScope.of(context).unfocus();
+    Navigator.of(context).pop(result);
+  }
+
+  void _submit() {
+    if (_canContinue) _close(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = widget.l10n;
+    return AlertDialog(
+      backgroundColor: TibaneColors.card,
+      scrollable: true,
+      title: Text(l10n.walletDetailsRemoveTitle),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: TibaneColors.error.withValues(alpha: 0.12),
+              border: Border.all(
+                color: TibaneColors.error.withValues(alpha: 0.55),
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.warning_amber_rounded,
+                  color: TibaneColors.error,
+                  size: 22,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    l10n.walletDetailsRemoveBody,
+                    style: const TextStyle(
+                      color: TibaneColors.text,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            l10n.walletDetailsRemoveConfirmInstruction(_phrase),
+            style: const TextStyle(color: TibaneColors.textMuted, height: 1.35),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _ctrl,
+            autocorrect: false,
+            enableSuggestions: false,
+            textInputAction: TextInputAction.done,
+            style: const TextStyle(color: TibaneColors.text),
+            decoration: InputDecoration(
+              hintText: l10n.walletDetailsRemoveConfirmHint(_phrase),
+            ),
+            onChanged: _onChanged,
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => _close(false),
+          child: Text(l10n.actionCancel),
+        ),
+        TextButton(
+          onPressed: _canContinue ? _submit : null,
+          child: Text(
+            l10n.walletDetailsRemoveConfirmButton,
+            style: TextStyle(
+              color: _canContinue ? TibaneColors.error : TibaneColors.textDim,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Modal text input for renaming a wallet. Returns the cleaned, validated
 /// name via `Navigator.pop`, or null when cancelled. Validation mirrors
 /// [WalletDetailsScreen.validateWalletName] and is surfaced inline.
@@ -696,8 +823,8 @@ class _RenameWalletDialogState extends State<_RenameWalletDialog> {
 }
 
 class _ActionsRow extends StatelessWidget {
-  final VoidCallback onBackup;
-  final VoidCallback onRemove;
+  final VoidCallback? onBackup;
+  final VoidCallback? onRemove;
 
   const _ActionsRow({required this.onBackup, required this.onRemove});
 

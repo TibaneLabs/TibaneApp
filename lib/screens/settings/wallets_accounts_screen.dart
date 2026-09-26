@@ -8,7 +8,6 @@ import '../wallet/accounts_management_screen.dart';
 import '../wallet/device_transfer_receive_screen.dart';
 import '../wallet/inapp_export_screen.dart';
 import '../wallet/inapp_import_screen.dart';
-import '../wallet/networks_screen.dart';
 import '../wallet/nfts_screen.dart';
 import '../wallet/tokens_screen.dart';
 import '../wallet/wallets_management_screen.dart';
@@ -60,15 +59,6 @@ class WalletsAccountsScreen extends StatelessWidget {
                   MaterialPageRoute(
                     builder: (_) => const DeviceTransferReceiveScreen(),
                   ),
-                ),
-              ),
-              const SizedBox(height: 6),
-              SettingsTile(
-                icon: Icons.hub_outlined,
-                title: l10n.networksTitle,
-                subtitle: l10n.walletsAccountsNetworksSubtitle,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const NetworksScreen()),
                 ),
               ),
               const SizedBox(height: 6),

@@ -98,6 +98,10 @@ enum ShellBackAction { popTab, exitApp }
 ShellBackAction shellBackAction({required bool activeTabCanPop}) =>
     activeTabCanPop ? ShellBackAction.popTab : ShellBackAction.exitApp;
 
+@visibleForTesting
+bool bottomTabTapPopsToRoot(int index) =>
+    index == 0 || index == 1 || index == 3;
+
 /// Lazy-build + pause state for the Browse tab, given whether it was already
 /// built (`wasVisited`) and the active tab index. The heavy webview is built
 /// only once the tab is first opened (`visited`), then stays alive but paused
@@ -193,8 +197,10 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
   /// One [Navigator] per bottom-nav tab, so pushes stay inside the active tab
   /// and the [BottomNavigationBar] remains visible on pushed screens (Swap,
   /// token/staking detail, settings sub-screens). See NAVIGATION_MIGRATION.md.
-  final List<GlobalKey<NavigatorState>> _navKeys =
-      List.generate(4, (_) => GlobalKey<NavigatorState>());
+  final List<GlobalKey<NavigatorState>> _navKeys = List.generate(
+    4,
+    (_) => GlobalKey<NavigatorState>(),
+  );
 
   /// The active tab index, exposed to the lazily-built Browse tab so its
   /// webview pauses/resumes (via [DAppBrowserScreen.active]) as tabs change.
@@ -291,13 +297,10 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
   void navigateTo(int index) => _navigateTo(index);
 
   void _navigateTo(int index) {
-    // Tapping the Wallet/Swap tab always returns to its root (the dashboard),
-    // popping any nested screen left on that tab's stack. Per-tab Navigators
-    // keep their own history, so without this, tapping Wallet would drop you
-    // back on whatever detail screen you last opened there instead of the
-    // dashboard.
-    if (index == 1) {
-      _navKeys[1].currentState?.popUntil((r) => r.isFirst);
+    // Home, Wallet/Swap, and Settings act like familiar bottom tabs: tapping
+    // them returns that tab to its root. Browse keeps its current page/state.
+    if (bottomTabTapPopsToRoot(index)) {
+      _navKeys[index].currentState?.popUntil((r) => r.isFirst);
     }
     setState(() => _currentIndex = index);
     _activeTab.value = index;
@@ -330,7 +333,8 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
     // never get the Swap tab.
     final isUk = context.watch<UkComplianceService>().isUk;
     final showSwap =
-        (widget.forceSeeker ?? (wallet.currentAccount?.isMwa ?? false)) && !isUk;
+        (widget.forceSeeker ?? (wallet.currentAccount?.isMwa ?? false)) &&
+        !isUk;
     // Hide the bottom nav while the keyboard is up so it doesn't float above
     // it — the bar lives on the shell Scaffold, outside the tab Navigators.
     final keyboardOpen = context.keyboardInset > 0;
@@ -402,6 +406,7 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
   }
 
   Widget _bottomNav(bool showSwap) {
+    final l10n = context.l10n;
     return Container(
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: TibaneColors.border)),
@@ -410,10 +415,10 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
         currentIndex: _currentIndex,
         onTap: _navigateTo,
         items: [
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'Home',
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.home_outlined),
+            activeIcon: const Icon(Icons.home),
+            label: l10n.bottomNavHomeLabel,
           ),
           BottomNavigationBarItem(
             icon: Icon(
@@ -424,17 +429,19 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
             activeIcon: Icon(
               showSwap ? Icons.swap_horiz : Icons.account_balance_wallet,
             ),
-            label: showSwap ? 'Swap' : 'Wallet',
+            label: showSwap
+                ? l10n.bottomNavSwapLabel
+                : l10n.bottomNavWalletLabel,
           ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.travel_explore_outlined),
-            activeIcon: Icon(Icons.travel_explore),
-            label: 'Browse',
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.travel_explore_outlined),
+            activeIcon: const Icon(Icons.travel_explore),
+            label: l10n.bottomNavBrowseLabel,
           ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined),
-            activeIcon: Icon(Icons.settings),
-            label: 'Settings',
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.settings_outlined),
+            activeIcon: const Icon(Icons.settings),
+            label: l10n.bottomNavSettingsLabel,
           ),
         ],
       ),

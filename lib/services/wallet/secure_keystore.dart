@@ -294,7 +294,7 @@ class SecureKeystore {
 
     if (!verified) {
       debugPrint(
-        '[migration] v2 incomplete — legacy entries kept, retry next launch',
+        '[migration] v2 incomplete. Legacy entries kept, retry next launch',
       );
       return; // flag NOT set, nothing deleted
     }

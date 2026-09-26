@@ -39,7 +39,7 @@ String formatAmountGrouped(double v, {int maxDecimals = 8}) {
 }
 
 /// Human name of the block explorer for a chain, for the "View on ..." link
-/// (e.g. Solscan / Etherscan). Null when we don't have a branded name — the
+/// (e.g. Solscan / Etherscan). Null when we don't have a branded name; the
 /// caller then falls back to a generic "explorer". Pure, for unit tests.
 String? explorerNameFor(NetworkType type, String chainId) {
   switch (type) {
@@ -62,6 +62,25 @@ String? explorerNameFor(NetworkType type, String chainId) {
   }
 }
 
+String solscanTxUrl(String hash) => Uri(
+  scheme: 'https',
+  host: 'solscan.io',
+  pathSegments: ['tx', hash],
+).toString();
+
+String solscanAccountUrl(String address) => Uri(
+  scheme: 'https',
+  host: 'solscan.io',
+  pathSegments: ['account', address],
+).toString();
+
+String solscanTokenUrl(String mint, {bool holders = false}) => Uri(
+  scheme: 'https',
+  host: 'solscan.io',
+  pathSegments: ['token', mint],
+  fragment: holders ? 'holders' : null,
+).toString();
+
 /// Chain-aware explorer URL for a transaction [hash] on [net] (falls back to
 /// Solscan for Solana when the network has no resolved explorer), or null when
 /// no explorer / no hash is available. Mirrors the swap-sheet composition.
@@ -69,7 +88,7 @@ String? explorerTxUrl(Network? net, String? hash) {
   if (hash == null || net == null) return null;
   final composed = net.transactionUrl(hash);
   if (composed.isNotEmpty) return composed;
-  if (net.type == NetworkType.solana) return 'https://solscan.io/tx/$hash';
+  if (net.type == NetworkType.solana) return solscanTxUrl(hash);
   return null;
 }
 

@@ -62,7 +62,7 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
       final picked = result.files.single;
       if (picked.size > _maxBackupBytes) {
         throw const FormatException(
-          'File is larger than 1 MB — backups should be much smaller. '
+          'File is larger than 1 MB. Backups should be much smaller. '
           'Double-check you picked the right file.',
         );
       }
@@ -81,7 +81,7 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
         text = utf8.decode(bytes);
       } catch (_) {
         throw const FormatException(
-          'File is not text — pick the backup JSON exported from Tibane',
+          'File is not text. Pick the backup JSON exported from Tibane',
         );
       }
       _jsonCtrl.text = text;
@@ -129,8 +129,9 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
         final restoredId = wallet.libwallet.walletId;
         await wallet.refreshAccounts();
         if (!mounted) return;
-        final acct =
-            restoredId == null ? null : accountForWallet(wallet.accounts, restoredId);
+        final acct = restoredId == null
+            ? null
+            : accountForWallet(wallet.accounts, restoredId);
         if (acct != null) {
           await wallet.setCurrentAccount(acct);
         } else {
@@ -247,7 +248,11 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
                       FilledButton.icon(
                         onPressed: _busy ? null : _pickFile,
                         icon: const Icon(Icons.folder_open, size: 18),
-                        label: Text(_busy ? l10n.commonWorking : l10n.backupRestoreOpenButton),
+                        label: Text(
+                          _busy
+                              ? l10n.commonWorking
+                              : l10n.backupRestoreOpenButton,
+                        ),
                         style: FilledButton.styleFrom(
                           backgroundColor: TibaneColors.orange,
                           foregroundColor: TibaneColors.black,
@@ -268,7 +273,9 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
                       const SizedBox(height: 24),
                       Row(
                         children: [
-                          const Expanded(child: Divider(color: TibaneColors.border)),
+                          const Expanded(
+                            child: Divider(color: TibaneColors.border),
+                          ),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: Text(
@@ -279,7 +286,9 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
                               ),
                             ),
                           ),
-                          const Expanded(child: Divider(color: TibaneColors.border)),
+                          const Expanded(
+                            child: Divider(color: TibaneColors.border),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -294,7 +303,10 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
                         maxLines: 8,
                         keyboardType: TextInputType.multiline,
                         textAlignVertical: TextAlignVertical.top,
-                        style: monoStyle(fontSize: 11, color: TibaneColors.text),
+                        style: monoStyle(
+                          fontSize: 11,
+                          color: TibaneColors.text,
+                        ),
                         decoration: InputDecoration(
                           labelText: l10n.backupRestoreJsonLabel,
                           alignLabelWithHint: true,
@@ -313,7 +325,9 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
                         enabled: !_busy,
                         textInputAction: TextInputAction.done,
                         onSubmitted: (_) => _busy ? null : _restore(),
-                        decoration: InputDecoration(labelText: l10n.labelPassword),
+                        decoration: InputDecoration(
+                          labelText: l10n.labelPassword,
+                        ),
                       ),
                       if (_error != null) ...[
                         const SizedBox(height: 12),
@@ -338,7 +352,9 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     child: Text(
-                      _busy ? l10n.backupRestoreRestoring : l10n.backupRestoreButton,
+                      _busy
+                          ? l10n.backupRestoreRestoring
+                          : l10n.backupRestoreButton,
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),

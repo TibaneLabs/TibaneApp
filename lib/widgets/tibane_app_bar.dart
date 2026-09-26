@@ -3,12 +3,11 @@ import 'package:flutter/material.dart';
 import '../l10n/l10n.dart';
 import '../theme/tibane_theme.dart';
 import 'cat_logo.dart';
-import 'network_chip.dart';
 import 'wallet_button.dart';
 import '../utils/context_extensions.dart';
 
-/// The shared, Tibane-branded top bar (CatLogo + title + NetworkChip +
-/// WalletButton). Used as the [Scaffold.appBar] of each bottom-nav tab root, so
+/// The shared, Tibane-branded top bar (CatLogo + title + WalletButton). Used as
+/// the [Scaffold.appBar] of each bottom-nav tab root, so
 /// the branding shows on tab roots while pushed detail screens supply their own
 /// AppBar (with a back button). See NAVIGATION_MIGRATION.md.
 class TibaneAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -36,8 +35,6 @@ class TibaneAppBar extends StatelessWidget implements PreferredSizeWidget {
               letterSpacing: -0.5,
             ),
           ),
-          const SizedBox(width: 8),
-          const NetworkChip(),
         ],
       ),
       actions: const [WalletButton(), SizedBox(width: 12)],

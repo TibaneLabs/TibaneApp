@@ -11,11 +11,11 @@ import 'package:libwallet/libwallet.dart' show Network, NetworkType;
 String? networkLogoAsset(Network net) {
   switch (net.type) {
     case NetworkType.solana:
-      return 'assets/icons/solana-sol-logo-orange-network.png';
+      return networkLogoAssetForChain('solana');
     case NetworkType.evm:
       switch (net.chainId) {
         case '1':
-          return 'assets/icons/ethereum-eth-logo-orange-network.png';
+          return networkLogoAssetForChain('ethereum');
         case '56':
           return 'assets/icons/bnb-bnb-logo-orange-network.png';
         case '137':
@@ -25,14 +25,37 @@ String? networkLogoAsset(Network net) {
       }
     case NetworkType.bitcoin:
       switch (net.currencySymbol.toUpperCase()) {
+        case 'BTC':
+          return networkLogoAssetForChain('bitcoin');
+        case 'BCH':
+          return networkLogoAssetForChain('bitcoin-cash');
         case 'LTC':
-          return 'assets/icons/litecoin-ltc-logo-orange-network.png';
+          return networkLogoAssetForChain('litecoin');
         case 'DOGE':
-          return 'assets/icons/dogecoin-doge-logo-orange-network.png';
+          return networkLogoAssetForChain('dogecoin');
         default:
           return null;
       }
     case NetworkType.unknown:
+      return null;
+  }
+}
+
+String? networkLogoAssetForChain(String chain) {
+  switch (chain) {
+    case 'solana':
+      return 'assets/icons/sol.png';
+    case 'ethereum':
+      return 'assets/icons/ethereum.png';
+    case 'bitcoin':
+      return 'assets/icons/bitcoin.png';
+    case 'bitcoin-cash':
+      return 'assets/icons/bitcoin-cash.png';
+    case 'dogecoin':
+      return 'assets/icons/dogecoin.png';
+    case 'litecoin':
+      return 'assets/icons/litecoin.png';
+    default:
       return null;
   }
 }

@@ -4,25 +4,21 @@ import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
 
 import '../../l10n/l10n.dart';
-import '../../services/wallet/libwallet_backend.dart'
-    show AccountSwitchRoute, LibwalletBackend, SwitchResult;
+import '../../services/wallet/unified_account.dart'
+    show UnifiedAccount, chainLabel;
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../widgets/network_logos.dart';
 import '../../widgets/wallet_error_display.dart';
-import 'inapp_create_screen.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
 import '../../utils/context_extensions.dart';
+import 'widgets/account_avatar.dart';
 
-/// Lists every chain account derived from libwallet wallets on this
-/// device. Shows the parent wallet, the chain type, the on-chain
-/// address, and (for secp256k1 chains) the BIP-32 derivation path so
-/// the user can verify what each account is.
-///
-/// FAB pushes a small "Add account" sheet that asks for the parent
-/// wallet, account type, and index. Removal is a row tap → confirm
-/// dialog.
+/// Lists every chain account derived from libwallet wallets on this device.
+/// Account creation lives in the account switcher; this screen only manages
+/// existing accounts.
 class AccountsManagementScreen extends StatefulWidget {
   const AccountsManagementScreen({super.key});
 
@@ -32,8 +28,8 @@ class AccountsManagementScreen extends StatefulWidget {
 }
 
 class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
-  List<lw.Account>? _accounts;
-  Map<String, lw.Wallet> _walletsById = const {};
+  List<UnifiedAccount>? _accounts;
+  Map<String, lw.Account> _rawAccountsById = const {};
   bool _loading = true;
   String? _error;
 
@@ -57,8 +53,11 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
       await ws.refreshAccounts();
       if (!mounted) return;
       setState(() {
-        _accounts = ws.accountsService.rawAccounts;
-        _walletsById = ws.accountsService.walletsById;
+        _accounts = ws.accounts.where((account) => account.isInApp).toList();
+        _rawAccountsById = {
+          for (final account in ws.accountsService.rawAccounts)
+            account.id: account,
+        };
         _loading = false;
       });
     } catch (e) {
@@ -71,44 +70,31 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
     }
   }
 
-  Future<void> _setActive(lw.Account account) async {
+  Future<void> _setActive(UnifiedAccount account) async {
     final ws = context.read<WalletService>();
-    final backend = ws.libwallet;
-    final route = LibwalletBackend.accountSwitchRoute(
-      targetAccountId: account.id,
-      currentAccountId: backend.accountId,
-      targetWalletId: account.wallet,
-      activeWalletId: backend.walletId,
-    );
-    switch (route) {
-      case AccountSwitchRoute.alreadyCurrent:
-        return;
-      case AccountSwitchRoute.sameWallet:
-        break;
-      case AccountSwitchRoute.crossWallet:
-        // The account lives on a different wallet — free lockless switch (no
-        // password), then select the specific account below.
-        final r = await backend.switchWallet(account.wallet);
-        if (!mounted) return;
-        if (r != SwitchResult.ok) {
-          logError('[AccountsManagement._setActive] switch wallet failed: $r');
-          showWalletError(context, backend.error ?? 'Could not switch wallet');
-          return;
-        }
-        break;
-    }
-    final ok = await backend.switchAccount(account.id);
+    final ok = await ws.setCurrentAccount(account);
     if (!mounted) return;
     if (!ok) {
-      logError('[AccountsManagement._setActive] switch account failed: ${backend.error}');
-      showWalletError(context, backend.error ?? 'Could not switch account');
+      logError(
+        '[AccountsManagement._setActive] switch account failed: '
+        '${ws.libwallet.error}',
+      );
+      showWalletError(
+        context,
+        ws.libwallet.error ?? 'Could not switch account',
+      );
       return;
     }
     // Refresh balances for the new active account so the UI updates.
     ws.refreshBalances();
+    _load();
   }
 
-  Future<void> _remove(lw.Account account) async {
+  Future<void> _remove(UnifiedAccount account) async {
+    final rawId = account.accountId;
+    if (rawId == null) return;
+    final rawAccount = _rawAccountsById[rawId];
+    if (rawAccount == null) return;
     final l10n = context.l10n;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -117,8 +103,8 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
         title: Text(l10n.accountsRemoveTitle),
         content: Text(
           l10n.accountsRemoveBody(
-            account.type,
-            account.path.isNotEmpty ? account.path : 'index 0',
+            chainLabel(account.chain),
+            rawAccount.path.isNotEmpty ? rawAccount.path : 'index 0',
           ),
           style: const TextStyle(color: TibaneColors.textMuted),
         ),
@@ -144,7 +130,7 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
           .read<WalletService>()
           .libwallet
           .ensureClient();
-      await client.accounts.delete(account.id);
+      await client.accounts.delete(rawAccount.id);
       _load();
     } catch (e) {
       logError('[AccountsManagement._remove] remove account error: $e');
@@ -159,20 +145,6 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: Text(l10n.accountsTitle)),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: TibaneColors.orange,
-        foregroundColor: TibaneColors.black,
-        // Adding a second account derived from the same wallet would
-        // expose two on-chain addresses backed by the same master key,
-        // which is rarely what the user wants (privacy + recovery
-        // ambiguity). Route the "more addresses" intent to a fresh
-        // wallet instead — each wallet has its own TSS shares.
-        onPressed: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const InAppCreateScreen())),
-        icon: const Icon(Icons.add),
-        label: Text(l10n.walletsMgmtNewWallet),
-      ),
       body: SafeArea(
         child: Builder(
           builder: (context) {
@@ -222,16 +194,20 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
               );
             }
             final activeId = context.watch<WalletService>().libwallet.accountId;
+            final currentId = context.watch<WalletService>().currentAccount?.id;
             return ListView.separated(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
               itemCount: list.length,
               separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (_, i) => _AccountTile(
                 account: list[i],
-                walletName: _walletsById[list[i].wallet]?.name ?? '',
-                active: list[i].id == activeId,
+                active:
+                    list[i].id == currentId ||
+                    (!list[i].isVirtual && list[i].accountId == activeId),
                 onTap: () => _setActive(list[i]),
-                onRemove: () => _remove(list[i]),
+                onRemove: list[i].isMainWalletContext
+                    ? null
+                    : () => _remove(list[i]),
               ),
             );
           },
@@ -242,15 +218,13 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
 }
 
 class _AccountTile extends StatelessWidget {
-  final lw.Account account;
-  final String walletName;
+  final UnifiedAccount account;
   final bool active;
   final VoidCallback onTap;
-  final VoidCallback onRemove;
+  final VoidCallback? onRemove;
 
   const _AccountTile({
     required this.account,
-    required this.walletName,
     required this.active,
     required this.onTap,
     required this.onRemove,
@@ -260,16 +234,13 @@ class _AccountTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final addr = account.address;
+    final canRemove = onRemove != null;
     return TibaneCard(
       onTap: active ? null : onTap,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
-          Icon(
-            active ? Icons.account_circle : Icons.account_circle_outlined,
-            color: active ? TibaneColors.orange : TibaneColors.textMuted,
-            size: 22,
-          ),
+          _ManagedAccountIcon(account: account, active: active),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -280,7 +251,7 @@ class _AccountTile extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        account.name.isEmpty ? account.type : account.name,
+                        account.label,
                         style: const TextStyle(
                           color: TibaneColors.text,
                           fontSize: 15,
@@ -312,7 +283,7 @@ class _AccountTile extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        '${account.type} · $addr',
+                        '${chainLabel(account.chain)} · $addr',
                         overflow: TextOverflow.ellipsis,
                         style: monoStyle(
                           fontSize: 11,
@@ -341,24 +312,75 @@ class _AccountTile extends StatelessWidget {
                     ),
                   ],
                 ),
-                if (account.path.isNotEmpty)
+                if (!account.isMainWalletContext &&
+                    account.walletName.trim().isNotEmpty)
                   Text(
-                    l10n.accountsDerivationPath(account.path),
-                    style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
-                  ),
-                if (walletName.isNotEmpty)
-                  Text(
-                    l10n.accountsFromWallet(walletName),
+                    l10n.accountsFromWallet(account.walletName),
                     style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
                   ),
               ],
             ),
           ),
-          IconButton(
-            tooltip: l10n.actionRemove,
-            icon: const Icon(Icons.delete_outline, size: 18),
-            color: TibaneColors.error,
-            onPressed: onRemove,
+          if (canRemove)
+            IconButton(
+              tooltip: l10n.actionRemove,
+              icon: const Icon(Icons.delete_outline, size: 18),
+              color: TibaneColors.error,
+              onPressed: onRemove,
+            )
+          else
+            const SizedBox(width: 40),
+        ],
+      ),
+    );
+  }
+}
+
+class _ManagedAccountIcon extends StatelessWidget {
+  final UnifiedAccount account;
+  final bool active;
+
+  const _ManagedAccountIcon({required this.account, required this.active});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!account.isMainWalletContext) {
+      return AccountAvatar(
+        asset: account.avatarAsset,
+        active: active,
+        size: 44,
+      );
+    }
+    final asset = networkLogoAssetForChain(account.chain);
+    if (asset == null) {
+      return AccountAvatar(
+        asset: account.avatarAsset,
+        active: active,
+        size: 44,
+      );
+    }
+    return SizedBox.square(
+      dimension: 44,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipOval(
+            child: Image.asset(
+              asset,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: active
+                    ? TibaneColors.orange
+                    : TibaneColors.textDim.withValues(alpha: 0.60),
+                width: active ? 1.8 : 1,
+              ),
+            ),
           ),
         ],
       ),

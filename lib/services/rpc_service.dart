@@ -507,7 +507,7 @@ class RpcService {
   }
 
   /// Get top token holders
-  Future<List<TokenHolder>> getTopHolders(String mint, {int limit = 20}) async {
+  Future<List<TokenHolder>> getTopHolders(String mint, {int limit = 10}) async {
     try {
       final result = await _rpc('getTokenLargestAccounts', [mint]);
       final value = result['value'] as List;

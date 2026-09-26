@@ -63,10 +63,7 @@ class WalletError {
     // custom app exceptions whose toString() is already a bare message.
     final raw = error.toString();
     final matched = _matchMessage(raw);
-    return WalletError(
-      message: matched ?? _stripPrefixes(raw),
-      raw: raw,
-    );
+    return WalletError(message: matched ?? _stripPrefixes(raw), raw: raw);
   }
 
   static WalletError _fromSwapError(SwapError e) {
@@ -127,10 +124,8 @@ class WalletError {
     return null;
   }
 
-  static String _stripPrefixes(String s) => s
-      .replaceFirst('Exception: ', '')
-      .replaceFirst('Bad state: ', '')
-      .trim();
+  static String _stripPrefixes(String s) =>
+      s.replaceFirst('Exception: ', '').replaceFirst('Bad state: ', '').trim();
 
   @override
   String toString() =>
@@ -149,8 +144,8 @@ const Set<String> _silentCodes = {'4001'}; // apirouter: user rejected request.
 /// the message.
 const Map<String, String> _codeMessages = {
   '4902': "This network isn't supported yet.",
-  '-32602': 'Network configuration problem — check the RPC settings.',
-  '503': 'The wallet is busy — please try again.',
+  '-32602': 'Network configuration problem. Check the RPC settings.',
+  '503': 'The wallet is busy. Please try again.',
 };
 
 /// Stable [SwapError.code] values (see swap_quote.dart). Safe to branch on.
@@ -158,12 +153,12 @@ const Map<String, String> _swapCodeMessages = {
   'no_liquidity': 'No swap route for this pair right now.',
   'unsupported_token_pair': 'No swap route for this pair right now.',
   'unsupported_chain': "Swaps aren't supported on this network.",
-  'slippage_exceeded': 'The price moved — try again or raise the slippage.',
-  'quote_expired': 'That quote expired — fetching a fresh one.',
-  'quote_not_found': 'That quote expired — fetching a fresh one.',
-  'provider_unavailable': 'The swap service is unavailable — please try again.',
+  'slippage_exceeded': 'The price moved. Try again or raise the slippage.',
+  'quote_expired': 'That quote expired. Fetching a fresh one.',
+  'quote_not_found': 'That quote expired. Fetching a fresh one.',
+  'provider_unavailable': 'The swap service is unavailable. Please try again.',
   'provider_bad_request':
-      'That swap was rejected — try a different amount or token.',
+      'That swap was rejected. Try a different amount or token.',
   'invalid_request': "That swap request wasn't valid.",
   'missing_api_key': 'Swaps are temporarily unavailable.',
 };
@@ -176,21 +171,24 @@ const Map<String, String> _swapCodeMessages = {
 const List<(String, String)> _messageRules = [
   // Auth / unlock (libwallet-generated).
   ('wrong password', 'Incorrect password.'),
-  ('wrong storekey',
-      'Could not unlock this wallet — try restoring it from cloud backup.'),
+  (
+    'wrong storekey',
+    'Could not unlock this wallet. Try restoring it from cloud backup.',
+  ),
   // Chain-forwarded, deterministic.
-  ('blockhash not found', 'The network was busy — please try again.'),
-  ('block height exceeded', 'The network was busy — please try again.'),
-  ('exceeds desired slippage', 'The price moved too much — please try again.'),
-  ('slippage', 'The price moved too much — please try again.'),
+  ('blockhash not found', 'The network was busy. Please try again.'),
+  ('block height exceeded', 'The network was busy. Please try again.'),
+  ('exceeds desired slippage', 'The price moved too much. Please try again.'),
+  ('slippage', 'The price moved too much. Please try again.'),
   // Rent exemption: sending would drop the account below the minimum SOL it
   // must keep to stay open. libwallet points at Transaction:maxSendable, which
   // the send screen exposes as the MAX button.
-  ('rent-exempt',
-      'Sending this much would leave too little SOL to keep your account open. '
-      'Send a little less, or tap MAX to send the most you safely can.'),
-  ('insufficient',
-      "You don't have enough balance to cover this transaction."),
+  (
+    'rent-exempt',
+    'Sending this much would leave too little SOL to keep your account open. '
+        'Send a little less, or tap MAX to send the most you safely can.',
+  ),
+  ('insufficient', "You don't have enough balance to cover this transaction."),
   ('custom program error', 'The transaction was rejected on-chain.'),
   ('error processing instruction', 'The transaction was rejected on-chain.'),
   // Swap routing (aggregator strings).
@@ -202,8 +200,8 @@ const List<(String, String)> _messageRules = [
   ('socketexception', 'No internet connection.'),
   ('failed host lookup', 'No internet connection.'),
   ('no address associated', 'No internet connection.'),
-  ('connection refused', 'Server unavailable — please try again later.'),
-  ('connection reset', 'Server unavailable — please try again later.'),
-  ('timeoutexception', 'The request timed out — please try again.'),
-  ('timed out', 'The request timed out — please try again.'),
+  ('connection refused', 'Server unavailable. Please try again later.'),
+  ('connection reset', 'Server unavailable. Please try again later.'),
+  ('timeoutexception', 'The request timed out. Please try again.'),
+  ('timed out', 'The request timed out. Please try again.'),
 ];
