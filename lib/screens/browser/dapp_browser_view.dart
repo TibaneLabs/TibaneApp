@@ -161,7 +161,9 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
 
   Future<void> _onRpc(JavaScriptMessage msg) async {
     if (_client == null) return;
-    final url = _currentUrl;
+    // Provider is injected main-frame only (and refuses cross-origin
+    // sub-frames), so the live page URL is the requesting frame's origin.
+    final origin = await _webview.currentUrl() ?? _currentUrl;
     Map<String, dynamic> req;
     try {
       req = jsonDecode(msg.message) as Map<String, dynamic>;
@@ -173,7 +175,7 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
     String payload;
     try {
       final result = await _client!.web3.request(
-        url: url,
+        origin: origin,
         query: {'method': req['method'], 'params': req['params']},
       );
       payload = jsonEncode({'result': result});

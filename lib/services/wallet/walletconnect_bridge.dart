@@ -224,7 +224,7 @@ class WalletConnectBridge extends ChangeNotifier {
     final url = (r.peerMetadata['url'] as String?) ?? 'walletconnect:';
     try {
       final result = await client.web3.request(
-        url: url,
+        origin: url,
         query: <String, dynamic>{'method': r.method, 'params': r.params},
       );
       await client.walletConnect.respond(r.topic, r.id, result);
