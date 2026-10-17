@@ -18,6 +18,7 @@ import 'screens/settings_screen.dart';
 import 'screens/swap_screen.dart';
 import 'screens/wallet/biometric_migration_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
+import 'screens/wallet/widgets/catcard_pairing_sheet.dart';
 import 'services/balances_store.dart';
 import 'services/browser_preferences.dart';
 import 'services/favorites_service.dart';
@@ -125,7 +126,15 @@ class TibaneApp extends StatelessWidget {
         // App language: null = System default (follow device). Drives
         // MaterialApp.locale; the Settings → General switcher writes to it.
         ChangeNotifierProvider(create: (_) => LocaleController()..load()),
-        ChangeNotifierProvider(create: (_) => WalletService()..tryRestore()),
+        ChangeNotifierProvider(
+          create: (_) {
+            final wallet = WalletService();
+            // CatCard pairing sheet + progress, reachable from any screen.
+            installCatCardUi(wallet, rootNavigatorKey);
+            unawaited(wallet.tryRestore());
+            return wallet;
+          },
+        ),
         // Centralized holdings + tx store; reads WalletService (listed first so
         // it's resolvable here). See BALANCES_STORE_MIGRATION.md.
         ChangeNotifierProvider(

@@ -14,6 +14,12 @@ import UIKit
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
+    // CatCard hardware wallet over USB-C, through its CCID smart-card reader
+    // and CryptoTokenKit; see CatCardChannel.swift.
+    if let catCardRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "CatCard") {
+      CatCardChannel.register(with: catCardRegistrar)
+    }
+
     // Expose the user's App Store storefront country to Dart via a
     // narrow MethodChannel — avoids pulling in the full
     // in_app_purchase package just to read SKStorefront. The returned

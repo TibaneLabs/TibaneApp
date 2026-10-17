@@ -23,12 +23,16 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private var pendingResult: MethodChannel.Result? = null
+    private var catCard: CatCardUsb? = null
     private var pendingScenario: LocalAssociationScenario? = null
     private var pendingAction: String? = null
     private var pendingArgs: Map<String, Any?>? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        // CatCard hardware wallet over USB-C (CCID reader); see CatCardUsb.kt.
+        catCard = CatCardUsb(this).also { it.register(flutterEngine.dartExecutor.binaryMessenger) }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -354,5 +358,11 @@ class MainActivity : FlutterFragmentActivity() {
         if (requestCode == ASSOCIATION_REQUEST_CODE) {
             Log.d(TAG, "onActivityResult: resultCode=$resultCode")
         }
+    }
+
+    override fun onDestroy() {
+        catCard?.dispose()
+        catCard = null
+        super.onDestroy()
     }
 }

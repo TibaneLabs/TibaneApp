@@ -6,6 +6,7 @@ Flutter app for Solana Seeker phone, providing Tibane Labs tools from tibane.net
 
 - **Theme**: `lib/theme/tibane_theme.dart` - Dark theme matching tibane.net (orange/gold accents, DM Sans font)
 - **Services**: `lib/services/` - WalletService (MWA), RpcService (Helius RPC)
+- **CatCard**: `lib/services/catcard/` - CatCard hardware wallet over USB (CCID/APDU transport, paired channel, host-wallet commands); spec in `~/projects/catcard/docs/PHONE-APP.md`. Native bridges: `ios/Runner/CatCardChannel.swift` (CryptoTokenKit), `android/.../CatCardUsb.kt` (UsbManager CCID)
 - **Models**: `lib/models/` - StakingPool, UserStake, TokenAccount deserialization matching on-chain layout
 - **Screens**: Home, Incinerator, Staking Pools, Staking Detail, Token Info, About
 - **Widgets**: CatLogo, TibaneCard, GradientButton, WalletButton
