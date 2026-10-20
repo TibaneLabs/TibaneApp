@@ -36,6 +36,7 @@ String? networkLogoAsset(Network net) {
         default:
           return null;
       }
+    case NetworkType.tron:
     case NetworkType.unknown:
       return null;
   }

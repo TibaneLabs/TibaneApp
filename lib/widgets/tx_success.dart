@@ -57,6 +57,8 @@ String? explorerNameFor(NetworkType type, String chainId) {
       return null;
     case NetworkType.bitcoin:
       return null;
+    case NetworkType.tron:
+      return 'Tronscan';
     case NetworkType.unknown:
       return null;
   }
