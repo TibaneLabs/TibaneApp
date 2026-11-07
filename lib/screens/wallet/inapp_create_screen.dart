@@ -11,7 +11,6 @@ import '../../theme/tibane_theme.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
 import '../../widgets/keyboard_safe_form.dart';
-import 'inapp_import_screen.dart';
 import 'post_create_backup_screen.dart';
 
 /// Three-step creation flow for the in-app MPC wallet:
@@ -37,7 +36,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
     initialValue: const PhoneNumber(isoCode: IsoCode.US, nsn: ''),
   );
   final _codeCtrl = TextEditingController();
-  final _nameCtrl = TextEditingController(text: 'My wallet');
+  late final TextEditingController _nameCtrl;
   final _pwCtrl = TextEditingController();
   final _pwCtrl2 = TextEditingController();
 
@@ -62,6 +61,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
   @override
   void initState() {
     super.initState();
+    _nameCtrl = TextEditingController(text: 'My wallet');
     _checkSecurityLevel();
   }
 
@@ -124,7 +124,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
       });
     }
   }
@@ -161,7 +161,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
       });
     }
   }
@@ -218,7 +218,7 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
       setState(() {
         _busy = false;
         _step = _Step.password;
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _progress = null;
       });
     }
@@ -312,20 +312,6 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
         _primaryButton(
           label: _busy ? l10n.commonSending : l10n.actionSendVerificationCode,
           onPressed: _busy ? null : _sendCode,
-        ),
-        TextButton(
-          onPressed: _busy
-              ? null
-              : () async {
-                  final ok = await Navigator.of(context).push<bool>(
-                    MaterialPageRoute(
-                      builder: (_) => const InAppImportScreen(),
-                    ),
-                  );
-                  if (!mounted) return;
-                  if (ok == true) Navigator.of(context).pop(true);
-                },
-          child: Text(l10n.inappCreateImportLink),
         ),
       ],
     );

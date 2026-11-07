@@ -11,11 +11,22 @@ import '../../constants/solana_constants.dart';
 import '../relay_service.dart' show tibaneApi;
 import '../solana_common.dart';
 import 'biometric.dart';
+import 'backup_bundle.dart';
+import 'auto_backup_store.dart';
 import 'creation.dart';
 import 'migration.dart';
+import 'password_rotation.dart';
 import 'secure_keystore.dart';
+import 'send_transaction.dart';
+import 'wallet_group_store.dart';
+import 'logical_wallet.dart';
+import 'wallet_export_format.dart';
+import 'web3_request_coordinator.dart';
 import 'signing.dart'
-    show buildManagementReshareCommittee, effectiveManagementCreds;
+    show
+        buildManagementReshareCommittee,
+        effectiveManagementCreds,
+        canSignWithoutDeviceShare;
 import 'unified_account.dart' show isUsableAccount;
 import 'wallet_backend.dart';
 
@@ -76,6 +87,51 @@ enum DeviceTransferSendRoute {
 /// that wallet first). See [LibwalletBackend.accountSwitchRoute].
 enum AccountSwitchRoute { alreadyCurrent, sameWallet, crossWallet }
 
+class ImportedWalletAccount {
+  final Wallet wallet;
+  final Account account;
+
+  const ImportedWalletAccount({required this.wallet, required this.account});
+}
+
+class TransactionHistoryPage {
+  const TransactionHistoryPage(this.items, this.before, this.hasMore);
+  final List<Transaction> items;
+  final String? before;
+  final bool hasMore;
+}
+
+class PrivateKeySecureStorageException implements Exception {
+  const PrivateKeySecureStorageException();
+}
+
+class PartialBroadcastException implements Exception {
+  PartialBroadcastException(this.submitted, this.cause);
+  final List<String> submitted;
+  final Object cause;
+  @override
+  String toString() => 'batch_partial_broadcast';
+}
+
+class PrivateKeyAccountExistsException implements Exception {
+  const PrivateKeyAccountExistsException(this.account);
+
+  final Account account;
+
+  @override
+  String toString() => 'private_key_account_exists';
+}
+
+class PrivateKeyAddressMismatchException implements Exception {
+  const PrivateKeyAddressMismatchException({
+    required this.expected,
+    required this.actual,
+  });
+
+  final String expected;
+  final String actual;
+}
+
 /// In-app MPC wallet backend. 2-of-3 TSS: device share + remote email share + password.
 ///
 /// Signing uses libwallet 0.3.5's direct `Account:sign*` endpoints with the
@@ -101,6 +157,8 @@ class EnsureDefaultsResult {
 }
 
 class LibwalletBackend extends ChangeNotifier implements WalletBackend {
+  LibwalletBackend({LibwalletClient? client}) : _client = client;
+
   @override
   String get id => 'inapp';
 
@@ -119,6 +177,19 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   // Phase 3b; SecureKeystore.purgeLegacyBiometricPassword clears the orphans.
 
   final SecureKeystore _keystore = SecureKeystore();
+  final Expando<String> _signingContexts = Expando();
+  String get signingContext => '$accountId:${currentNetwork?.id}';
+  void registerSigningAuthorization(List<SigningKey> keys, String context) {
+    if (context != signingContext) throw StateError('wallet_operation_changed');
+    _signingContexts[keys] = context;
+  }
+
+  void _checkSigningAuthorization(List<SigningKey> keys) {
+    final authorized = _signingContexts[keys];
+    if (authorized != null && authorized != signingContext) {
+      throw StateError('wallet_operation_changed');
+    }
+  }
 
   LibwalletClient? _client;
   bool _infoRegistered = false;
@@ -209,18 +280,31 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
   /// Chain accounts a freshly-created wallet should expose by default.
   ///
-  /// Bitcoin is not a separate app account. It is reached by switching the
-  /// current network while using the secp256k1/Ethereum account.
+  /// The Bitcoin account is a technical backing row for all Bitcoin-family
+  /// network contexts. It stays hidden from the user-facing account list.
   @visibleForTesting
   static List<String> defaultAccountTypesForCurve(String curve) {
     switch (curve) {
       case 'ed25519':
         return const ['solana'];
       case 'secp256k1':
-        return const ['ethereum'];
+        return const ['ethereum', 'bitcoin'];
       default:
         return const [];
     }
+  }
+
+  @visibleForTesting
+  static List<String> defaultAccountTypesForWallet(
+    Wallet wallet, {
+    bool accountOnly = false,
+  }) {
+    if (wallet.curve == 'secp256k1' &&
+        (accountOnly ||
+            (wallet.keys.length == 1 && !isNormalMnemonicWallet(wallet)))) {
+      return const ['ethereum'];
+    }
+    return defaultAccountTypesForCurve(wallet.curve);
   }
 
   static String _defaultAccountNameForType(String type) {
@@ -229,6 +313,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         return 'Solana';
       case 'ethereum':
         return 'Ethereum';
+      case 'bitcoin':
+        return 'Bitcoin';
       default:
         return type.isEmpty
             ? 'Account'
@@ -285,7 +371,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       final accountId = _accountId;
       if (accountId != null) {
         final account = await client.accounts.get(accountId);
-        _publicKey = account.address;
+        _publicKey = await _addressForCurrentNetwork(client, account);
+        await prefs.setString(_prefsAddress, _publicKey!);
       }
       // Force a balance refresh tick downstream.
       balanceTick.value++;
@@ -299,15 +386,42 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
   }
 
+  Future<String> _addressForCurrentNetwork(
+    LibwalletClient client,
+    Account account,
+  ) async {
+    final network = _currentNetwork;
+    if (account.type != 'bitcoin' || network?.type != NetworkType.bitcoin) {
+      return account.address;
+    }
+    // Account.Address can be Bitcoin-shaped even while Litecoin/BCH/DOGE is
+    // selected. Resolve the same explicit network used by the account sidebar.
+    final result = await client.accounts.addressFormats(
+      account.id,
+      network: network!.id,
+    );
+    if (result.formats.isEmpty) {
+      throw StateError('No address available for the selected network');
+    }
+    final format = result.formats.firstWhere(
+      (format) => format.isDefault,
+      orElse: () => result.formats.first,
+    );
+    if (format.address.isEmpty) {
+      throw StateError('No address available for the selected network');
+    }
+    return format.address;
+  }
+
   /// Pick the most reasonable default network for a Tibane install: Solana
   /// mainnet if available, otherwise leave the current selection. Called
   /// once after the first wallet create / restore so a new install lands
   /// on Solana instead of libwallet's default (Ethereum). Skipped after
   /// the user has explicitly picked a network via [setCurrentNetwork].
-  Future<void> ensureSolanaDefault() async {
+  Future<void> ensureSolanaDefault({bool force = false}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      if (prefs.getBool(_prefsNetworkPicked) == true) {
+      if (!force && prefs.getBool(_prefsNetworkPicked) == true) {
         // User has chosen explicitly before — never override.
         await refreshCurrentNetwork();
         return;
@@ -316,6 +430,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       final current = await client.networks.getCurrent();
       _currentNetwork = current;
       if (current.type == NetworkType.solana && !current.testNet) {
+        if (force) {
+          await prefs.remove(_prefsNetworkPicked);
+        }
         notifyListeners();
         return;
       }
@@ -333,6 +450,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       }
       await client.networks.setCurrent(pick.id);
       _currentNetwork = pick;
+      if (force) {
+        await prefs.remove(_prefsNetworkPicked);
+      }
       notifyListeners();
     } catch (e) {
       debugPrint('ensureSolanaDefault failed: $e');
@@ -585,17 +705,36 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     if (curves.isEmpty) {
       throw ArgumentError('curves must not be empty');
     }
+    if (_connecting || _multichainMnemonicInProgress) {
+      throw StateError('wallet_busy');
+    }
+    final elapsed = Stopwatch()..start();
+    var stage = 'initializing';
+    void trace(String next) {
+      stage = next;
+      debugPrint(
+        '[mpc-create] stage=$stage elapsed=${elapsed.elapsed.inSeconds}s',
+      );
+    }
+
+    trace(stage);
+    final heartbeat = Timer.periodic(const Duration(seconds: 30), (_) {
+      debugPrint(
+        '[mpc-create] waiting stage=$stage elapsed=${elapsed.elapsed.inSeconds}s',
+      );
+    });
     _connecting = true;
     _error = null;
     notifyListeners();
 
     try {
-      final client = await _getClient();
+      final client = await ensureClient();
 
       // Build the committee (Atonline-parity §5.2 / D5). Biometric: a StoreKey
       // enrolled behind biometric BEFORE keygen — a cancelled/failed enrollment
       // aborts creation here, before any wallet exists. D5 (no biometric): two
       // Password shares + RemoteKey (≥3 keys for multiCreate), no StoreKey.
+      trace('checking_device_security');
       final mode = creationModeFor(
         hasBiometric: await Biometric.hasBiometric(),
         forceUnsafe: kForceUnsafeCreation,
@@ -621,6 +760,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         ];
       }
 
+      trace('generating_${curves.length > 1 ? 'both_curves' : curves.single}');
       final Map<String, Wallet> createdByCurve;
       if (curves.length > 1) {
         Map<String, Wallet>? both;
@@ -630,6 +770,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         )) {
           switch (ev) {
             case Progress(:final fraction):
+              debugPrint(
+                '[mpc-create] native progress=$fraction elapsed=${elapsed.elapsed.inSeconds}s',
+              );
               yield fraction;
             case Complete(:final value):
               both = value;
@@ -659,9 +802,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         createdByCurve = {curves.first: single};
       }
 
-      // Derive default chain accounts per wallet: Solana for ed25519 and
-      // Ethereum for secp256k1. Bitcoin is a network context over the
-      // secp256k1 account, not a separate Account row.
+      trace('creating_accounts');
+      await WalletGroupStore.associate(createdByCurve.values.map((w) => w.id));
+      // Derive default chain accounts per wallet. libwallet 0.5 requires a
+      // bitcoin-typed backing account for Bitcoin-family address derivation;
+      // the UI still presents those as network contexts, not another account.
       Account? activeAccount;
       Wallet? activeWallet;
       for (final entry in createdByCurve.entries) {
@@ -688,8 +833,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         }
       }
 
+      // accounts.create() makes each newly-created row current. Restore the
+      // user-facing default after creating hidden backing rows.
       final wallet = activeWallet!;
       final account = activeAccount!;
+      await client.accounts.setCurrent(account.id);
       final walletKeyIds = _extractKeyIdsByType(wallet);
       _walletId = wallet.id;
       _accountId = account.id;
@@ -703,17 +851,25 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
       // Biometric wallets write the StoreKey blob-only (no no-auth copy);
       // D5 wallets have no StoreKey priv, so _persist skips the share write.
+      trace('saving_wallet');
       await _persist(
         storeKeyPublic: storePair?.publicKey,
         osKeystoreCopy: false,
       );
-      await ensureSolanaDefault();
+      trace('selecting_network');
+      await ensureSolanaDefault(force: true);
+      trace('complete');
       notifyListeners();
     } catch (e) {
+      debugPrint(
+        '[mpc-create] failed stage=$stage elapsed=${elapsed.elapsed.inSeconds}s type=${e.runtimeType}',
+      );
       _error = 'Wallet creation failed: $e';
       debugPrint(_error);
       rethrow;
     } finally {
+      heartbeat.cancel();
+      elapsed.stop();
       _connecting = false;
       notifyListeners();
     }
@@ -806,81 +962,538 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     return allOk;
   }
 
-  /// Import a BIP-39 mnemonic and promote it IN PLACE to the canonical
-  /// `[StoreKey, RemoteKey, Password]` committee (threshold 1), the same shape
-  /// [create] uses. The wallet's master pubkey/address is preserved — only its
-  /// key storage changes from the 1-of-1 password share to the full TSS
-  /// committee — so the imported wallet itself becomes the 3-key MPC wallet
-  /// (no separate "migrated" wallet, no chain picker).
-  ///
-  /// The device StoreKey's private share is persisted under the wallet id so
-  /// [switchWallet] can unlock it later; without that it would read as
-  /// `needsRecovery`. If the promote fails, the just-imported 1-of-1 wallet is
-  /// deleted so no stray password-only wallet is left behind.
-  ///
-  /// Works for both ed25519 (Solana) and secp256k1 (EVM/BTC) seeds. (The
-  /// libwallet 0.4.65 godoc claims promote is secp256k1-only, but that is
-  /// stale — ed25519 promote is tested working against real infra.)
-  ///
-  /// - [mnemonic] / [passphrase] / [curve]: the seed to import.
-  /// - [name]: the new wallet's display name.
-  /// - [password]: encrypts the imported share AND becomes the committee's
-  ///   Password share.
-  /// - [remoteKey]: a verified 2FA remote-key identifier (see
-  ///   [startVerification] / [verifyEmailCode]).
-  Future<Wallet> importAndPromoteMnemonic({
+  bool _mnemonicImportInProgress = false;
+  bool _multichainMnemonicInProgress = false;
+
+  /// Generate only in the native library; never persist or log recovery words.
+  Future<String> generateRecoveryPhrase({int words = 12}) async {
+    final client = await ensureClient();
+    final phrase = await client.wallets
+        .generateMnemonic(words: words)
+        .timeout(const Duration(seconds: 30));
+    if (phrase.trim().split(RegExp(r'\s+')).length != words ||
+        !await client.wallets.validateMnemonic(phrase)) {
+      throw StateError('Invalid generated recovery phrase');
+    }
+    return phrase;
+  }
+
+  /// Keep imported recovery phrases as single-key wallets. The password
+  /// encrypts their local secret; no remote share or MPC ceremony is created.
+  Future<Wallet> importMnemonicWallet({
     required String mnemonic,
     required String passphrase,
     required String curve,
     required String name,
     required String password,
-    required String remoteKey,
-  }) async {
-    final client = await _getClient();
-    // 1-of-1 mnemonic-backed wallet, password-encrypted at rest.
-    final imported = await client.wallets.importMnemonic(
+  }) {
+    if (_multichainMnemonicInProgress) throw StateError('wallet_busy');
+    return _importSingleMnemonicWallet(
       mnemonic: mnemonic,
       passphrase: passphrase,
       curve: curve,
       name: name,
-      keys: [KeyDescription.password(password)],
+      password: password,
     );
-    final storePair = await client.storeKeys.create();
-    final Wallet promoted;
+  }
+
+  /// Both curves share the same recovery words, never an MPC committee.
+  Future<LogicalWallet> importMultichainMnemonicWallet({
+    required String mnemonic,
+    String passphrase = '',
+    required String name,
+    required String password,
+  }) async {
+    if (_multichainMnemonicInProgress ||
+        _mnemonicImportInProgress ||
+        _connecting ||
+        _privateKeyImportInProgress) {
+      throw StateError('wallet_busy');
+    }
+    _multichainMnemonicInProgress = true;
+    final context = signingContext;
+    final owned = <Wallet>[];
     try {
-      // Reshare in place into the full committee (address preserved).
-      promoted = await client.wallets.promote(
-        imported.id,
-        oldKeys: [KeyDescription.password(password)],
-        newKeys: [
-          KeyDescription.storeKey(storePair.publicKey),
-          KeyDescription.remoteKey(remoteKey),
-          KeyDescription.password(password),
-        ],
-        threshold: 1,
-      );
-    } catch (_) {
-      // Don't leave a stray 1-of-1 password-only wallet behind.
+      final client = await ensureClient();
       try {
-        await client.wallets.delete(imported.id);
-      } catch (e) {
-        debugPrint('importAndPromoteMnemonic cleanup failed: $e');
+        for (final curve in ['ed25519', 'secp256k1']) {
+          if (context != signingContext) {
+            throw StateError('wallet_operation_changed');
+          }
+          await _importSingleMnemonicWallet(
+            mnemonic: mnemonic,
+            passphrase: passphrase,
+            curve: curve,
+            name: name,
+            password: password,
+            onCreated: owned.add,
+            notify: false,
+          );
+        }
+        if (context != signingContext) {
+          throw StateError('wallet_operation_changed');
+        }
+        await WalletGroupStore.associate(owned.map((wallet) => wallet.id));
+        return LogicalWallet(owned);
+      } catch (_) {
+        var incomplete = false;
+        // Every id comes directly from our own import, never from a global diff.
+        for (final wallet in owned.reversed) {
+          try {
+            final accounts = (await client.accounts.list()).where(
+              (account) => account.wallet == wallet.id,
+            );
+            for (final account in accounts) {
+              await client.accounts.delete(account.id);
+            }
+            await client.wallets.get(wallet.id);
+            await client.wallets.delete(wallet.id);
+          } on LibwalletException catch (error) {
+            if (error.code != '404') incomplete = true;
+          } catch (_) {
+            incomplete = true;
+          }
+        }
+        try {
+          await WalletGroupStore.forget(owned.map((wallet) => wallet.id));
+        } catch (_) {
+          incomplete = true;
+        }
+        if (incomplete) throw StateError('mnemonic_rollback_incomplete');
+        rethrow;
+      }
+    } finally {
+      _multichainMnemonicInProgress = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Wallet> _importSingleMnemonicWallet({
+    required String mnemonic,
+    required String passphrase,
+    required String curve,
+    required String name,
+    required String password,
+    void Function(Wallet)? onCreated,
+    bool notify = true,
+  }) async {
+    if (_mnemonicImportInProgress) {
+      throw StateError('wallet_busy');
+    }
+    final types = switch (curve) {
+      'ed25519' => const ['solana'],
+      'secp256k1' => const ['ethereum', 'bitcoin'],
+      _ => throw ArgumentError.value(curve, 'curve'),
+    };
+    final sourceContext = signingContext;
+    final client = await ensureClient();
+    Wallet? imported;
+    final createdAccounts = <Account>[];
+    var complete = false;
+    Account? previousAccount;
+    final existing = {for (final w in await client.wallets.list()) w.id: w};
+    if (_mnemonicImportInProgress) throw StateError('wallet_busy');
+    if (sourceContext != signingContext) {
+      throw StateError('wallet_operation_changed');
+    }
+    _mnemonicImportInProgress = true;
+    try {
+      try {
+        previousAccount = await client.accounts.getCurrent();
+      } on LibwalletException catch (error) {
+        if (error.code != '404') rethrow;
+      }
+      final existingAccounts = (await client.accounts.list())
+          .where(
+            (account) => isUsableAccount(account, existing[account.wallet]),
+          )
+          .toList();
+      final unlock = [KeyDescription.password(password)];
+      imported = await client.wallets.importMnemonic(
+        mnemonic: mnemonic,
+        passphrase: passphrase,
+        curve: curve,
+        name: name,
+        keys: unlock,
+      );
+      if (existing.containsKey(imported.id)) {
+        throw StateError('Mnemonic import returned an existing wallet');
+      }
+      onCreated?.call(imported);
+      if (imported.protocol != 'mnemonic' ||
+          imported.threshold != 0 ||
+          imported.keys.length != 1 ||
+          !imported.keys.single.isPassword) {
+        throw StateError('Unexpected mnemonic wallet model');
+      }
+      for (final type in types) {
+        final account = await client.accounts.create(
+          wallet: imported.id,
+          name: _defaultAccountNameForType(type),
+          type: type,
+          index: 0,
+          keys: unlock.map((key) => key.toJson()).toList(),
+        );
+        if (account.wallet != imported.id ||
+            account.type != type ||
+            account.index != 0 ||
+            account.path.isEmpty ||
+            !isUsableAccount(account, imported)) {
+          throw StateError('Invalid imported mnemonic account');
+        }
+        createdAccounts.add(account);
+        final duplicate = existingAccounts
+            .where(
+              (other) =>
+                  other.type == type &&
+                  (type == 'ethereum'
+                      ? other.address.toLowerCase() ==
+                            account.address.toLowerCase()
+                      : other.address == account.address),
+            )
+            .firstOrNull;
+        if (duplicate != null) {
+          throw PrivateKeyAccountExistsException(duplicate);
+        }
+      }
+      if (sourceContext != signingContext) {
+        throw StateError('wallet_operation_changed');
+      }
+      if (previousAccount != null) {
+        await client.accounts.setCurrent(previousAccount.id);
+        previousAccount = null;
+      }
+      complete = true;
+      return imported;
+    } finally {
+      try {
+        if (!complete &&
+            imported != null &&
+            !existing.containsKey(imported.id)) {
+          for (final account in createdAccounts) {
+            final current = await client.accounts.get(account.id);
+            if (current.wallet != imported.id) {
+              throw StateError('mnemonic_import_cleanup_failed');
+            }
+            await client.accounts.delete(account.id);
+          }
+          await client.wallets.delete(imported.id);
+        }
+      } finally {
+        _mnemonicImportInProgress = false;
+        if (previousAccount != null && sourceContext == signingContext) {
+          await client.accounts.setCurrent(previousAccount.id);
+        }
+        if (notify) notifyListeners();
+      }
+    }
+  }
+
+  bool _privateKeyImportInProgress = false;
+
+  /// Import a raw private key as a device-protected 1-of-1 wallet.
+  ///
+  /// This deliberately does not create a Password/RemoteKey committee. The
+  /// imported share is wrapped by a StoreKey whose private half lives only in
+  /// the platform's secure storage. It remains a single-key account.
+  Future<ImportedWalletAccount> importPrivateKey({
+    required String privateKey,
+    required String curve,
+    required String accountType,
+    required String walletName,
+    required String accountName,
+    String? expectedAddress,
+    String? format,
+  }) async {
+    if (_privateKeyImportInProgress || _multichainMnemonicInProgress) {
+      throw StateError('private_key_import_in_progress');
+    }
+    _privateKeyImportInProgress = true;
+    try {
+      return await _importUniquePrivateKey(
+        privateKey: privateKey,
+        curve: curve,
+        accountType: accountType,
+        walletName: walletName,
+        accountName: accountName,
+        expectedAddress: expectedAddress,
+        format: format,
+      );
+    } finally {
+      _privateKeyImportInProgress = false;
+    }
+  }
+
+  Future<ImportedWalletAccount> _importUniquePrivateKey({
+    required String privateKey,
+    required String curve,
+    required String accountType,
+    required String walletName,
+    required String accountName,
+    String? expectedAddress,
+    String? format,
+  }) async {
+    final client = await ensureClient();
+    final existingWallets = {
+      for (final wallet in await client.wallets.list()) wallet.id: wallet,
+    };
+    final existingAccounts = (await client.accounts.list())
+        .where((a) => isUsableAccount(a, existingWallets[a.wallet]))
+        .toList();
+    bool sameAddress(Account account, String address) =>
+        account.type == accountType &&
+        (accountType == 'ethereum'
+            ? account.address.toLowerCase() == address.toLowerCase()
+            : account.address == address);
+    if (expectedAddress != null) {
+      final existing = existingAccounts
+          .where((a) => sameAddress(a, expectedAddress))
+          .firstOrNull;
+      if (existing != null) throw PrivateKeyAccountExistsException(existing);
+    }
+    final existingWalletIds = existingWallets.keys.toSet();
+    Account? previousAccount;
+    try {
+      previousAccount = await client.accounts.getCurrent();
+    } on LibwalletException catch (error) {
+      if (error.code != '404') rethrow;
+    }
+    final previousNetworkId = currentNetwork?.id;
+    Wallet? imported;
+    Account? createdAccount;
+    var wroteShare = false;
+    try {
+      final storePair = await client.storeKeys.create();
+      imported = await client.wallets.importPrivateKey(
+        privateKey: privateKey,
+        curve: curve,
+        name: walletName,
+        keys: [KeyDescription.storeKey(storePair.publicKey)],
+        format: format,
+      );
+      // Compare SDK-derived public keys before creating an account or storing
+      // its share. This also handles differently encoded Ethereum inputs.
+      final existing = existingAccounts
+          .where(
+            (account) =>
+                account.type == accountType &&
+                imported!.pubkey.isNotEmpty &&
+                account.pubkey == imported.pubkey,
+          )
+          .firstOrNull;
+      if (existing != null) throw PrivateKeyAccountExistsException(existing);
+      // A future SDK may deduplicate internally. Never mutate/delete a wallet
+      // that was already present before this attempt.
+      if (existingWalletIds.contains(imported.id)) {
+        throw StateError('private_key_import_reused_wallet');
+      }
+      final account = await client.accounts.create(
+        name: accountName,
+        wallet: imported.id,
+        type: accountType,
+        index: 0,
+      );
+      if (account.wallet != imported.id) {
+        throw StateError('private_key_import_account_ownership_changed');
+      }
+      createdAccount = account;
+      if (expectedAddress != null && account.address != expectedAddress) {
+        throw PrivateKeyAddressMismatchException(
+          expected: expectedAddress,
+          actual: account.address,
+        );
+      }
+      final currentWallets = {
+        for (final wallet in await client.wallets.list()) wallet.id: wallet,
+      };
+      final duplicate = (await client.accounts.list())
+          .where(
+            (other) =>
+                other.id != account.id &&
+                isUsableAccount(other, currentWallets[other.wallet]) &&
+                sameAddress(other, account.address),
+          )
+          .firstOrNull;
+      if (duplicate != null) throw PrivateKeyAccountExistsException(duplicate);
+      await client.accounts.setCurrent(account.id);
+
+      final keyIds = _extractKeyIdsByType(imported);
+      wroteShare = true;
+      await _keystore.writeDeviceShareWithoutPassword(
+        walletId: imported.id,
+        value: storePair.privateKey,
+      );
+      _walletId = imported.id;
+      _accountId = account.id;
+      _publicKey = account.address;
+      _walletName = walletName;
+      _storeKeyPriv = null;
+      _storeKeyId = keyIds['StoreKey'];
+      _remoteKeyId = null;
+      _passwordKeyId = null;
+      _password = null;
+      await _persist(storeKeyPublic: storePair.publicKey);
+      if (accountType == 'solana') {
+        await ensureSolanaDefault(force: true);
+      }
+      notifyListeners();
+      return ImportedWalletAccount(wallet: imported, account: account);
+    } catch (error) {
+      if (imported != null && !existingWalletIds.contains(imported.id)) {
+        try {
+          // Wallet deletion does not reliably remove its account rows. Delete
+          // only the row created by this attempt, with ownership rechecked.
+          if (createdAccount != null) {
+            final current = await client.accounts.get(createdAccount.id);
+            if (current.wallet != imported.id) {
+              throw StateError('private_key_import_account_ownership_changed');
+            }
+            await client.accounts.delete(createdAccount.id);
+          }
+          await client.wallets.delete(imported.id);
+        } catch (cleanupError) {
+          debugPrint('importPrivateKey cleanup failed: $cleanupError');
+          throw StateError('private_key_import_cleanup_failed');
+        }
+        if (wroteShare) {
+          try {
+            await _keystore.deleteDeviceShare(imported.id);
+          } catch (_) {}
+        }
+      }
+      if (imported != null && previousAccount != null) {
+        if (previousNetworkId != null) {
+          await client.networks.setCurrent(previousNetworkId);
+        }
+        await client.accounts.setCurrent(previousAccount.id);
+      }
+      if (error is StateError &&
+          (error.message == 'Secure device storage is unavailable' ||
+              error.message == 'Could not verify secure device storage')) {
+        throw const PrivateKeySecureStorageException();
       }
       rethrow;
     }
-    // Persist the device share with the same Atonline custody as a created wallet
-    // (biometric-first so signing prompts; else no-auth) so switchWallet can
-    // read it back.
-    final persisted = await _persistFreshStoreKey(
-      walletId: promoted.id,
-      priv: storePair.privateKey,
-      pub: storePair.publicKey,
-      password: password,
-    );
-    if (!persisted) {
-      throw StateError('Could not persist the imported wallet key');
+  }
+
+  /// Reveal only the selected imported root key; never changes active state.
+  Future<WalletSecret> exportImportedPrivateKey({
+    required String accountId,
+    required List<KeyDescription> keys,
+  }) async {
+    final client = await ensureClient();
+    final account = await client.accounts.get(accountId);
+    final wallet = await client.wallets.get(account.wallet);
+    if (wallet.threshold != 0 ||
+        wallet.keys.length != 1 ||
+        wallet.pubkey.isEmpty ||
+        account.index != 0 ||
+        account.pubkey != wallet.pubkey ||
+        keys.length != 1 ||
+        keys.single.id != wallet.keys.single.id) {
+      throw StateError('private_key_export_unavailable');
     }
-    return promoted;
+    final secret = await client.wallets.exportSecret(wallet.id, keys: keys);
+    if (secret.type != 'privateKey' ||
+        secret.curve != wallet.curve ||
+        !{'keypair', 'scalar', 'hex'}.contains(secret.format) ||
+        secret.privateKey == null ||
+        secret.privateKey!.isEmpty) {
+      throw StateError('private_key_export_unavailable');
+    }
+    final current = await client.wallets.get(wallet.id);
+    final currentAccount = await client.accounts.get(accountId);
+    if (current.threshold != 0 ||
+        current.keys.length != 1 ||
+        current.pubkey != wallet.pubkey ||
+        current.keys.single.id != wallet.keys.single.id ||
+        currentAccount.wallet != wallet.id ||
+        currentAccount.pubkey != current.pubkey ||
+        currentAccount.address != account.address) {
+      throw StateError('private_key_export_unavailable');
+    }
+    return secret;
+  }
+
+  /// Reveal the phrase only for the explicitly selected ordinary seed wallet.
+  /// No active-wallet mutation, logging or plaintext persistence is allowed.
+  Future<WalletSecret> exportRecoveryPhrase({
+    required String walletId,
+    required String password,
+  }) async {
+    final client = await ensureClient();
+    final wallet = await client.wallets.get(walletId);
+    if (WalletExportPolicy.formatFor(
+          wallet,
+          backupImports: await WalletExportPolicy.backupImports(),
+        ) !=
+        WalletExportFormat.recoveryPhrase) {
+      throw StateError('recovery_phrase_export_unavailable');
+    }
+    await _verifyWalletPassword(client, wallet: wallet, password: password);
+    final secret = await client.wallets.exportSecret(
+      wallet.id,
+      keys: [
+        KeyDescription(
+          type: 'Password',
+          key: password,
+          id: wallet.keys.single.id,
+        ),
+      ],
+    );
+    final phrase = secret.mnemonic;
+    final wordCount = phrase?.trim().split(RegExp(r'\s+')).length;
+    if (!secret.isMnemonic ||
+        secret.curve != wallet.curve ||
+        phrase == null ||
+        !const {12, 15, 18, 21, 24}.contains(wordCount)) {
+      throw StateError('recovery_phrase_export_unavailable');
+    }
+    final current = await client.wallets.get(walletId);
+    if (!isNormalMnemonicWallet(current) ||
+        current.pubkey != wallet.pubkey ||
+        current.gen != wallet.gen ||
+        current.keys.single.id != wallet.keys.single.id ||
+        current.keys.single.key != wallet.keys.single.key ||
+        (await WalletExportPolicy.backupImports()).contains(walletId)) {
+      throw StateError('recovery_phrase_export_unavailable');
+    }
+    return secret;
+  }
+
+  /// A logical seed wallet has one phrase; verify every member before revealing it.
+  Future<WalletSecret> exportRecoveryPhraseGroup({
+    required Set<String> walletIds,
+    required String password,
+  }) async {
+    if (walletIds.isEmpty) {
+      throw StateError('recovery_phrase_export_unavailable');
+    }
+    if (walletIds.length == 1) {
+      return exportRecoveryPhrase(
+        walletId: walletIds.single,
+        password: password,
+      );
+    }
+    final groups = await WalletGroupStore.read();
+    final group = groups[walletIds.first];
+    if (group == null || walletIds.any((id) => groups[id] != group)) {
+      throw StateError('recovery_phrase_export_unavailable');
+    }
+    WalletSecret? result;
+    for (final id in walletIds) {
+      final secret = await exportRecoveryPhrase(
+        walletId: id,
+        password: password,
+      );
+      if (result != null &&
+          (secret.mnemonic != result.mnemonic ||
+              (secret.passphrase ?? '') != (result.passphrase ?? ''))) {
+        throw StateError('recovery_phrase_export_unavailable');
+      }
+      result = secret;
+    }
+    return result!;
   }
 
   /// Reshare the active wallet replacing the Password share with a new secret.
@@ -904,6 +1517,70 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// fallback blob; biometric / no-auth copies need no password) — so this is
   /// self-sufficient without a prior unlock. Requires a StoreKey wallet
   /// (guarded above); returns a recovery error if the device share is absent.
+  Future<List<PasswordRotationItem>> _passwordRotationPlans(
+    String oldPassword,
+    String newPassword, {
+    String? storeKeyPriv,
+  }) async {
+    final id = walletId;
+    if (id == null) throw StateError('No in-app wallet');
+    final client = await ensureClient();
+    final groups = await WalletGroupStore.read();
+    final group = groups[id];
+    final targets = (await client.wallets.list())
+        .where((w) => w.id == id || (group != null && groups[w.id] == group))
+        .toList();
+    if (targets.isEmpty) throw StateError('No wallet selected');
+    return preparePasswordRotation(
+      wallets: targets,
+      oldPassword: oldPassword,
+      newPassword: newPassword,
+      passwordMatches: (wallet, password) async {
+        try {
+          await _verifyWalletPassword(
+            client,
+            wallet: wallet,
+            password: password,
+          );
+          return true;
+        } on StateError {
+          return false;
+        }
+      },
+      readStoreSecret: (wallet, key, password) async =>
+          (wallet.id == id ? storeKeyPriv : null) ??
+          await readStoreKeyPrivateForWallet(
+            wallet.id,
+            key,
+            password: password,
+          ),
+    );
+  }
+
+  Future<bool> hasPendingPasswordRotation() async {
+    final group = await _activeBackupGroupId();
+    final prefs = await SharedPreferences.getInstance();
+    return group != null &&
+        prefs.containsKey('libw_password_rotation_pending_$group');
+  }
+
+  Future<RemoteKeySession?> startPasswordChangeVerification({
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    try {
+      if (newPassword.length < 8) {
+        throw StateError('New password must be at least 8 characters');
+      }
+      await _passwordRotationPlans(oldPassword, newPassword);
+      return startRemoteKeyReshare();
+    } catch (error) {
+      _error = 'Change password failed: $error';
+      notifyListeners();
+      return null;
+    }
+  }
+
   Future<bool> changePassword({
     required String sessionToken,
     required String code,
@@ -911,155 +1588,85 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     required String newPassword,
     String? storeKeyPriv,
   }) async {
-    if (!hasWallet) {
-      _error = 'No in-app wallet';
-      notifyListeners();
-      return false;
-    }
-    if (newPassword.length < 8) {
-      _error = 'New password must be at least 8 characters';
-      notifyListeners();
-      return false;
-    }
+    _error = null;
     try {
-      final client = await _getClient();
-      if (_passwordKeyId == null || _storeKeyId == null) {
-        _error = 'Missing key metadata; cannot change password';
-        notifyListeners();
-        return false;
+      if (newPassword.length < 8) {
+        throw StateError('New password must be at least 8 characters');
       }
-      // Validate the old password without signing (clean early error before we
-      // consume the 2FA code or mutate key material).
-      await client.storeKeys.derivePassword(
-        password: oldPassword,
-        walletKeyId: _passwordKeyId!,
+      final client = await ensureClient();
+      final plans = await _passwordRotationPlans(
+        oldPassword,
+        newPassword,
+        storeKeyPriv: storeKeyPriv,
       );
-      // Reshare resolves each OLD descriptor by its WalletKey id, so read the
-      // current share ids.
-      final w = await client.wallets.get(_walletId!);
-      WalletKey? oldStore;
-      WalletKey? oldPass;
-      for (final k in w.keys) {
-        if (k.type == 'StoreKey') oldStore ??= k;
-        if (k.type == 'Password') oldPass ??= k;
+      final pending = plans.any((p) => !p.alreadyUpdated);
+      final remote = pending
+          ? (await _fleetCall(
+              'remoteKeys.validate',
+              client.remoteKeys.validate(session: sessionToken, code: code),
+            )).remoteKey
+          : '';
+      if (pending && remote.isEmpty) {
+        throw StateError('2FA validation returned no remote key');
       }
-      if (oldStore == null || oldPass == null) {
-        _error = 'Wallet is missing the StoreKey or Password share';
-        notifyListeners();
-        return false;
-      }
-      // The reshare authorizes with the two shares this device holds — the
-      // StoreKey (device-share) secret + the Password (T+1 for a 1-of-3 wallet).
-      // The secret is unchanged by a password change; only the Password share
-      // (and the blob it's encrypted under) rotates. Prefer a per-op secret
-      // (6D sheet) or the cached session, else read it from the keystore — the
-      // old password decrypts the D8 fallback blob (biometric / no-auth copies
-      // need no password), so change-password is self-sufficient without a
-      // prior unlock.
-      final storeSecret =
-          storeKeyPriv ??
-          _storeKeyPriv ??
-          await readStoreKeyPrivate(oldStore, password: oldPassword);
-      if (storeSecret == null) {
-        _error =
-            "This device's wallet key isn't available. Recover the device "
-            'share via 2FA, then change the password.';
-        notifyListeners();
-        return false;
-      }
+      final group = await _activeBackupGroupId();
       final prefs = await SharedPreferences.getInstance();
-      // The New StoreKey keeps the CURRENT public (secret unchanged). Prefer the
-      // persisted pub; fall back to the wallet's StoreKey.key from the server.
-      final storePub = prefs.getString(_prefsStorePub) ?? oldStore.key;
-      if (storePub.isEmpty) {
-        _error = 'Missing StoreKey public; cannot change password';
-        notifyListeners();
-        return false;
-      }
-      // Validate the 2FA code → the FRESH RemoteKey session the reshare pushes
-      // the re-split RemoteKey share to (the stored one is a `done` session).
-      final validation = await _fleetCall(
-        'remoteKeys.validate',
-        client.remoteKeys.validate(session: sessionToken, code: code),
-      );
-      if (validation.remoteKey.isEmpty) {
-        _error = '2FA validation returned no remote key';
-        notifyListeners();
-        return false;
-      }
-      // OLD = the two shares we hold (StoreKey secret + Password); NEW = the
-      // full committee with the UNCHANGED StoreKey public + fresh RemoteKey
-      // session + raw new password. See buildManagementReshareCommittee.
-      final committee = buildManagementReshareCommittee(
-        oldStoreKeyId: oldStore.id,
-        storeSecret: storeSecret,
-        oldPasswordKeyId: oldPass.id,
-        oldPassword: oldPassword,
-        newStorePublic: storePub,
-        newRemoteKey: validation.remoteKey,
+      final journalKey = 'libw_password_rotation_pending_$group';
+      await executePasswordRotation(
+        plans: plans,
         newPassword: newPassword,
-      );
-
-      final after = await _runReshare(
-        client.wallets.reshare(
-          _walletId!,
-          oldKeys: committee.oldKeys,
-          newKeys: committee.newKeys,
+        remoteKey: remote,
+        journal: (remaining) async {
+          final ok = remaining.isEmpty
+              ? await prefs.remove(journalKey)
+              : await prefs.setStringList(journalKey, remaining.toList());
+          if (!ok) {
+            throw StateError('Could not persist password update progress');
+          }
+        },
+        reshare: (plan, newKeys) => _runReshare(
+          client.wallets.reshare(
+            plan.wallet.id,
+            oldKeys: plan.oldKeys,
+            newKeys: newKeys,
+          ),
         ),
+        persist: (wallet, secret) async {
+          if (secret != null) {
+            await _keystore.writeDeviceShare(
+              walletId: wallet.id,
+              value: secret,
+              password: newPassword,
+              osKeystoreCopy: false,
+            );
+            final verified = await _keystore.readDeviceShare(
+              walletId: wallet.id,
+              password: newPassword,
+            );
+            if (verified != secret) {
+              throw StateError('Could not verify updated device share');
+            }
+          }
+          if (_walletId == wallet.id) {
+            final ids = _extractKeyIdsByType(wallet);
+            _passwordKeyId = ids['Password'];
+            _storeKeyId = ids['StoreKey'];
+            _remoteKeyId = ids['RemoteKey'];
+            _password = newPassword;
+            _storeKeyPriv = secret;
+            await _persistActivePointer();
+          }
+        },
       );
-
-      // Reshare bumps the generation and mints a fresh WalletKey id for every
-      // committee member (StoreKey, RemoteKey, Password) — re-extract and
-      // re-persist all three so later signs/reshares reference the live ids.
-      final ids = _extractKeyIdsByType(after);
-      _passwordKeyId = ids['Password'] ?? _passwordKeyId;
-      _storeKeyId = ids['StoreKey'] ?? _storeKeyId;
-      _remoteKeyId = ids['RemoteKey'] ?? _remoteKeyId;
-      if (_passwordKeyId != null) {
-        await prefs.setString(_prefsPasswordKeyId, _passwordKeyId!);
-      }
-      if (_storeKeyId != null) {
-        await prefs.setString(_prefsStoreKeyId, _storeKeyId!);
-      }
-      if (_remoteKeyId != null) {
-        await prefs.setString(_prefsRemoteKeyId, _remoteKeyId!);
-      }
-
-      // Re-encrypt the (unchanged) device share under the new password, then
-      // read it back to VERIFY it's recoverable before declaring success — a
-      // password change that left the device blob under the old password would
-      // silently lock the user out at next sign (zero-data-loss rule).
-      //
-      // osKeystoreCopy:false — the StoreKey SECRET didn't change, so the
-      // existing OS-keystore / biometric copies still hold the right value;
-      // we only refresh the password-encrypted blob. Writing a no-auth copy
-      // here would defeat a biometric-custody wallet's gate.
-      _password = newPassword;
-      _storeKeyPriv = storeSecret;
-      await _keystore.writeDeviceShare(
-        walletId: _walletId!,
-        value: storeSecret,
-        password: newPassword,
-        osKeystoreCopy: false,
-      );
-      final readBack = await _keystore.readDeviceShare(
-        walletId: _walletId!,
-        password: newPassword,
-      );
-      if (readBack != storeSecret) {
-        _error =
-            'Password changed, but re-saving the device share failed. '
-            'Unlock again with the new password to retry.';
-        debugPrint('[changePassword] device-share verify mismatch');
-        notifyListeners();
-        return false;
-      }
+      _error = null;
       notifyListeners();
-      unawaited(_maybeAutoBackup()); // keep iCloud/Google copy current
+      unawaited(_maybeAutoBackup());
       return true;
-    } catch (e) {
-      _error = 'Change password failed: $e';
-      debugPrint(_error);
+    } catch (error) {
+      _error = 'Change password failed: $error';
+      if (error is PasswordRotationIncomplete) {
+        debugPrint('Password update interrupted: ${error.cause}');
+      }
       notifyListeners();
       return false;
     }
@@ -1068,15 +1675,20 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// Start a remote-key reshare for the wallet's 2FA share. Returns the
   /// session descriptor so the UI can prompt for the code; complete by
   /// calling [completeRemoteKeyReshare] with the user-typed digits.
-  Future<RemoteKeySession?> startRemoteKeyReshare() async {
-    if (_walletId == null) {
+  Future<RemoteKeySession?> startRemoteKeyReshare({String? password}) async {
+    final targetId = walletId;
+    if (targetId == null) {
       _error = 'No in-app wallet';
       notifyListeners();
       return null;
     }
+    _error = null;
     try {
-      final client = await _getClient();
-      final wallet = await client.wallets.get(_walletId!);
+      final client = await ensureClient();
+      final wallet = await client.wallets.get(targetId);
+      if (password != null) {
+        await _verifyWalletPassword(client, wallet: wallet, password: password);
+      }
       // RemoteKey:reshare expects the RemoteKey resource identifier
       // (`crws-…:crwsv-…`), which lives in the WalletKey's `key` field —
       // NOT the wallet-key id (`wkey-…`). The two are distinct: id
@@ -1151,14 +1763,23 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     required String code,
     required String password,
   }) async {
-    if (!hasWallet) {
+    final targetId = walletId;
+    if (targetId == null) {
       _error = 'No in-app wallet';
       notifyListeners();
       return false;
     }
+    _error = null;
     try {
-      debugPrint('[recovery] recoverDeviceShareVia2fa: validating 2FA code…');
-      final client = await _getClient();
+      debugPrint('[recovery] checking wallet recovery requirements');
+      final client = await ensureClient();
+      final wallet = await client.wallets.get(targetId);
+      await _verifyWalletPassword(client, wallet: wallet, password: password);
+      // The no-biometric creation path has two Password shares and no
+      // StoreKey. It can already sign; never rotate its committee for setup.
+      if (canSignWithoutDeviceShare(wallet)) {
+        return true;
+      }
       // Validate the SMS/email code. We need the freshly-minted
       // RemoteKey resource id back from validate — the stored
       // `WalletKey.key` is the original keygen session which the
@@ -1184,7 +1805,6 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // Mint a fresh device share locally and run the Wallet:reshare
       // ceremony using the fresh RemoteKey session id.
       debugPrint('[recovery] validated; running device-share reshare…');
-      final wallet = await client.wallets.get(_walletId!);
       final priv = await _resharedDeviceShare(
         client: client,
         wallet: wallet,
@@ -1497,9 +2117,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
   }
 
-  /// Ensure each wallet exposes the native account row expected for its curve.
-  /// Bitcoin is shown as a network context over the secp256k1/Ethereum account,
-  /// so there is no separate `bitcoin` Account row to create here.
+  /// Ensure each wallet exposes the native account rows expected for its curve.
   /// Ensure each wallet has its default chain account(s). This is a backfill
   /// safety net — new wallets already get their defaults at creation time — so
   /// it is gated by [alreadyEnsured]: wallets known to have their defaults are
@@ -1513,19 +2131,28 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     required List<Account> accounts,
     required Map<String, Wallet> walletsById,
     Set<String> alreadyEnsured = const {},
+    Set<String> accountOnlyWalletIds = const {},
   }) async {
     var out = List<Account>.of(accounts);
+    // A saved backfill flag cannot hide a wallet with no account records.
+    // Verify against a second read before restoring its index-zero accounts.
+    final missingWallets = walletsById.keys
+        .where((id) => !accounts.any((account) => account.wallet == id))
+        .toSet();
+    final effectiveEnsured = alreadyEnsured.difference(missingWallets);
     var plan = planDefaultAccounts(
       accounts: out,
       walletsById: walletsById,
-      alreadyEnsured: alreadyEnsured,
+      alreadyEnsured: effectiveEnsured,
+      accountOnlyWalletIds: accountOnlyWalletIds,
     );
     final ensured = <String>{...plan.ensured};
     if (plan.toCreate.isEmpty) {
       return EnsureDefaultsResult(accounts: out, ensuredWalletIds: ensured);
     }
 
-    final client = await _getClient();
+    final client = await ensureClient();
+    final accountToRestore = _accountId;
     // Verify-before-create: the passed-in list may have been transiently
     // partial. Re-read the authoritative list and recompute what's genuinely
     // missing before creating anything.
@@ -1533,7 +2160,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     plan = planDefaultAccounts(
       accounts: out,
       walletsById: walletsById,
-      alreadyEnsured: alreadyEnsured,
+      alreadyEnsured: effectiveEnsured,
+      accountOnlyWalletIds: accountOnlyWalletIds,
     );
     ensured
       ..clear()
@@ -1563,10 +2191,32 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       }
       // Flag the wallet as ensured only once all its defaults are present, so a
       // failed create is retried on a later refresh instead of being skipped.
-      if (defaultAccountTypesForCurve(
-        wallet.curve,
+      if (defaultAccountTypesForWallet(
+        wallet,
+        accountOnly: accountOnlyWalletIds.contains(wallet.id),
       ).every((t) => out.any((a) => a.wallet == wallet.id && a.type == t))) {
         ensured.add(wallet.id);
+      }
+    }
+    if (accountToRestore != null &&
+        out.any((account) => account.id == accountToRestore)) {
+      try {
+        await client.accounts.setCurrent(accountToRestore);
+      } catch (e) {
+        debugPrint(
+          '[accounts] could not restore current account after backfill: $e',
+        );
+      }
+    } else if (accountToRestore != null && _walletId != null) {
+      final candidates = out.where((account) => account.wallet == _walletId);
+      final replacement =
+          candidates.where((a) => a.address == _publicKey).firstOrNull ??
+          candidates.firstOrNull;
+      if (replacement != null) {
+        await client.accounts.setCurrent(replacement.id);
+        _accountId = replacement.id;
+        _publicKey = replacement.address;
+        await _persistActivePointer();
       }
     }
     return EnsureDefaultsResult(accounts: out, ensuredWalletIds: ensured);
@@ -1595,11 +2245,15 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     required List<Account> accounts,
     required Map<String, Wallet> walletsById,
     required Set<String> alreadyEnsured,
+    Set<String> accountOnlyWalletIds = const {},
   }) {
     final toCreate = <String, List<String>>{};
     final ensured = <String>{};
     for (final wallet in walletsById.values) {
-      final types = defaultAccountTypesForCurve(wallet.curve);
+      final types = defaultAccountTypesForWallet(
+        wallet,
+        accountOnly: accountOnlyWalletIds.contains(wallet.id),
+      );
       if (types.isEmpty) continue;
       if (alreadyEnsured.contains(wallet.id)) {
         ensured.add(wallet.id);
@@ -1678,8 +2332,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // Re-read after setCurrent so libwallet can render the account address
       // in the now-active network context (notably Bitcoin-family accounts).
       final current = await client.accounts.get(accountId);
+      final address = await _addressForCurrentNetwork(client, current);
       _accountId = current.id;
-      _publicKey = current.address;
+      _publicKey = address;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_prefsAccountId, _accountId!);
       await prefs.setString(_prefsAddress, _publicKey!);
@@ -1700,18 +2355,15 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     required String walletId,
     required String name,
     required String type,
+    List<SigningKey>? keys,
   }) async {
     try {
-      final client = await _getClient();
-      final existing = await client.accounts.list(wallet: walletId);
-      final nextIndex = existing.isEmpty
-          ? 0
-          : existing.map((a) => a.index).reduce((a, b) => a > b ? a : b) + 1;
+      final client = await ensureClient();
       final acct = await client.accounts.create(
         name: name,
         wallet: walletId,
         type: type,
-        index: nextIndex,
+        keys: keys?.map((key) => key.toJson()).toList(),
       );
       notifyListeners();
       return acct;
@@ -1776,10 +2428,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // load, no password — signing authorizes per-transaction via the sheet.
       // StoreKey metadata is kept; the session secrets stay null.
       final account = await _resolveAccount(client, w);
+      final address = await _addressForCurrentNetwork(client, account);
       await client.accounts.setCurrent(account.id);
       _walletId = walletId;
       _accountId = account.id;
-      _publicKey = account.address;
+      _publicKey = address;
       _walletName = w.name.isNotEmpty ? w.name : 'In-app wallet';
       _storeKeyId = storeKeyId;
       _remoteKeyId = keyIds['RemoteKey'];
@@ -1804,20 +2457,22 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// Pick the account to activate for [wallet]: an existing Solana account if
   /// any, else the first existing account, else a freshly-derived default
   /// account whose type MATCHES the wallet's curve (ed25519 → solana,
-  /// otherwise → ethereum). Bitcoin is selected by network, not by account.
+  /// otherwise → ethereum). The technical Bitcoin account stays hidden.
   Future<Account> _resolveAccount(LibwalletClient client, Wallet wallet) async {
     final all = await client.accounts.list(wallet: wallet.id);
     // Ignore phantom accounts (curve/type mismatch, non-0x EVM address, or
     // "N/A" — see [isUsableAccount]) so a wallet switch never lands on one;
     // they'd resolve `_publicKey` to "N/A".
-    final accounts = all.where((a) => isUsableAccount(a, wallet)).toList();
+    final accounts = all
+        .where((a) => a.wallet == wallet.id && isUsableAccount(a, wallet))
+        .toList();
     if (accounts.isNotEmpty) {
       for (final a in accounts) {
         if (a.type == 'solana') return a;
       }
       return accounts.first;
     }
-    final defaultTypes = defaultAccountTypesForCurve(wallet.curve);
+    final defaultTypes = defaultAccountTypesForWallet(wallet);
     if (defaultTypes.isEmpty) {
       throw StateError('Unsupported wallet curve: ${wallet.curve}');
     }
@@ -1879,6 +2534,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   Future<bool> loadWalletForRecovery(String walletId) =>
       _loadWalletLocked(walletId);
 
+  Future<bool> walletCanSignWithoutDeviceShare(String walletId) async {
+    final client = await ensureClient();
+    return canSignWithoutDeviceShare(await client.wallets.get(walletId));
+  }
+
   /// Pick the wallet to make active after [removedId] is removed: the first
   /// id in [walletIds] that isn't the removed one, or null if none remain.
   @visibleForTesting
@@ -1915,10 +2575,22 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     try {
       final client = await _getClient();
       final wasActive = _walletId != null && walletIds.contains(_walletId);
+      final walletsById = {
+        for (final wallet in await client.wallets.list()) wallet.id: wallet,
+      };
       for (final walletId in walletIds) {
-        await _deleteAccountsForRemovedWallet(client, walletId);
+        await deleteAccountsForRemovedWallet(client, walletId);
         await client.wallets.delete(walletId);
+        await WalletExportPolicy.forget({walletId});
         await _keystore.deleteDeviceShare(walletId);
+        final removedWallet = walletsById[walletId];
+        if (removedWallet != null) {
+          for (final key in removedWallet.keys) {
+            if (key.type == 'StoreKey' && key.key.isNotEmpty) {
+              await Biometric.deleteSecuredKey(key.key);
+            }
+          }
+        }
       }
       if (wasActive) {
         final remaining = (await client.wallets.list())
@@ -1943,26 +2615,46 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
   }
 
-  Future<void> _deleteAccountsForRemovedWallet(
+  /// Remove every in-app wallet and account stored on this device. Exported
+  /// backup files are outside the app database and are deliberately preserved.
+  Future<bool> removeAllWallets() async {
+    try {
+      final client = await _getClient();
+      final walletIds = (await client.wallets.list())
+          .map((wallet) => wallet.id)
+          .toSet();
+      if (walletIds.isNotEmpty && !await removeWallets(walletIds)) {
+        return false;
+      }
+      _clearActiveFields();
+      await _clearActivePrefs();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_prefsNetworkPicked);
+      _error = null;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Could not remove all wallets: $e';
+      debugPrint(_error);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  @visibleForTesting
+  static Future<void> deleteAccountsForRemovedWallet(
     LibwalletClient client,
     String walletId,
   ) async {
-    try {
-      final accounts = await client.accounts.list(wallet: walletId);
-      for (final account in accounts) {
-        try {
-          await client.accounts.delete(account.id);
-        } catch (e) {
-          debugPrint(
-            '[accounts] could not delete account ${account.id} '
-            'for removed wallet $walletId: $e',
-          );
-        }
+    final accounts = await client.accounts.list(wallet: walletId);
+    // A server-side filter is not an authorization boundary. In 0.5.5 this
+    // endpoint can return every account, regardless of the Wallet filter.
+    for (final account in accounts.where((a) => a.wallet == walletId)) {
+      final current = await client.accounts.get(account.id);
+      if (current.wallet != walletId) {
+        throw StateError('Account no longer belongs to the selected wallet');
       }
-    } catch (e) {
-      debugPrint(
-        '[accounts] could not list accounts for removed wallet $walletId: $e',
-      );
+      await client.accounts.delete(account.id);
     }
   }
 
@@ -2035,7 +2727,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     };
     for (final e in entries.entries) {
       final v = e.value;
-      if (v != null) await prefs.setString(e.key, v);
+      if (v != null) {
+        await prefs.setString(e.key, v);
+      } else {
+        await prefs.remove(e.key);
+      }
     }
   }
 
@@ -2175,43 +2871,57 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     int limit = 50,
     String? forAddress,
     int maxPages = 5,
+  }) async => (await getTransactionPage(
+    limit: limit,
+    forAddress: forAddress,
+    maxPages: maxPages,
+  )).items;
+
+  Future<TransactionHistoryPage> getTransactionPage({
+    int limit = 50,
+    String? forAddress,
+    String? before,
+    int maxPages = 5,
   }) async {
-    final client = await _getClient();
-    final firstPage = await client.transactions.list(
-      convert: 'USD',
-      limit: limit,
-    );
-    if (forAddress == null || forAddress.isEmpty) return firstPage;
+    final client = await ensureClient();
+    if (forAddress == null || forAddress.isEmpty) {
+      return const TransactionHistoryPage([], null, false);
+    }
+    final network = currentNetwork;
+    final evm = network?.type == NetworkType.evm || forAddress.startsWith('0x');
+    final me = evm ? forAddress.toLowerCase() : forAddress;
+    bool isMine(Transaction t) {
+      if (network != null) {
+        final canonical = '${network.type.name}.${network.chainId}';
+        if (t.network != null && t.network!.isNotEmpty) {
+          if (t.network != network.id && t.network != canonical) return false;
+        } else if (!t.asset.startsWith('$canonical.')) {
+          return false;
+        }
+      }
+      return (evm ? t.from.toLowerCase() : t.from) == me ||
+          (evm ? t.to.toLowerCase() : t.to) == me;
+    }
 
-    // Case-insensitive match: defensive against libwallet ever returning
-    // EVM addresses in non-checksum form. No-op for Solana (base58 is
-    // case-significant, so the lowercased values still match the
-    // lowercased user address byte-for-byte).
-    final me = forAddress.toLowerCase();
-    bool isMine(Transaction t) =>
-        t.from.toLowerCase() == me || t.to.toLowerCase() == me;
-    final matches = firstPage.where(isMine).toList();
-    if (matches.isNotEmpty || firstPage.length < limit) return matches;
-
-    // Cold start for an underused wallet: nothing on the first page
-    // matched, but the page was full — walk back through older pages
-    // until we find some matches or run out of history.
-    var lastPage = firstPage;
-    for (var i = 0; i < maxPages; i++) {
-      final before = lastPage.last.created?.toIso8601String();
-      if (before == null) break;
-      final next = await client.transactions.list(
+    final matches = <String, Transaction>{};
+    var cursor = before;
+    var more = false;
+    for (var i = 0; i <= maxPages; i++) {
+      final page = await client.transactions.list(
+        network: network?.id,
         convert: 'USD',
         limit: limit,
-        before: before,
+        before: cursor,
       );
-      if (next.isEmpty) break;
-      matches.addAll(next.where(isMine));
-      if (matches.isNotEmpty) return matches;
-      if (next.length < limit) break;
-      lastPage = next;
+      for (final tx in page.where(isMine)) {
+        matches[tx.id.isNotEmpty ? tx.id : '${tx.network}:${tx.hash}'] = tx;
+      }
+      final next = page.lastOrNull?.created?.toIso8601String();
+      more = page.length >= limit && next != null && next != cursor;
+      cursor = next;
+      if (!more || matches.length >= limit) break;
     }
-    return matches;
+    return TransactionHistoryPage(matches.values.toList(), cursor, more);
   }
 
   /// Cache of curated-token lists keyed by chainKey
@@ -2278,28 +2988,17 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
   }
 
-  /// Re-fire libwallet's background tx-history backfill for the active
-  /// account. The backfill is normally triggered automatically on env
-  /// init / Account:setCurrent / Network:setCurrent — but if the original
-  /// init-time attempt failed silently (RPC hiccup, daemon offline at
-  /// that instant) `transactions.list` keeps returning the empty local
-  /// table until the next setCurrent. Calling this re-fires the trigger;
-  /// new rows arrive via the `txHistoryUpdates` stream.
+  /// Fetch on-chain history into LibWallet's local transaction table.
+  /// Re-selecting an unchanged account does not reliably trigger this sweep.
   Future<void> kickHistoryBackfill() async {
-    final accountId = _accountId;
     if (accountId == null) {
       debugPrint('[txhist] kickHistoryBackfill: no accountId, skipping');
       return;
     }
-    debugPrint(
-      '[txhist] kickHistoryBackfill: calling accounts.setCurrent($accountId)',
-    );
     try {
-      final client = await _getClient();
-      await client.accounts.setCurrent(accountId);
-      debugPrint(
-        '[txhist] kickHistoryBackfill: setCurrent returned. Backfill triggered',
-      );
+      final client = await ensureClient();
+      final result = await client.transactions.backfill();
+      debugPrint('[txhist] Transaction:backfill: $result');
     } catch (e) {
       debugPrint('[txhist] kickHistoryBackfill failed: $e');
     }
@@ -2307,16 +3006,47 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
   /// Compute the max sendable amount (accounting for fees + rent).
   Future<MaxSendableResult> maxSendable({String? asset, String? to}) async {
-    final client = await _getClient();
-    return client.transactions.maxSendable(
-      from: _accountId,
-      asset: asset,
-      to: to,
-    );
+    final client = await ensureClient();
+    final source = accountId;
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return await client.transactions
+            .maxSendable(from: source, asset: asset, to: to)
+            .timeout(const Duration(seconds: 10));
+      } catch (error) {
+        final message = error.toString().toLowerCase();
+        final transient =
+            message.contains('resource temporarily unavailable') ||
+            message.contains('os error 35');
+        if (!transient || attempt >= 2) rethrow;
+        await Future<void>.delayed(Duration(milliseconds: 200 * (attempt + 1)));
+      }
+    }
   }
 
   static const _prefsAutoBackupAt = 'libw_auto_backup_at';
   static const _autoBackupFileName = 'tibane_wallet_autobackup.json';
+  AutoBackupStore? _backupStore;
+  Future<AutoBackupStore> _autoBackupStore() async {
+    final file = await _autoBackupFile();
+    return _backupStore ??= AutoBackupStore(file);
+  }
+
+  Future<String?> _activeBackupGroupId() async {
+    final id = walletId;
+    if (id == null) return null;
+    final groups = await WalletGroupStore.read();
+    return groups[id] ?? id;
+  }
+
+  Future<List<AutoBackupEntry>> listAutoBackups() async =>
+      (await _autoBackupStore()).read();
+  Future<AutoBackupEntry?> _selectedAutoBackup(String? backupId) async {
+    final entries = await listAutoBackups();
+    final id = backupId ?? await _activeBackupGroupId();
+    return entries.where((e) => e.id == id).firstOrNull ??
+        (id == null ? entries.firstOrNull : null);
+  }
 
   /// Path to the auto-backup file inside the app's documents directory.
   /// On iOS this directory is auto-backed up via the system iCloud Backup
@@ -2336,10 +3066,28 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// entitlements are needed — only the device-level backup setting.
   Future<DateTime?> writeAutoBackup(String password) async {
     try {
-      final json = await exportBackupJson(password);
-      final file = await _autoBackupFile();
-      await file.writeAsString(json, flush: true);
+      final groupId = await _activeBackupGroupId();
+      if (groupId == null) throw StateError('No wallet to export');
+      final groups = await WalletGroupStore.read();
+      final client = await ensureClient();
+      final targets = (await client.wallets.list())
+          .where(
+            (w) =>
+                (w.id == walletId || groups[w.id] == groupId) &&
+                w.keys.any((k) => k.isPassword),
+          )
+          .map((w) => w.id)
+          .toSet();
+      final json = await exportBackupJson(password, walletIds: targets);
       final now = DateTime.now();
+      await (await _autoBackupStore()).put(
+        AutoBackupEntry(
+          id: groupId,
+          name: walletName ?? groupId,
+          updated: now,
+          bundle: json,
+        ),
+      );
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_prefsAutoBackupAt, now.toIso8601String());
       notifyListeners();
@@ -2353,20 +3101,14 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   }
 
   /// Timestamp of the last successful auto-backup, or null if none yet.
-  Future<DateTime?> lastAutoBackup() async {
-    final prefs = await SharedPreferences.getInstance();
-    final s = prefs.getString(_prefsAutoBackupAt);
-    if (s == null) return null;
-    return DateTime.tryParse(s);
-  }
+  Future<DateTime?> lastAutoBackup({String? backupId}) async =>
+      (await _selectedAutoBackup(backupId))?.updated;
 
   /// Read the JSON content of the auto-backup file, or null if it's not
   /// present (e.g. fresh install on a device that hasn't restored yet).
-  Future<String?> readAutoBackup() async {
-    final file = await _autoBackupFile();
-    if (!await file.exists()) return null;
+  Future<String?> readAutoBackup({String? backupId}) async {
     try {
-      return await file.readAsString();
+      return (await _selectedAutoBackup(backupId))?.bundle;
     } catch (e) {
       _error = 'Read auto-backup failed: $e';
       notifyListeners();
@@ -2376,11 +3118,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
   /// Delete the on-disk auto-backup file and clear the recorded timestamp.
   /// Useful for "stop backing up" / "wipe local copy" flows.
-  Future<void> clearAutoBackup() async {
-    try {
-      final file = await _autoBackupFile();
-      if (await file.exists()) await file.delete();
-    } catch (_) {}
+  Future<void> clearAutoBackup({String? backupId}) async {
+    final entry = await _selectedAutoBackup(backupId);
+    if (entry != null) await (await _autoBackupStore()).remove(entry.id);
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefsAutoBackupAt);
     notifyListeners();
@@ -2402,24 +3142,51 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// Export the connected wallet's backup bundle as a pretty-printed JSON
   /// string. Re-validates the supplied [password] before exporting; throws
   /// `StateError` on bad password or missing wallet state.
-  Future<String> exportBackupJson(String password) async {
+  Future<String> exportBackupJson(
+    String password, {
+    Set<String>? walletIds,
+  }) async {
     final walletId = _walletId;
-    final passwordKeyId = _passwordKeyId;
-    if (walletId == null || passwordKeyId == null) {
+    final targets = Set<String>.of(walletIds ?? {?walletId});
+    if (targets.isEmpty) {
       throw StateError('No wallet to export');
     }
-    final client = await _getClient();
-    try {
-      await client.storeKeys.derivePassword(
-        password: password,
-        walletKeyId: passwordKeyId,
-      );
-    } catch (_) {
-      throw StateError('Wrong password');
+    final client = await ensureClient();
+    // Verify the entire selection before exporting anything. Never silently
+    // omit a technical wallet that cannot be restored with this password.
+    for (final id in targets) {
+      final wallet = await client.wallets.get(id);
+      if (!wallet.keys.any((key) => key.isPassword)) {
+        throw StateError('private_key_wallet_backup_unavailable');
+      }
+      await _verifyWalletPassword(client, wallet: wallet, password: password);
     }
-    final entries = await client.wallets.backup(walletId);
-    final payload = entries.map((e) => e.toJson()).toList();
-    return const JsonEncoder.withIndent('  ').convert(payload);
+    final files = <String, Map<String, dynamic>>{};
+    for (final id in targets) {
+      final entries = await client.wallets.backup(id);
+      if (entries.isEmpty) throw StateError('Wallet backup is empty');
+      for (final entry in entries) {
+        final json = entry.toJson();
+        final previous = files[entry.filename];
+        if (previous != null && previous['data'] != json['data']) {
+          throw StateError('Conflicting wallet backup filenames');
+        }
+        files[entry.filename] = json;
+      }
+    }
+    final groups = await WalletGroupStore.read();
+    return const JsonEncoder.withIndent('  ').convert([
+      ...files.values,
+      if (targets.any(groups.containsKey))
+        {
+          'filename': walletGroupManifest,
+          'data': jsonEncode({
+            for (final id in targets)
+              if (groups[id] != null && targets.contains(groups[id]))
+                id: groups[id],
+          }),
+        },
+    ]);
   }
 
   /// Restore a wallet from a previously exported backup JSON. The password
@@ -2436,85 +3203,77 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     required String backupJson,
     required String password,
   }) async {
+    if (_connecting) return false;
+    final previous = (
+      wallet: _walletId,
+      account: _accountId,
+      address: _publicKey,
+      name: _walletName,
+      storeId: _storeKeyId,
+      remoteId: _remoteKeyId,
+      passwordId: _passwordKeyId,
+      password: _password,
+      secret: _storeKeyPriv,
+      network: _currentNetwork,
+    );
+    var activated = false;
     _connecting = true;
     _error = null;
     notifyListeners();
     Wallet? restored;
     LibwalletClient? client;
+    Set<String> addedIds = {};
     try {
-      final parsed = jsonDecode(backupJson);
-      if (parsed is! List) {
-        throw const FormatException('Expected a JSON array of backup entries');
-      }
-      if (parsed.isEmpty) {
-        throw const FormatException('Backup is empty');
-      }
-      final files = <Map<String, String>>[];
-      for (final raw in parsed) {
-        if (raw is! Map) {
-          throw const FormatException('Each entry must be an object');
-        }
-        final filename = raw['filename'];
-        final data = raw['data'];
-        if (filename is! String || data is! String) {
-          throw const FormatException(
-            'Each entry needs string filename and data',
-          );
-        }
-        files.add({'filename': filename, 'data': data});
-      }
-
-      client = await _getClient();
-      final before = (await client.wallets.list()).map((w) => w.id).toSet();
-      await client.wallets.restore(files);
-      final after = await client.wallets.list();
-      for (final w in after) {
-        if (!before.contains(w.id) && w.curve == 'ed25519') {
-          restored = w;
-          break;
-        }
-      }
-      if (restored == null) {
-        throw StateError('Backup contains no Solana (ed25519) wallet');
-      }
-
-      final accounts = await client.accounts.list(wallet: restored.id);
-      debugPrint(
-        'Import: restored wallet ${restored.id} (curve=${restored.curve}) '
-        'has ${accounts.length} accounts: '
-        '${accounts.map((a) => a.type).join(", ")}',
+      client = await ensureClient();
+      final result = await restoreValidatedBackup(
+        client: client,
+        bundle: BackupBundle.decode(backupJson),
+        password: password,
+        createValidationClient: createBackupValidationClient,
+        verifyPassword: (c, w, pw) =>
+            _verifyWalletPassword(c, wallet: w, password: pw),
       );
-      Account? account;
-      for (final a in accounts) {
-        if (a.type == 'solana') {
-          account = a;
-          break;
-        }
+      restored = result.wallet;
+      final account = result.account;
+      addedIds = result.addedIds;
+      final oldGroups = await WalletGroupStore.read();
+      await WalletGroupStore.merge({
+        for (final entry in result.groups.entries)
+          if (!oldGroups.containsKey(entry.key)) entry.key: entry.value,
+      });
+      if (_walletId != previous.wallet || _accountId != previous.account) {
+        throw StateError('wallet_operation_changed');
       }
-      // Accounts aren't part of the wallet backup — they're derived on
-      // demand. If the restored wallet has no Solana account yet,
-      // create one at index 0 (same as the fresh-create flow does).
-      account ??= await client.accounts.create(
-        name: 'Solana',
-        wallet: restored.id,
-        type: 'solana',
-        index: 0,
-      );
 
       final keyIds = _extractKeyIdsByType(restored);
       final passwordKeyId = keyIds['Password'];
       if (passwordKeyId == null) {
         throw StateError('Restored wallet has no Password share');
       }
-      try {
-        await client.storeKeys.derivePassword(
-          password: password,
-          walletKeyId: passwordKeyId,
-        );
-      } on LibwalletException {
-        throw StateError('Wrong password for this backup');
+      activated = true;
+      final type = account.type == 'solana'
+          ? NetworkType.solana
+          : account.type == 'bitcoin'
+          ? NetworkType.bitcoin
+          : NetworkType.evm;
+      final current = _currentNetwork;
+      final networks = await client.networks.list(testNet: false);
+      final candidates = networks.where((n) => n.type == type).toList();
+      if (candidates.isEmpty) {
+        throw StateError('No supported network for restored account');
       }
-
+      final preferred = candidates.firstWhere(
+        (n) => type == NetworkType.evm
+            ? n.chainId == '1'
+            : type == NetworkType.bitcoin
+            ? n.chainId == 'bitcoin'
+            : n.chainId == 'mainnet',
+        orElse: () => candidates.first,
+      );
+      final network = current?.type == type ? current! : preferred;
+      await client.networks.setCurrent(network.id);
+      _currentNetwork = network;
+      await client.accounts.setCurrent(account.id);
       _walletId = restored.id;
       _accountId = account.id;
       _publicKey = account.address;
@@ -2522,7 +3281,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _storeKeyId = keyIds['StoreKey'];
       _remoteKeyId = keyIds['RemoteKey'];
       _passwordKeyId = passwordKeyId;
-      _password = password;
+      _password = addedIds.contains(restored.id) ? password : null;
       _storeKeyPriv = null;
 
       // Cross-device imports leave _storeKeyPriv null intentionally —
@@ -2533,6 +3292,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // device share locally.
 
       final prefs = await SharedPreferences.getInstance();
+      await _clearActivePrefs();
       await prefs.setString(_prefsWalletId, _walletId!);
       await prefs.setString(_prefsAccountId, _accountId!);
       await prefs.setString(_prefsAddress, _publicKey!);
@@ -2544,20 +3304,51 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         await prefs.setString(_prefsRemoteKeyId, _remoteKeyId!);
       }
       await prefs.setString(_prefsPasswordKeyId, _passwordKeyId!);
+      await WalletExportPolicy.recordBackupImports(addedIds);
       notifyListeners();
       return true;
     } catch (e) {
       // Clean up any wallet that landed in libwallet's local store before
       // a downstream check failed — otherwise a retry sees stale "new"
       // wallets and may pick the wrong one.
-      if (restored != null && client != null) {
-        try {
-          await client.wallets.delete(restored.id);
-        } catch (cleanupErr) {
-          debugPrint('Import cleanup failed: $cleanupErr');
+      var cleanupFailed = e is BackupRollbackIncomplete;
+      if (client != null) {
+        for (final id in addedIds) {
+          try {
+            await client.wallets.delete(id);
+            await WalletExportPolicy.forget({id});
+          } catch (cleanupErr) {
+            cleanupFailed = true;
+            debugPrint('Import cleanup failed: $cleanupErr');
+          }
         }
       }
-      _error = 'Import failed: $e';
+      if (activated) {
+        _walletId = previous.wallet;
+        _accountId = previous.account;
+        _publicKey = previous.address;
+        _walletName = previous.name;
+        _storeKeyId = previous.storeId;
+        _remoteKeyId = previous.remoteId;
+        _passwordKeyId = previous.passwordId;
+        _password = previous.password;
+        _storeKeyPriv = previous.secret;
+        _currentNetwork = previous.network;
+        try {
+          if (client != null && previous.account != null) {
+            await client.accounts.setCurrent(previous.account!);
+          }
+          if (client != null && previous.network != null) {
+            await client.networks.setCurrent(previous.network!.id);
+          }
+          await _persistActivePointer();
+        } catch (_) {
+          cleanupFailed = true;
+        }
+      }
+      _error = cleanupFailed
+          ? 'backup_rollback_incomplete'
+          : 'Import failed: $e';
       debugPrint(_error);
       notifyListeners();
       return false;
@@ -2566,6 +3357,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       notifyListeners();
     }
   }
+
+  @visibleForTesting
+  Future<LibwalletClient> createBackupValidationClient(String path) async =>
+      LibwalletClient.initialize(path);
 
   /// Simulate a send (transfer) without broadcasting. Returns the
   /// [TransactionSimulation] for use in an approval-sheet review step:
@@ -2576,33 +3371,29 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     required String to,
     required Amount amount,
     String? asset,
+    MaxSendableResult? maxPlan,
   }) async {
-    final client = await _getClient();
+    final client = await ensureClient();
     final resolvedAsset = await _resolveAssetKey(client, asset);
-    final tx = UnsignedTransaction(
-      type: 'transfer',
-      to: to,
-      from: _accountId,
+    final network = currentNetwork ?? await client.networks.getCurrent();
+    final source = accountId;
+    if (source == null) throw StateError('No account selected');
+    final sender = network.type == NetworkType.evm
+        ? (await client.accounts.get(source)).address
+        : (publicKey ?? '');
+    final tx = buildSendTransaction(
+      network: network,
+      accountId: source,
+      senderAddress: sender,
+      recipient: to,
       amount: amount,
       asset: resolvedAsset,
-      priorityLevel: 'medium',
+      simulation: true,
+      maxPlan: maxPlan,
     );
-    // `validate` is the authoritative pre-flight: it builds the tx and throws
-    // on real problems (insufficient funds, bad recipient, rent). It runs the
-    // same RPCs simulate would (balance, rent-exemption, account info, fees).
-    await client.transactions.validate(tx);
-    // `simulate` is best-effort enrichment (compute units, program-log
-    // warnings). On Solana it can't run from an UnsignedTransaction — the
-    // backend errors "solana tx has no raw bytes; call validate first"
-    // because validate's built raw tx isn't carried back into simulate (the
-    // UnsignedTransaction has no raw field). Since validate already vetted
-    // the tx, degrade gracefully to a benign preview instead of failing.
-    try {
-      return await client.transactions.simulate(tx);
-    } catch (e) {
-      debugPrint('simulate unavailable (validate already vetted tx): $e');
-      return const TransactionSimulation(chain: 'solana', willRevert: false);
-    }
+    // LibWallet builds and simulates the transfer. Never approve a preview
+    // when simulation fails; the send screen must surface that failure.
+    return client.transactions.simulate(tx);
   }
 
   // ------------------------------------------------------------------
@@ -2629,7 +3420,16 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     WalletKey storeKey, {
     String? password,
   }) async {
-    if (_walletId == null) return null;
+    final walletId = _walletId;
+    if (walletId == null) return null;
+    return readStoreKeyPrivateForWallet(walletId, storeKey, password: password);
+  }
+
+  Future<String?> readStoreKeyPrivateForWallet(
+    String walletId,
+    WalletKey storeKey, {
+    String? password,
+  }) async {
     // 1. biometric-gated copy (triggers a biometric prompt; null on cancel /
     //    when there's no entry — Phase-1 wallets aren't here yet).
     try {
@@ -2640,16 +3440,13 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
     // 2. no-auth OS keystore copy (no password needed).
     final noAuth = await _keystore.readDeviceShare(
-      walletId: _walletId!,
+      walletId: walletId,
       password: null,
     );
     if (noAuth != null) return noAuth;
     // 3. password-encrypted recovery blob — needs the typed password.
     if (password != null) {
-      return _keystore.readDeviceShare(
-        walletId: _walletId!,
-        password: password,
-      );
+      return _keystore.readDeviceShare(walletId: walletId, password: password);
     }
     return null;
   }
@@ -2662,16 +3459,34 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     required Amount amount,
     String? asset,
     required List<SigningKey> keys,
+    MaxSendableResult? maxPlan,
+    String? expectedAccountId,
+    String? expectedNetworkId,
   }) async {
-    final client = await _getClient();
+    _checkSigningAuthorization(keys);
+    final source = accountId;
+    if (source == null ||
+        (expectedAccountId != null && source != expectedAccountId)) {
+      throw StateError('wallet_operation_changed');
+    }
+    final client = await ensureClient();
     final resolvedAsset = await _resolveAssetKey(client, asset);
-    final tx = UnsignedTransaction(
-      type: 'transfer',
-      to: to,
-      from: _accountId,
+    final network = currentNetwork ?? await client.networks.getCurrent();
+    if (expectedNetworkId != null && network.id != expectedNetworkId) {
+      throw StateError('wallet_operation_changed');
+    }
+    final sender = network.type == NetworkType.evm
+        ? (await client.accounts.get(source)).address
+        : (publicKey ?? '');
+    final tx = buildSendTransaction(
+      network: network,
+      accountId: source,
+      senderAddress: sender,
+      recipient: to,
       amount: amount,
       asset: resolvedAsset,
-      priorityLevel: 'medium',
+      simulation: false,
+      maxPlan: maxPlan,
     );
     await client.transactions.validate(tx);
     return client.transactions.signAndSendSimple(tx, keys: keys);
@@ -2685,6 +3500,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   ) async {
     if (_accountId == null) return null;
     try {
+      _checkSigningAuthorization(keys);
       final client = await _getClient();
       final result = await client.accounts.signMessage(
         _accountId!,
@@ -2707,21 +3523,25 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     List<Uint8List> transactions,
     List<SigningKey> keys,
   ) async {
-    if (_accountId == null) return List.filled(transactions.length, null);
-    final client = await _getClient();
+    final source = accountId;
+    if (source == null) throw StateError('No account selected');
+    _checkSigningAuthorization(keys);
+    final client = await ensureClient();
     final keyMaps = keys.map((k) => k.toJson()).toList();
     final out = <Uint8List?>[];
     for (final tx in transactions) {
       try {
+        _checkSigningAuthorization(keys);
         final signed = await client.accounts.signTransaction(
-          _accountId!,
+          source,
           transaction: tx,
           keys: keyMaps,
         );
         out.add(signed);
       } catch (e) {
-        debugPrint('signTransactionsWithKeys error: $e');
-        out.add(null);
+        _error = 'Transaction signing failed: $e';
+        notifyListeners();
+        rethrow;
       }
     }
     return out;
@@ -2734,21 +3554,27 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     List<Uint8List> transactions,
     List<SigningKey> keys,
   ) async {
-    if (_accountId == null) return List.filled(transactions.length, null);
-    final client = await _getClient();
+    final source = accountId;
+    if (source == null) throw StateError('No account selected');
+    _checkSigningAuthorization(keys);
+    final client = await ensureClient();
     final keyMaps = keys.map((k) => k.toJson()).toList();
     final out = <String?>[];
     for (final tx in transactions) {
       try {
+        _checkSigningAuthorization(keys);
         final sig = await client.accounts.signAndSendTransaction(
-          _accountId!,
+          source,
           transaction: tx,
           keys: keyMaps,
         );
         out.add(sig);
       } catch (e) {
-        debugPrint('signAndSendTransactionsWithKeys error: $e');
-        out.add(null);
+        _error = 'Transaction submission failed: $e';
+        notifyListeners();
+        final submitted = out.whereType<String>().toList();
+        if (submitted.isNotEmpty) throw PartialBroadcastException(submitted, e);
+        rethrow;
       }
     }
     return out;
@@ -2817,7 +3643,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // The StoreKey's public keys the biometric entry (Atonline convention).
       final storeKeyPub = wallet.keys.firstWhere((k) => k.id == storeKeyId).key;
 
-      final accounts = await client.accounts.list(wallet: wallet.id);
+      final accounts = (await client.accounts.list(
+        wallet: wallet.id,
+      )).where((a) => a.wallet == wallet.id).toList();
       Account? account;
       for (final a in accounts) {
         if (a.type == 'solana') {
@@ -2891,11 +3719,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       final client = await _getClient();
       try {
         // Validate the password against the Password share without signing.
-        await client.storeKeys.derivePassword(
-          password: password,
-          walletKeyId: passwordKeyId,
-        );
-      } on LibwalletException catch (e) {
+        final wallet = await client.wallets.get(walletId);
+        await _verifyWalletPassword(client, wallet: wallet, password: password);
+      } on StateError catch (e) {
         _error = 'Wrong password for this wallet';
         debugPrint(
           '[device-transfer] activate: password validation failed: $e',
@@ -3107,6 +3933,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
   @override
   void dispose() {
+    if (_client != null) Web3RequestCoordinator.disposeFor(_client!);
     _balanceSub?.cancel();
     _logSub?.cancel();
     balanceTick.dispose();
@@ -3386,9 +4213,13 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
     if (_remoteKeyId != null) {
       await prefs.setString(_prefsRemoteKeyId, _remoteKeyId!);
+    } else {
+      await prefs.remove(_prefsRemoteKeyId);
     }
     if (_passwordKeyId != null) {
       await prefs.setString(_prefsPasswordKeyId, _passwordKeyId!);
+    } else {
+      await prefs.remove(_prefsPasswordKeyId);
     }
     // The device-share private key — the only true secret on this side —
     // goes through SecureKeystore, never plaintext SharedPreferences. A D5
@@ -3412,4 +4243,44 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     }
     return map;
   }
+
+  /// Verify [password] against the public key stored for the wallet's Password
+  /// share. `StoreKey:derivePassword` is a deterministic derivation API, not an
+  /// authentication API: it succeeds for every input. Treating success as a
+  /// match would let any password through export, restore and transfer gates.
+  Future<void> _verifyWalletPassword(
+    LibwalletClient client, {
+    required Wallet wallet,
+    required String password,
+  }) async {
+    WalletKey? passwordKey;
+    for (final key in wallet.keys) {
+      if (key.type == 'Password') {
+        passwordKey = key;
+        break;
+      }
+    }
+    if (passwordKey == null || passwordKey.key.isEmpty) {
+      throw StateError('Wallet has no Password share');
+    }
+
+    String derivedPublicKey;
+    try {
+      derivedPublicKey = await client.storeKeys.derivePassword(
+        password: password,
+        walletKeyId: passwordKey.id,
+      );
+    } catch (_) {
+      throw StateError('Wrong password');
+    }
+    if (!passwordPublicKeyMatches(passwordKey.key, derivedPublicKey)) {
+      throw StateError('Wrong password');
+    }
+  }
+
+  @visibleForTesting
+  static bool passwordPublicKeyMatches(
+    String expectedPublicKey,
+    String derivedPublicKey,
+  ) => expectedPublicKey.isNotEmpty && expectedPublicKey == derivedPublicKey;
 }

@@ -74,7 +74,7 @@ class _TokensScreenState extends State<TokensScreen> {
       logError('[Tokens._load] load tokens error: $e');
       if (!mounted) return;
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loading = false;
       });
     }

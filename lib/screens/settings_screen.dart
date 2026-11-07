@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/l10n.dart';
@@ -12,12 +11,10 @@ import 'settings/general_screen.dart';
 import 'settings/help_faq_screen.dart';
 import 'settings/security_privacy_screen.dart';
 import 'settings/wallets_accounts_screen.dart';
-import 'wallet/wallet_details_screen.dart';
-import '../utils/context_extensions.dart';
+import 'tools_screen.dart';
 
-/// Top-level Settings screen. Shows the active-wallet card, four
-/// drill-down categories (Wallets & Accounts / Security & Privacy /
-/// Connections / General), and the lock/disconnect tile.
+/// Top-level Settings screen. Shows the drill-down categories and the
+/// lock/disconnect tile.
 ///
 /// Each category screen lives in `lib/screens/settings/` and owns its
 /// own Scaffold + AppBar; this screen just routes into them.
@@ -38,11 +35,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionLabel(l10n.settingsActiveAccount),
-          const SizedBox(height: 10),
-          _ActiveWalletCard(wallet: wallet),
-          const SizedBox(height: 24),
-
           _SectionLabel(l10n.settingsSection),
           const SizedBox(height: 10),
           SettingsTile(
@@ -70,6 +62,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const ConnectionsScreen()),
             ),
+          ),
+          const SizedBox(height: 6),
+          SettingsTile(
+            key: const Key('settings-tools'),
+            icon: Icons.handyman_outlined,
+            title: l10n.homeToolsCardTitle,
+            subtitle: l10n.homeToolsCardDesc,
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const ToolsScreen())),
           ),
           const SizedBox(height: 6),
           SettingsTile(
@@ -166,119 +168,6 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _ActiveWalletCard extends StatelessWidget {
-  final WalletService wallet;
-
-  const _ActiveWalletCard({required this.wallet});
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    if (!wallet.isConnected) {
-      return TibaneCard(
-        child: Row(
-          children: [
-            const Icon(Icons.lock_outline, color: TibaneColors.textMuted),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                l10n.settingsNoWalletConnected,
-                style: const TextStyle(color: TibaneColors.textMuted),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final kindLabel = wallet.kind == WalletKind.inapp
-        ? l10n.settingsWalletKindInapp
-        : l10n.settingsWalletKindExternal;
-    final address = wallet.publicKey ?? '';
-    final shortAddress = address.length > 14
-        ? '${address.substring(0, 6)}...${address.substring(address.length - 6)}'
-        : address;
-
-    return TibaneCard(
-      onTap: () => Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => const WalletDetailsScreen())),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: TibaneColors.orange.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  wallet.kind == WalletKind.inapp
-                      ? Icons.shield_outlined
-                      : Icons.account_balance_wallet_outlined,
-                  color: TibaneColors.orange,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      wallet.walletName ?? l10n.labelWallet,
-                      style: context.textTheme.titleMedium,
-                    ),
-                    Text(
-                      kindLabel,
-                      style: monoStyle(
-                        fontSize: 11,
-                        color: TibaneColors.textMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            l10n.settingsSolanaAddressLabel,
-            style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: SelectableText(
-                  shortAddress,
-                  style: monoStyle(fontSize: 13),
-                ),
-              ),
-              IconButton(
-                tooltip: l10n.actionCopy,
-                icon: const Icon(Icons.copy, size: 16),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: address));
-                  context.showSnackBar(
-                    SnackBar(
-                      content: Text(l10n.addressCopied),
-                      duration: const Duration(seconds: 1),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// Reusable row used by the top-level Settings screen and every
 /// sub-screen under `lib/screens/settings/`. Public so the sub-screens
 /// can import it from one place instead of duplicating the styling.
@@ -306,20 +195,20 @@ class SettingsTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
-          Icon(icon, color: color, size: 20),
+          Icon(icon, color: color, size: 24),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(title, style: TextStyle(color: color, fontSize: 15)),
+                Text(title, style: TextStyle(color: color, fontSize: 17.25)),
                 if (subtitle != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     subtitle!,
                     style: monoStyle(
-                      fontSize: 11,
+                      fontSize: 12.65,
                       color: TibaneColors.textMuted,
                     ),
                   ),
@@ -330,7 +219,7 @@ class SettingsTile extends StatelessWidget {
           const Icon(
             Icons.chevron_right,
             color: TibaneColors.textDim,
-            size: 18,
+            size: 21.6,
           ),
         ],
       ),

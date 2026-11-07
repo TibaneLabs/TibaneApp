@@ -65,7 +65,7 @@ class _WalletConnectSessionsScreenState
       logError('[WalletConnectSessions._init] init error: $e');
       if (!mounted) return;
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loading = false;
       });
     }
@@ -85,7 +85,9 @@ class _WalletConnectSessionsScreenState
     if (!mounted) return;
     setState(() => _starting = false);
     if (!ok && bridge.error != null) {
-      logError('[WalletConnectSessions._start] relay start failed: ${bridge.error}');
+      logError(
+        '[WalletConnectSessions._start] relay start failed: ${bridge.error}',
+      );
       showWalletError(context, bridge.error ?? 'Something went wrong');
     }
   }
@@ -114,7 +116,9 @@ class _WalletConnectSessionsScreenState
     final text = data?.text?.trim();
     if (text == null || text.isEmpty) {
       if (!mounted) return;
-      context.showSnackBar(SnackBar(content: Text(context.l10n.wcSessionsClipboardEmpty)));
+      context.showSnackBar(
+        SnackBar(content: Text(context.l10n.wcSessionsClipboardEmpty)),
+      );
       return;
     }
     _uriCtrl.text = text;
@@ -126,7 +130,9 @@ class _WalletConnectSessionsScreenState
     final uri = _uriCtrl.text.trim();
     if (bridge == null || uri.isEmpty) return;
     if (!uri.startsWith('wc:')) {
-      logError('[WalletConnectSessions._pair] invalid URI: must start with "wc:"');
+      logError(
+        '[WalletConnectSessions._pair] invalid URI: must start with "wc:"',
+      );
       setState(() => _error = context.l10n.wcSessionsUriError);
       return;
     }
@@ -142,16 +148,17 @@ class _WalletConnectSessionsScreenState
     setState(() {
       _pairing = false;
       if (topic == null) {
-        _error = WalletError.from(bridge.error ?? 'Pair failed').message;
+        _error = walletErrorMessageForContext(
+          context,
+          bridge.error ?? 'Pair failed',
+        );
       } else {
         _uriCtrl.clear();
       }
     });
     if (topic != null) {
       context.showSnackBar(
-        SnackBar(
-          content: Text(context.l10n.wcSessionsPairingInProgress),
-        ),
+        SnackBar(content: Text(context.l10n.wcSessionsPairingInProgress)),
       );
     }
   }
@@ -164,7 +171,9 @@ class _WalletConnectSessionsScreenState
         backgroundColor: TibaneColors.card,
         title: Text(l10n.wcSessionsDisconnectTitle),
         content: Text(
-          l10n.wcSessionsDisconnectConfirm(s.peerName.isNotEmpty ? s.peerName : s.topic),
+          l10n.wcSessionsDisconnectConfirm(
+            s.peerName.isNotEmpty ? s.peerName : s.topic,
+          ),
           style: const TextStyle(color: TibaneColors.textMuted),
         ),
         actions: [
@@ -245,7 +254,11 @@ class _WalletConnectSessionsScreenState
                         ),
                       ),
                       icon: const Icon(Icons.play_arrow),
-                      label: Text(_starting ? context.l10n.wcSessionsStarting : context.l10n.wcSessionsStartRelay),
+                      label: Text(
+                        _starting
+                            ? context.l10n.wcSessionsStarting
+                            : context.l10n.wcSessionsStartRelay,
+                      ),
                     ),
                   ],
                 )
@@ -276,7 +289,11 @@ class _WalletConnectSessionsScreenState
                           foregroundColor: TibaneColors.black,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        child: Text(_pairing ? context.l10n.wcSessionsPairing : context.l10n.wcSessionsPair),
+                        child: Text(
+                          _pairing
+                              ? context.l10n.wcSessionsPairing
+                              : context.l10n.wcSessionsPair,
+                        ),
                       ),
                     ),
                   ],

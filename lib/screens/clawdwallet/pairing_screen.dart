@@ -68,7 +68,7 @@ class _PairingScreenState extends State<PairingScreen> {
       setState(() {
         _stage = _Stage.error;
         _errorTitle = context.l10n.clawdPairingFailed;
-        _errorBody = WalletError.from(e).message;
+        _errorBody = walletErrorMessageForContext(context, e);
       });
     }
   }

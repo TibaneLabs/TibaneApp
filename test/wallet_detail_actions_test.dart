@@ -36,6 +36,16 @@ void main() {
       expect(a.showNeeds2fa, isTrue);
     });
 
+    test('password-only import does not claim that 2FA is required', () {
+      final a = WalletDetailsScreen.walletDetailActions(
+        isActive: false,
+        hasShareHere: false,
+        isSingleShareImport: true,
+      );
+      expect(a.showUse, isTrue);
+      expect(a.showNeeds2fa, isFalse);
+    });
+
     test('active without share (edge) -> still no Use button / no hint', () {
       final a = WalletDetailsScreen.walletDetailActions(
         isActive: true,

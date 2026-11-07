@@ -1,19 +1,25 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart'
-    show Amount, Asset, Network, NetworkType, TransactionSimulation;
+    show
+        Amount,
+        Asset,
+        Network,
+        NetworkType,
+        TransactionSimulation,
+        MaxSendableResult;
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../constants/solana_constants.dart';
 import '../../l10n/l10n.dart';
 import '../../services/balances_store.dart';
 import '../../services/jupiter_service.dart';
 import '../../services/solana_common.dart';
+import '../../services/wallet/asset_network.dart';
 import '../../services/wallet/send_asset.dart';
-import '../../services/wallet/unified_account.dart' show chainLabel;
+import '../../services/wallet/unified_account.dart'
+    show chainLabel, abbreviateAccountAddress;
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/keyboard_safe_form.dart';
@@ -22,6 +28,7 @@ import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import '../../widgets/tx_success.dart';
 import 'widgets/authorize_and_sign.dart';
+import 'widgets/send_account_picker.dart';
 import '../../utils/amount.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
@@ -216,6 +223,8 @@ class _SendScreenState extends State<SendScreen> {
   final _addrCtrl = TextEditingController();
   final _amountCtrl = TextEditingController();
   bool _sending = false;
+  bool _loadingMax = false;
+  int _maxRequest = 0;
   String? _error;
 
   // ENS / SNS resolution state for the recipient field.
@@ -254,6 +263,39 @@ class _SendScreenState extends State<SendScreen> {
   List<TokenHolding> _holdings = [];
   List<Asset> _assets = const [];
   bool _loadingHoldings = true;
+  WalletService? _observedWallet;
+  String? _observedContext;
+  int _holdingsRequest = 0;
+  MaxSendableResult? _maxPlan;
+  String? _maxPlanContext;
+  String get _sendContext {
+    final wallet = _observedWallet;
+    return '${wallet?.kind}:${wallet?.currentAccount?.id}:${wallet?.publicKey}:'
+        '${wallet?.libwallet.currentNetwork?.id}';
+  }
+
+  String get _planContext =>
+      '$_sendContext:$_assetKey:${_addrCtrl.text.trim()}';
+
+  void _onWalletContextChanged() {
+    if (!mounted || _observedContext == _sendContext) return;
+    _observedContext = _sendContext;
+    _holdingsRequest++;
+    _maxRequest++;
+    _maxPlan = null;
+    _maxPlanContext = null;
+    _amountCtrl.clear();
+    setState(() {
+      _mint = null;
+      _imageUrl = null;
+      _holdings = [];
+      _assets = [];
+      _loadingHoldings = true;
+      _net = _observedWallet?.libwallet.currentNetwork;
+      _error = null;
+    });
+    _loadHoldings();
+  }
 
   SendAddressFamily _activeFamily(WalletService wallet) {
     return sendAddressFamilyForNetworkType(_net?.type) ??
@@ -268,6 +310,9 @@ class _SendScreenState extends State<SendScreen> {
   void initState() {
     super.initState();
     _net = context.read<WalletService>().libwallet.currentNetwork;
+    _observedWallet = context.read<WalletService>();
+    _observedContext = _sendContext;
+    _observedWallet!.addListener(_onWalletContextChanged);
     _mint = widget.mint;
     // Safe Solana-first defaults. _loadHoldings resolves the real network and
     // corrects native symbol/decimals per chain before the user can send — the
@@ -284,6 +329,7 @@ class _SendScreenState extends State<SendScreen> {
 
   @override
   void dispose() {
+    _observedWallet?.removeListener(_onWalletContextChanged);
     _addrCtrl.removeListener(_onAddrChanged);
     _amountCtrl.removeListener(_onAmountChanged);
     _resolveDebounce?.cancel();
@@ -293,11 +339,38 @@ class _SendScreenState extends State<SendScreen> {
   }
 
   void _onAmountChanged() {
-    if (mounted) setState(() {});
+    _maxRequest++;
+    _maxPlan = null;
+    _maxPlanContext = null;
+    if (mounted) {
+      setState(() {
+        _error = null;
+        _loadingMax = false;
+      });
+    }
+  }
+
+  Future<void> _chooseRecipientAccount() async {
+    final wallet = context.read<WalletService>();
+    final network = _net;
+    if (network == null || _sending) return;
+    context.unfocus();
+    final sourceId = wallet.currentAccount?.id;
+    final recipient = await showSendAccountPicker(context, network: network);
+    if (!mounted || recipient == null || _sending) return;
+    if (wallet.currentAccount?.id != sourceId || _net?.id != network.id) return;
+    _addrCtrl.value = TextEditingValue(
+      text: recipient.address,
+      selection: TextSelection.collapsed(offset: recipient.address.length),
+    );
   }
 
   Future<void> _loadHoldings() async {
     final wallet = context.read<WalletService>();
+    final request = ++_holdingsRequest;
+    final source = _sendContext;
+    bool isCurrent() =>
+        mounted && request == _holdingsRequest && source == _sendContext;
     final addr = wallet.publicKey ?? wallet.currentAccount?.address;
     if (addr == null) {
       if (mounted) setState(() => _loadingHoldings = false);
@@ -309,7 +382,7 @@ class _SendScreenState extends State<SendScreen> {
     final net =
         await wallet.libwallet.refreshCurrentNetwork() ??
         wallet.libwallet.currentNetwork;
-    if (!mounted) return;
+    if (!isCurrent()) return;
     final type = net?.type.name ?? 'solana';
     final isSolana = type == 'solana';
     // Per-family fallback used until/unless the native asset's own decimals are
@@ -347,7 +420,7 @@ class _SendScreenState extends State<SendScreen> {
         final solPrice = (await JupiterService().fetchTokenPrices([
           wsolMint,
         ]))[wsolMint];
-        if (!mounted) return;
+        if (!isCurrent()) return;
         applyNative(fallbackDec, fallbackSym, () {
           _nativePriceUsd = solPrice;
           _loadingHoldings = false;
@@ -363,15 +436,20 @@ class _SendScreenState extends State<SendScreen> {
           }
         });
       } else {
-        // Non-Solana: libwallet getAssets is chain-aware. Its non-native
-        // entries are the token rows; the native one feeds the balance AND the
-        // authoritative native decimals (Amount.exp), with the constant as a
-        // fallback only if the native asset hasn't surfaced yet.
-        final assets = await wallet.libwallet.getAssets();
-        if (!mounted) return;
+        // Non-Solana tokens come from libwallet. For Ethereum mainnet, the
+        // shared wallet snapshot also supplies the native ETH RPC balance.
+        final isEthereumMainnet =
+            wallet.kind == WalletKind.inapp &&
+            net?.type == NetworkType.evm &&
+            net?.chainId == '1';
+        if (isEthereumMainnet) await wallet.refreshBalances();
+        final assets = isEthereumMainnet
+            ? wallet.assets
+            : await wallet.libwallet.getAssets();
+        if (!isCurrent()) return;
         Asset? nativeAsset;
         for (final a in assets) {
-          if (a.isNative && (net == null || a.network == net.id)) {
+          if (a.isNative && (net == null || assetBelongsToNetwork(a, net))) {
             nativeAsset = a;
             break;
           }
@@ -385,13 +463,13 @@ class _SendScreenState extends State<SendScreen> {
         final nativeFiat = nativeAsset?.fiatAmount?.toDouble();
         final nativePrice = (nativeFiat != null && nativeUi > 0)
             ? nativeFiat / nativeUi
-            : null;
+            : (isEthereumMainnet ? wallet.ethPriceUsd : null);
         applyNative(dec, sym, () {
           _assets = assets;
           _nativePriceUsd = nativePrice;
           _holdings = [
             for (final a in assets)
-              if (!a.isNative && (net == null || a.network == net.id))
+              if (!a.isNative && (net == null || assetBelongsToNetwork(a, net)))
                 TokenHolding(
                   mint: mintFromAssetKey(a.key),
                   symbol: a.symbol.isNotEmpty ? a.symbol : a.name,
@@ -406,7 +484,7 @@ class _SendScreenState extends State<SendScreen> {
         });
       }
     } catch (e) {
-      if (!mounted) return;
+      if (!isCurrent()) return;
       setState(() => _loadingHoldings = false);
       debugPrint('[send] holdings load failed: $e');
     }
@@ -417,11 +495,19 @@ class _SendScreenState extends State<SendScreen> {
   /// read the native entry from getAssets.
   double _nativeUiBalance(WalletService wallet) {
     final net = _net;
-    if (net == null || net.type == NetworkType.solana) {
+    if (wallet.kind == WalletKind.mwa ||
+        net == null ||
+        net.type == NetworkType.solana) {
       return wallet.solBalance.toDouble() / 1e9;
     }
+    if (net.type == NetworkType.evm && net.chainId == '1') {
+      final ethWei = wallet.ethBalanceWei;
+      if (ethWei != null) return ethWei.toDouble() / 1e18;
+    }
     for (final a in _assets) {
-      if (a.isNative && a.network == net.id) return a.amount.toDouble();
+      if (a.isNative && assetBelongsToNetwork(a, net)) {
+        return a.amount.toDouble();
+      }
     }
     return 0;
   }
@@ -478,6 +564,13 @@ class _SendScreenState extends State<SendScreen> {
   }
 
   void _onAddrChanged() {
+    _maxRequest++;
+    _maxPlan = null;
+    _maxPlanContext = null;
+    setState(() {
+      _error = null;
+      _loadingMax = false;
+    });
     final raw = _addrCtrl.text.trim();
     // Only resolve when the input looks like a name (contains a dot and
     // isn't already a base58/0x-shaped address). Solana addresses are
@@ -608,22 +701,54 @@ class _SendScreenState extends State<SendScreen> {
 
   Future<void> _setMax() async {
     final wallet = context.read<WalletService>();
+    final sourceId = wallet.currentAccount?.id;
+    final asset = _assetKey;
+    final recipient = _recipientAddressForValidation();
+    final request = ++_maxRequest;
+    bool isCurrent() =>
+        mounted &&
+        request == _maxRequest &&
+        wallet.currentAccount?.id == sourceId &&
+        _assetKey == asset &&
+        _recipientAddressForValidation() == recipient;
+    setState(() {
+      _error = null;
+      _loadingMax = true;
+    });
     try {
+      if (_mint != null) {
+        final holdings = _activeFamily(wallet) == SendAddressFamily.solana
+            ? context.read<BalancesStore>().holdings
+            : _holdings;
+        final holding = holdings.where((h) => h.mint == _mint).firstOrNull;
+        if (holding != null) {
+          _amountCtrl.text = formatExactTokenAmount(
+            holding.balance,
+            holding.decimals,
+          );
+          return;
+        }
+      }
       final result = await wallet.libwallet.maxSendable(
-        to: _addrCtrl.text.trim().isNotEmpty ? _addrCtrl.text.trim() : null,
-        asset: _assetKey,
+        to: recipient.isNotEmpty ? recipient : null,
+        asset: asset,
       );
-      if (!mounted) return;
+      if (!isCurrent()) return;
       // result.max is an Amount scaled by the asset's decimals.
-      final ui = result.max.toDouble();
-      _amountCtrl.text = ui
-          .toStringAsFixed(_decimals)
-          .replaceAll(RegExp(r'0+$'), '')
-          .replaceAll(RegExp(r'\.$'), '');
+      _amountCtrl.text = formatExactTokenAmount(
+        result.max.value,
+        result.max.exp,
+      );
+      if (result.chain == 'bitcoin') {
+        _maxPlan = result;
+        _maxPlanContext = _planContext;
+      }
     } catch (e) {
       logError('[Send._setMax] max sendable error: $e');
-      if (!mounted) return;
-      setState(() => _error = WalletError.from(e).message);
+      if (!isCurrent()) return;
+      setState(() => _error = context.l10n.sendMaxAmountUnavailable);
+    } finally {
+      if (isCurrent()) setState(() => _loadingMax = false);
     }
   }
 
@@ -637,6 +762,14 @@ class _SendScreenState extends State<SendScreen> {
 
   Future<void> _send() async {
     final wallet = context.read<WalletService>();
+    if (_sending || _loadingHoldings) return;
+    final sourceContext = _sendContext;
+    final sourceId = wallet.libwallet.accountId;
+    final sourceAddress = wallet.currentAccount?.address ?? wallet.publicKey;
+    final receiptNetwork = _net;
+    final receiptSymbol = _symbol;
+    final networkId = _net?.id;
+    bool isCurrent() => mounted && sourceContext == _sendContext;
     final activeFamily = _activeFamily(wallet);
     final networkWarning = _recipientNetworkWarning(context.l10n, activeFamily);
     if (networkWarning != null) {
@@ -656,14 +789,13 @@ class _SendScreenState extends State<SendScreen> {
       setState(() => _error = context.l10n.sendInvalidRecipient);
       return;
     }
-    final amountFloat = parseAmount(_amountCtrl.text);
-    if (amountFloat == null || amountFloat <= 0) {
+    final raw = parseTokenAmount(_amountCtrl.text, _decimals);
+    if (raw == null || raw <= BigInt.zero) {
       setState(() => _error = context.l10n.sendInvalidAmount);
       return;
     }
-    final scale = BigInt.from(10).pow(_decimals);
-    final raw = BigInt.from((amountFloat * scale.toDouble()).round());
     final amount = Amount(raw, _decimals);
+    final maxPlan = _maxPlanContext == _planContext ? _maxPlan : null;
 
     // Pre-flight: simulate before asking for the password / FaceID. This
     // catches "recipient_new_account" rent advice, "will revert" failures,
@@ -679,39 +811,35 @@ class _SendScreenState extends State<SendScreen> {
         to: addr,
         amount: amount,
         asset: _assetKey,
+        maxPlan: maxPlan,
       );
     } catch (e) {
       logError('[Send._send] simulate error: $e');
       if (!mounted) return;
       setState(() {
         _sending = false;
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
       });
       return;
     }
-    if (!mounted) return;
+    if (!isCurrent()) {
+      if (mounted) setState(() => _sending = false);
+      return;
+    }
     setState(() => _sending = false);
-    // Surface the human-readable name in the review sheet when the recipient
-    // was entered as a resolved .sol / .eth name (else the sheet shows the
-    // generic "Recipient" label above the address).
+    // Keep a resolved .sol / .eth name alongside its destination address.
     final recipientName = (typed == _resolvedName && _resolvedAddress != null)
         ? _resolvedName
         : null;
-    final approved = await _showReviewSheet(
-      addr,
-      amountFloat,
-      sim,
-      recipientName,
-    );
-    if (approved != true) return;
-    if (!mounted) return;
+    final approved = await _showReviewSheet(addr, amount, sim, recipientName);
+    if (approved != true || !mounted || !isCurrent()) return;
 
     // Authorize the spend via the per-transaction sign sheet. In-app wallets
     // sign losslessly (no app-level unlock); MWA uses the swap-first layout and
     // never reaches this screen.
     final keys = await collectSigningKeys(context);
     if (keys == null) return; // cancelled / unsignable
-    if (!mounted) return;
+    if (!isCurrent()) return;
 
     setState(() {
       _sending = true;
@@ -724,6 +852,9 @@ class _SendScreenState extends State<SendScreen> {
         amount: amount,
         asset: _assetKey,
         keys: keys,
+        maxPlan: maxPlan,
+        expectedAccountId: sourceId,
+        expectedNetworkId: networkId,
       );
       if (!mounted) return;
       _amountCtrl.clear();
@@ -732,17 +863,18 @@ class _SendScreenState extends State<SendScreen> {
       // confirms on-chain then reloads until the balance settles.
       context.read<BalancesStore>().onTxCommitted(tx.hash);
       // Replace the form with a full-screen success view (From / To / tx +
-      // explorer link + share). Its own buttons own the return navigation.
+      // explorer link). Its own buttons own the return navigation.
       _showSuccessScreen(
-        from: wallet.currentAccount?.address ?? wallet.publicKey,
+        from: sourceAddress,
         to: addr,
         hash: tx.hash,
-        amountUi: amountFloat,
+        network: receiptNetwork,
+        symbol: receiptSymbol,
       );
     } catch (e) {
       logError('[Send._send] send error: $e');
       if (!mounted) return;
-      setState(() => _error = WalletError.from(e).message);
+      setState(() => _error = walletErrorMessageForContext(context, e));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -755,20 +887,18 @@ class _SendScreenState extends State<SendScreen> {
     required String? from,
     required String to,
     required String? hash,
-    required double amountUi,
+    required Network? network,
+    required String symbol,
   }) {
     if (!mounted) return;
-    final amountLabel =
-        '${formatSendAmountGrouped(amountUi, _decimals)} $_symbol';
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => _SendSuccessScreen(
-          symbol: _symbol,
-          amountLabel: amountLabel,
+        builder: (_) => SendSuccessScreen(
+          symbol: symbol,
           fromAddress: from,
           toAddress: to,
           txHash: hash,
-          net: _net,
+          net: network,
         ),
       ),
     );
@@ -776,7 +906,7 @@ class _SendScreenState extends State<SendScreen> {
 
   Future<bool?> _showReviewSheet(
     String to,
-    double amountUi,
+    Amount amount,
     TransactionSimulation sim,
     String? recipientName,
   ) {
@@ -789,10 +919,11 @@ class _SendScreenState extends State<SendScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => _SendReviewSheet(
+      builder: (ctx) => SendReviewSheet(
         to: to,
         recipientName: recipientName,
-        amountUi: amountUi,
+        amountUi: amount.toDouble(),
+        exactAmount: formatExactTokenAmount(amount.value, amount.exp),
         symbol: _symbol,
         decimals: _decimals,
         imageUrl: _imageUrl,
@@ -865,196 +996,199 @@ class _SendScreenState extends State<SendScreen> {
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: Text(l10n.sendTitle(_symbol))),
       body: SafeArea(
-        child: GestureDetector(
-          // Tap outside any input to dismiss the iOS numeric keyboard.
-          onTap: () => context.unfocus(),
-          behavior: HitTestBehavior.translucent,
-          child: KeyboardSafeForm(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _TokenSelector(
-                  iconMint: _mint ?? (isSolana ? wsolMint : ''),
-                  symbol: _symbol,
-                  imageUrl: _imageUrl,
-                  loading: _loadingHoldings,
-                  onTap: _sending ? null : () => _openTokenPicker(holdings),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _addrCtrl,
-                  enabled: !_sending,
-                  autocorrect: false,
-                  decoration: InputDecoration(
-                    labelText: l10n.sendRecipientLabel,
-                    labelStyle: const TextStyle(color: TibaneColors.textMuted),
-                    helperText: _recipientHelper(l10n, activeFamily),
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.paste, size: 18),
-                      onPressed: _sending
-                          ? null
-                          : () async {
-                              final clip = await Clipboard.getData(
-                                'text/plain',
-                              );
-                              if (clip?.text != null) {
-                                _addrCtrl.text = clip!.text!;
-                              }
-                            },
-                    ),
+        child: KeyboardSafeForm(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _TokenSelector(
+                iconMint: _mint ?? (isSolana ? wsolMint : ''),
+                symbol: _symbol,
+                imageUrl: _imageUrl,
+                loading: _loadingHoldings,
+                onTap: _sending ? null : () => _openTokenPicker(holdings),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                key: const Key('send-recipient-input'),
+                controller: _addrCtrl,
+                enabled: !_sending,
+                autocorrect: false,
+                onTapOutside: (_) => context.unfocus(),
+                decoration: InputDecoration(
+                  labelText: l10n.sendRecipientLabel,
+                  labelStyle: const TextStyle(color: TibaneColors.textMuted),
+                  helperText: _recipientHelper(l10n, activeFamily),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.paste, size: 18),
+                    tooltip: l10n.sendChooseAccount,
+                    onPressed: _sending || _loadingHoldings || _net == null
+                        ? null
+                        : _chooseRecipientAccount,
                   ),
                 ),
-                if (_resolvingName != null) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 1.5,
-                          color: TibaneColors.textMuted,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        l10n.sendResolvingName(_resolvingName!),
-                        style: const TextStyle(
-                          color: TibaneColors.textMuted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ] else if (recipientNetworkWarning != null) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        Icons.warning_amber_rounded,
-                        color: TibaneColors.warning,
-                        size: 15,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          recipientNetworkWarning,
-                          style: const TextStyle(
-                            color: TibaneColors.warning,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ] else if (_resolvedAddress != null) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.check_circle,
-                        color: TibaneColors.cyan,
-                        size: 14,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          _resolvedAddress!,
-                          overflow: TextOverflow.ellipsis,
-                          style: monoStyle(
-                            fontSize: 12,
-                            color: TibaneColors.textMuted,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ] else if (_resolveError != null) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    _resolveError!,
-                    style: const TextStyle(
-                      color: TibaneColors.error,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _amountCtrl,
-                  enabled: !_sending,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: l10n.sendAmountLabel(_symbol),
-                    labelStyle: const TextStyle(color: TibaneColors.textMuted),
-                    suffixIcon: TextButton(
-                      onPressed: _sending ? null : _setMax,
-                      child: Text(
-                        l10n.sendMax,
-                        style: const TextStyle(fontSize: 12),
+              ),
+              if (_resolvingName != null) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.5,
+                        color: TibaneColors.textMuted,
                       ),
                     ),
-                  ),
-                ),
-                if (selectedBalance != null) ...[
-                  const SizedBox(height: 6),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      l10n.sendBalanceLabel(
-                        _fmtBalance(selectedBalance),
-                        _symbol,
-                      ),
+                    const SizedBox(width: 8),
+                    Text(
+                      l10n.sendResolvingName(_resolvingName!),
                       style: const TextStyle(
                         color: TibaneColors.textMuted,
                         fontSize: 12,
                       ),
                     ),
-                  ),
-                ],
-                if (usdValue != null) ...[
-                  const SizedBox(height: 2),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      '≈ ${formatSendUsd(usdValue)}',
-                      style: const TextStyle(
-                        color: TibaneColors.textDim,
-                        fontSize: 12,
+                  ],
+                ),
+              ] else if (recipientNetworkWarning != null) ...[
+                const SizedBox(height: 6),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: TibaneColors.warning,
+                      size: 15,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        recipientNetworkWarning,
+                        style: const TextStyle(
+                          color: TibaneColors.warning,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
-                  ),
-                ],
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    _error!,
-                    style: const TextStyle(
-                      color: TibaneColors.error,
-                      fontSize: 13,
+                  ],
+                ),
+              ] else if (_resolvedAddress != null) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.check_circle,
+                      color: TibaneColors.cyan,
+                      size: 14,
                     ),
-                  ),
-                ],
-                const Spacer(),
-                FilledButton(
-                  onPressed: _sending || recipientNetworkWarning != null
-                      ? null
-                      : _send,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: TibaneColors.orange,
-                    foregroundColor: TibaneColors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  child: Text(
-                    _sending ? l10n.sendSending : l10n.sendButton,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _resolvedAddress!,
+                        overflow: TextOverflow.ellipsis,
+                        style: monoStyle(
+                          fontSize: 12,
+                          color: TibaneColors.textMuted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ] else if (_resolveError != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  _resolveError!,
+                  style: const TextStyle(
+                    color: TibaneColors.error,
+                    fontSize: 12,
                   ),
                 ),
               ],
-            ),
+              const SizedBox(height: 16),
+              TextField(
+                key: const Key('send-amount-input'),
+                controller: _amountCtrl,
+                enabled: !_sending,
+                onTapOutside: (_) => context.unfocus(),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  labelText: l10n.sendAmountLabel(_symbol),
+                  labelStyle: const TextStyle(color: TibaneColors.textMuted),
+                  suffixIconConstraints: const BoxConstraints.tightFor(
+                    width: 64,
+                    height: 48,
+                  ),
+                  suffixIcon: TextButton(
+                    onPressed: _sending || _loadingMax ? null : _setMax,
+                    child: _loadingMax
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(
+                            l10n.sendMax,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                  ),
+                ),
+              ),
+              if (selectedBalance != null) ...[
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    l10n.sendBalanceLabel(
+                      _fmtBalance(selectedBalance),
+                      _symbol,
+                    ),
+                    style: const TextStyle(
+                      color: TibaneColors.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+              if (usdValue != null) ...[
+                const SizedBox(height: 2),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    '≈ ${formatSendUsd(usdValue)}',
+                    style: const TextStyle(
+                      color: TibaneColors.textDim,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  style: const TextStyle(
+                    color: TibaneColors.error,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+              const Spacer(),
+              FilledButton(
+                onPressed: _sending || recipientNetworkWarning != null
+                    ? null
+                    : _send,
+                style: FilledButton.styleFrom(
+                  backgroundColor: TibaneColors.orange,
+                  foregroundColor: TibaneColors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: Text(
+                  _sending ? l10n.sendSending : l10n.sendButton,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1066,11 +1200,11 @@ class _SendScreenState extends State<SendScreen> {
 /// amount, the recipient, and the network — then surfaces what libwallet's
 /// `Transaction:simulate` predicts (will-revert flag, recipient rent, etc.)
 /// before the user is asked to authenticate the send.
-class _SendReviewSheet extends StatelessWidget {
+class SendReviewSheet extends StatelessWidget {
+  final String? exactAmount;
   final String to;
 
-  /// Resolved .sol / .eth name the recipient was entered as, shown as the
-  /// pill above the address. Null falls back to the generic "Recipient" label.
+  /// Resolved .sol / .eth name shown above its destination address.
   final String? recipientName;
   final double amountUi;
   final String symbol;
@@ -1085,7 +1219,9 @@ class _SendReviewSheet extends StatelessWidget {
   final Network? net;
   final TransactionSimulation sim;
 
-  const _SendReviewSheet({
+  const SendReviewSheet({
+    super.key,
+    this.exactAmount,
     required this.to,
     required this.recipientName,
     required this.amountUi,
@@ -1102,7 +1238,8 @@ class _SendReviewSheet extends StatelessWidget {
     final l10n = context.l10n;
     final blocking =
         sim.willRevert || sim.warnings.any((w) => w.severity == 'block');
-    final amountText = '${formatSendAmountGrouped(amountUi, decimals)} $symbol';
+    final amountText =
+        '${exactAmount ?? formatSendAmountGrouped(amountUi, decimals)} $symbol';
     return SafeArea(
       top: false,
       child: SingleChildScrollView(
@@ -1131,7 +1268,7 @@ class _SendReviewSheet extends StatelessWidget {
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: TibaneColors.textMuted,
-                fontSize: 13,
+                fontSize: 13 * 1.15,
               ),
             ),
             const SizedBox(height: 28),
@@ -1162,7 +1299,7 @@ class _SendReviewSheet extends StatelessWidget {
                 color: TibaneColors.text,
                 fontSize: 30,
                 fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
+                letterSpacing: 0,
               ),
             ),
             const SizedBox(height: 24),
@@ -1170,19 +1307,58 @@ class _SendReviewSheet extends StatelessWidget {
               l10n.labelTo,
               style: const TextStyle(
                 color: TibaneColors.textMuted,
-                fontSize: 13,
+                fontSize: 13 * 1.3,
               ),
             ),
             const SizedBox(height: 8),
-            _recipientPill(recipientName ?? l10n.sendRecipientPill),
-            const SizedBox(height: 10),
+            if (recipientName != null) ...[
+              Text(
+                recipientName!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: TibaneColors.text,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+            ],
             Text(
               to,
               textAlign: TextAlign.center,
-              style: monoStyle(fontSize: 13, color: TibaneColors.text),
+              style: monoStyle(
+                fontSize: 13 * 1.25 * 1.15,
+                color: TibaneColors.text,
+              ).copyWith(fontWeight: FontWeight.w500, letterSpacing: 0),
             ),
             const SizedBox(height: 22),
             if (net != null) _networkCard(net!, l10n),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      l10n.sendEstimatedNetworkFee,
+                      style: const TextStyle(
+                        color: TibaneColors.textMuted,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
+                      _networkFeeText(l10n),
+                      key: const Key('send-review-network-fee'),
+                      textAlign: TextAlign.right,
+                      style: monoStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             if (sim.willRevert) ...[
               const SizedBox(height: 14),
               _warning(
@@ -1250,23 +1426,23 @@ class _SendReviewSheet extends StatelessWidget {
     );
   }
 
-  Widget _recipientPill(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-      decoration: BoxDecoration(
-        color: TibaneColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: TibaneColors.border),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: TibaneColors.text,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
+  String _networkFeeText(AppLocalizations l10n) {
+    final fee =
+        sim.fee ??
+        (sim.chain == 'bitcoin' && sim.bitcoinFee != null
+            ? Amount(BigInt.from(sim.bitcoinFee!), 8)
+            : null);
+    final raw = fee?.value;
+    final currency =
+        net?.currencySymbol ?? (sim.chain == 'solana' ? 'SOL' : '');
+    if (fee == null ||
+        fee.isMax ||
+        raw == null ||
+        raw.isNegative ||
+        currency.isEmpty) {
+      return l10n.sendFeeUnavailable;
+    }
+    return '${formatExactTokenAmount(raw, fee.exp)} $currency';
   }
 
   Widget _networkCard(Network net, AppLocalizations l10n) {
@@ -1336,46 +1512,23 @@ class _SendReviewSheet extends StatelessWidget {
 
 /// Full-screen confirmation shown after a transfer is broadcast: a success
 /// mark, the From / To / transaction details (each tap-to-copy), a link to the
-/// chain explorer, and share + back-to-home actions.
-class _SendSuccessScreen extends StatelessWidget {
+/// chain explorer, and a back-to-home action.
+class SendSuccessScreen extends StatelessWidget {
   final String symbol;
 
-  /// Pre-formatted amount ("10,000 FLASH") — used only in the shared receipt
-  /// text; the reference success view itself doesn't restate the amount.
-  final String amountLabel;
   final String? fromAddress;
   final String toAddress;
   final String? txHash;
   final Network? net;
 
-  const _SendSuccessScreen({
+  const SendSuccessScreen({
+    super.key,
     required this.symbol,
-    required this.amountLabel,
     required this.fromAddress,
     required this.toAddress,
     required this.txHash,
     required this.net,
   });
-
-  String _receiptText(AppLocalizations l10n) {
-    final b = StringBuffer(
-      '${l10n.sendReceiptSent(amountLabel)}\n${l10n.sendReceiptTo(toAddress)}',
-    );
-    if (txHash != null) b.write('\n${l10n.sendReceiptTransaction(txHash!)}');
-    final url = explorerTxUrl(net, txHash);
-    if (url != null) b.write('\n$url');
-    return b.toString();
-  }
-
-  Future<void> _share(BuildContext context, AppLocalizations l10n) async {
-    try {
-      await SharePlus.instance.share(ShareParams(text: _receiptText(l10n)));
-    } catch (e) {
-      logError('[SendSuccess._share] share error: $e');
-      if (!context.mounted) return;
-      context.showSnackBar(SnackBar(content: Text(l10n.sendShareFailed)));
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1396,20 +1549,25 @@ class _SendSuccessScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     const SizedBox(height: 36),
-                    txSuccessMark(),
+                    const Icon(
+                      Icons.schedule,
+                      size: 88,
+                      color: TibaneColors.orange,
+                    ),
                     const SizedBox(height: 28),
                     Text(
-                      l10n.sendSuccessTitle,
+                      l10n.transactionSubmittedTitle,
+                      textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: TibaneColors.text,
-                        fontSize: 26,
+                        fontSize: 26 * 1.1,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
+                        letterSpacing: 0,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      l10n.sendSuccessSubtitle(symbol),
+                      l10n.transactionSubmittedBody,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: TibaneColors.textMuted,
@@ -1418,9 +1576,11 @@ class _SendSuccessScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 32),
                     txReceiptCard(
-                      icon: Icons.north_east,
                       label: l10n.labelFrom,
-                      value: fromAddress ?? '—',
+                      labelFontSize: 11 * 1.2,
+                      value: fromAddress == null
+                          ? '—'
+                          : abbreviateAccountAddress(fromAddress!),
                       onTap: fromAddress == null
                           ? null
                           : () => copyWithToast(
@@ -1431,9 +1591,9 @@ class _SendSuccessScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     txReceiptCard(
-                      icon: Icons.south_west,
                       label: l10n.labelTo,
-                      value: toAddress,
+                      labelFontSize: 11 * 1.2,
+                      value: abbreviateAccountAddress(toAddress),
                       onTap: () =>
                           copyWithToast(context, toAddress, l10n.labelAddress),
                     ),
@@ -1459,15 +1619,6 @@ class _SendSuccessScreen extends StatelessWidget {
                             ),
                     ),
                     const SizedBox(height: 20),
-                    if (txHash != null)
-                      TextButton.icon(
-                        onPressed: () => _share(context, l10n),
-                        icon: const Icon(Icons.ios_share, size: 16),
-                        style: TextButton.styleFrom(
-                          foregroundColor: TibaneColors.textMuted,
-                        ),
-                        label: Text(l10n.sendShareReceipt),
-                      ),
                   ],
                 ),
               ),

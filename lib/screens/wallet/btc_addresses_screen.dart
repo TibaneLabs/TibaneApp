@@ -80,7 +80,7 @@ class _BtcAddressesScreenState extends State<BtcAddressesScreen> {
       logError('[BtcAddresses._load] load addresses error: $e');
       if (!mounted) return;
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loading = false;
       });
     }
@@ -175,6 +175,7 @@ class _BtcAddressesScreenState extends State<BtcAddressesScreen> {
                     _AddressCard(
                       address: _displayedAddress!,
                       label: _getDisplayedLabel(l10n) ?? '',
+                      networkName: widget.networkName,
                     ),
                   if (_selectedFormatKind == null && _next != null) ...[
                     const SizedBox(height: 12),
@@ -225,8 +226,13 @@ class _BtcAddressesScreenState extends State<BtcAddressesScreen> {
 class _AddressCard extends StatelessWidget {
   final String address;
   final String label;
+  final String networkName;
 
-  const _AddressCard({required this.address, required this.label});
+  const _AddressCard({
+    required this.address,
+    required this.label,
+    required this.networkName,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -235,6 +241,17 @@ class _AddressCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
+          Text(
+            networkName,
+            key: const ValueKey('receive-network-title'),
+            style: const TextStyle(
+              color: TibaneColors.orange,
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(

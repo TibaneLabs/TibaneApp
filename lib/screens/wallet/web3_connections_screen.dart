@@ -56,7 +56,7 @@ class _Web3ConnectionsScreenState extends State<Web3ConnectionsScreen> {
       logError('[Web3Connections._load] load connections error: $e');
       if (!mounted) return;
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loading = false;
       });
     }

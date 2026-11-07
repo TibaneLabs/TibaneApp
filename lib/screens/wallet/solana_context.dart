@@ -20,6 +20,8 @@ UnifiedAccount? solanaContextForWallet(WalletService wallet) {
   if (current.isInApp && currentWalletId != null) {
     final groups = buildLogicalWallets(
       wallet.accountsService.walletsById.values,
+      attachedWalletParents: wallet.accountsService.attachedWalletParents,
+      walletGroups: wallet.accountsService.walletGroups,
     );
     for (final group in groups) {
       if (!group.containsWallet(currentWalletId)) continue;
@@ -36,7 +38,7 @@ UnifiedAccount? solanaContextForWallet(WalletService wallet) {
   }
 
   for (final account in accounts) {
-    if (account.isExternal && account.isSolana) return account;
+    if (account.isMwa && account.isSolana) return account;
   }
   for (final account in accounts) {
     if (account.isInApp && account.isSolana) return account;

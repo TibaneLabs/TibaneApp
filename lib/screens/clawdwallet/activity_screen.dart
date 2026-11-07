@@ -63,7 +63,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        if (initial) _error = WalletError.from(e).message;
+        if (initial) _error = walletErrorMessageForContext(context, e);
       });
     }
   }

@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/l10n.dart';
 import '../../theme/tibane_theme.dart';
-import '../contacts/contacts_screen.dart';
 import '../settings_screen.dart' show SettingsTile;
 import '../wallet/accounts_management_screen.dart';
 import '../wallet/device_transfer_receive_screen.dart';
 import '../wallet/inapp_export_screen.dart';
 import '../wallet/inapp_import_screen.dart';
-import '../wallet/nfts_screen.dart';
-import '../wallet/tokens_screen.dart';
+import '../wallet/wallet_data_reset_screen.dart';
 import '../wallet/wallets_management_screen.dart';
 
 /// Sub-screen reached from Settings → "Wallets & Accounts". Groups every
@@ -63,33 +61,6 @@ class WalletsAccountsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               SettingsTile(
-                icon: Icons.token_outlined,
-                title: l10n.tokensTitle,
-                subtitle: l10n.walletsAccountsTokensSubtitle,
-                onTap: () => Navigator.of(
-                  context,
-                ).push(MaterialPageRoute(builder: (_) => const TokensScreen())),
-              ),
-              const SizedBox(height: 6),
-              SettingsTile(
-                icon: Icons.collections_outlined,
-                title: l10n.walletsAccountsNftsTitle,
-                subtitle: l10n.walletsAccountsNftsSubtitle,
-                onTap: () => Navigator.of(
-                  context,
-                ).push(MaterialPageRoute(builder: (_) => const NftsScreen())),
-              ),
-              const SizedBox(height: 6),
-              SettingsTile(
-                icon: Icons.people_outline,
-                title: l10n.contactsTitle,
-                subtitle: l10n.walletsAccountsContactsSubtitle,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ContactsScreen()),
-                ),
-              ),
-              const SizedBox(height: 6),
-              SettingsTile(
                 icon: Icons.upload_outlined,
                 title: l10n.walletsAccountsImportWalletTitle,
                 subtitle: l10n.walletsAccountsImportWalletSubtitle,
@@ -104,6 +75,18 @@ class WalletsAccountsScreen extends StatelessWidget {
                 subtitle: l10n.walletsAccountsExportWalletSubtitle,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const InAppExportScreen()),
+                ),
+              ),
+              const SizedBox(height: 24),
+              SettingsTile(
+                icon: Icons.delete_forever_outlined,
+                title: l10n.walletsAccountsRemoveAllTitle,
+                subtitle: l10n.walletsAccountsRemoveAllSubtitle,
+                destructive: true,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const WalletDataResetScreen(),
+                  ),
                 ),
               ),
             ],

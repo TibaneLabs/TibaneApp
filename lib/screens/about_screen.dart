@@ -41,7 +41,7 @@ class _AboutScreenState extends State<AboutScreen> {
     } catch (e) {
       logError('[About._loadVersion] error: $e');
       if (!mounted) return;
-      setState(() => _versionError = WalletError.from(e).message);
+      setState(() => _versionError = walletErrorMessageForContext(context, e));
     }
   }
 

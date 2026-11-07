@@ -11,12 +11,16 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../l10n/l10n.dart';
 import '../../services/browser_preferences.dart';
+import '../../services/wallet/web3_origin.dart';
+import '../../services/wallet/web3_document_session.dart';
+import '../../services/wallet/web3_request_coordinator.dart';
 import '../../services/uk_compliance_service.dart';
 import '../../services/wallet/libwallet_request_bridge.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 
 const _kBridge = 'libwalletBridge';
+const _kProxyBridge = '__tibaneMainFrameBridge';
 // UK users get a neutral search engine regardless of the user's
 // configured start page — see UkComplianceService.
 const _kHomeUk = 'https://duckduckgo.com';
@@ -41,7 +45,6 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
   LibwalletClient? _client;
   LibwalletRequestBridge? _bridge;
   StreamSubscription? _jsEventsSub;
-  StreamSubscription? _pendingSub;
 
   String? _iconDataUrl;
   String _currentUrl = '';
@@ -50,6 +53,8 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
   bool _canGoBack = false;
   bool _canGoForward = false;
   bool _ready = false;
+  Web3DocumentSession? _document;
+  final Map<String, Web3DocumentSession> _approvalDocuments = {};
 
   @override
   void initState() {
@@ -69,6 +74,7 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
           onNavigationRequest: _onNavigationRequest,
           onPageStarted: (url) {
             if (!mounted) return;
+            _document = Web3DocumentSession(url);
             setState(() {
               _loading = true;
               _currentUrl = url;
@@ -116,9 +122,12 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
       backend: wallet.libwallet,
       contextProvider: () => context,
       onTxCommitted: wallet.notifyTxCommitted,
+      requestIsCurrent: (request) =>
+          mounted &&
+          widget.active &&
+          identical(_approvalDocuments[request.id], _document),
     );
     _jsEventsSub = client.jsEvents.listen(_onJsEvent);
-    _pendingSub = client.pendingRequests.listen((req) => _bridge?.handle(req));
 
     await _webview.loadRequest(Uri.parse(home));
   }
@@ -137,7 +146,6 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
   @override
   void dispose() {
     _jsEventsSub?.cancel();
-    _pendingSub?.cancel();
     _urlCtrl.dispose();
     super.dispose();
   }
@@ -160,23 +168,30 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
   }
 
   Future<void> _onRpc(JavaScriptMessage msg) async {
-    if (_client == null) return;
-    // Provider is injected main-frame only (and refuses cross-origin
-    // sub-frames), so the live page URL is the requesting frame's origin.
-    final origin = await _webview.currentUrl() ?? _currentUrl;
-    Map<String, dynamic> req;
-    try {
-      req = jsonDecode(msg.message) as Map<String, dynamic>;
-    } catch (e) {
-      debugPrint('bridge decode failed: $e');
-      return;
-    }
+    if (_client == null || !widget.active) return;
+    final document = _document;
+    final req = document?.accept(msg.message);
+    if (document == null || req == null) return;
+    final origin = document.origin;
     final id = req['id'];
     String payload;
     try {
-      final result = await _client!.web3.request(
+      if (origin == null) {
+        throw StateError('Web3 request has no valid HTTP security origin');
+      }
+      final result = await Web3RequestCoordinator.forClient(_client!).request(
         origin: origin,
         query: {'method': req['method'], 'params': req['params']},
+        isCurrent: () =>
+            mounted && widget.active && identical(document, _document),
+        approve: (request) async {
+          _approvalDocuments[request.id] = document;
+          try {
+            await _bridge!.handle(request);
+          } finally {
+            _approvalDocuments.remove(request.id);
+          }
+        },
       );
       payload = jsonEncode({'result': result});
     } on LibwalletException catch (e) {
@@ -188,16 +203,50 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
         'error': {'code': -32000, 'message': e.toString()},
       });
     }
-    if (!mounted) return;
-    await _webview.runJavaScript(
-      '__libwalletResolve($id, ${jsonEncode(payload)})',
-    );
+    if (!mounted || !identical(document, _document)) return;
+    await _webview.runJavaScript(document.resolve(id, payload));
   }
 
-  void _onJsEvent(JsEvent event) {
-    final name = jsonEncode(event.jsEventName);
-    final data = jsonEncode(event.data);
-    _webview.runJavaScript('__libwalletEvent($name, $data)');
+  Future<void> _onJsEvent(JsEvent event) async {
+    final document = _document;
+    final client = _client;
+    if (document?.origin == null || client == null || !widget.active) return;
+    try {
+      final connections = (await client.web3Connections.list(
+        host: document!.origin,
+      )).where((c) => web3SecurityOrigin(c.host) == document.origin).toList();
+      if (connections.isEmpty) return;
+      dynamic data;
+      if (event.jsEventName == 'accountsChanged') {
+        final allowed = <String>{};
+        for (final connection in connections) {
+          allowed.add((await client.accounts.get(connection.account)).address);
+        }
+        if (event.data is! List) return;
+        data = (event.data as List)
+            .whereType<String>()
+            .where(
+              (address) => allowed.any(
+                (a) => a.startsWith('0x')
+                    ? a.toLowerCase() == address.toLowerCase()
+                    : a == address,
+              ),
+            )
+            .toList();
+      } else if (event.jsEventName == 'chainChanged' && event.data is String) {
+        data = event.data;
+      } else {
+        return;
+      }
+      if (!mounted || !widget.active || !identical(document, _document)) return;
+      await _webview.runJavaScript(
+        document.guarded(
+          '__libwalletEvent(${jsonEncode(event.jsEventName)}, ${jsonEncode(data)})',
+        ),
+      );
+    } catch (error) {
+      debugPrint('Web3 event delivery failed: $error');
+    }
   }
 
   Future<void> _injectProvider(String host) async {
@@ -206,15 +255,23 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
       return;
     }
     try {
+      final document = _document;
+      if (document?.origin == null ||
+          web3SecurityOrigin(host) != document!.origin) {
+        return;
+      }
       final js = await _client!.web3.injectionScript(
         name: 'Tibane',
         rdns: 'net.tibane.tibaneapp',
         uuid: _freshUuid(),
         icon: _iconDataUrl!,
-        bridge: _kBridge,
-        host: host,
+        bridge: _kProxyBridge,
+        host: document.origin,
       );
-      await _webview.runJavaScript(js);
+      if (!mounted || !identical(document, _document)) return;
+      await _webview.runJavaScript(
+        document.inject(js, _kBridge, _kProxyBridge),
+      );
       // Probe the provider state from the page side so we can confirm the
       // script actually ran (not just that we sent it).
       await _webview.runJavaScript(
@@ -296,8 +353,7 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
               IconButton(
                 tooltip: context.l10n.browserForward,
                 icon: const Icon(Icons.arrow_forward, size: 20),
-                onPressed:
-                    _canGoForward ? () => _webview.goForward() : null,
+                onPressed: _canGoForward ? () => _webview.goForward() : null,
                 color: TibaneColors.textMuted,
                 visualDensity: VisualDensity.compact,
               ),
@@ -322,8 +378,10 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide.none,
                     ),
-                    prefixIcon: const Icon(
-                      Icons.lock_outline,
+                    prefixIcon: Icon(
+                      Uri.tryParse(_currentUrl)?.scheme == 'https'
+                          ? Icons.lock_outline
+                          : Icons.lock_open_outlined,
                       size: 14,
                       color: TibaneColors.textDim,
                     ),
@@ -345,9 +403,9 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
                       onPressed: _currentUrl.isEmpty
                           ? null
                           : () => prefs.toggleFavorite(
-                                url: _currentUrl,
-                                title: _pageTitle,
-                              ),
+                              url: _currentUrl,
+                              title: _pageTitle,
+                            ),
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(
@@ -370,7 +428,9 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
                 visualDensity: VisualDensity.compact,
               ),
               IconButton(
-                tooltip: _loading ? context.l10n.actionCancel : context.l10n.actionRefresh,
+                tooltip: _loading
+                    ? context.l10n.actionCancel
+                    : context.l10n.actionRefresh,
                 icon: Icon(_loading ? Icons.close : Icons.refresh, size: 20),
                 onPressed: () => _loading ? null : _webview.reload(),
                 color: TibaneColors.textMuted,
@@ -384,11 +444,11 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
           child: !_ready
               ? const Center(child: CircularProgressIndicator())
               : widget.active
-                  ? WebViewWidget(controller: _webview)
-                  // Off-screen: drop the platform view so the native webview's
-                  // RenderThread stops compositing. The controller + page state
-                  // are retained, so switching back re-attaches the live page.
-                  : const ColoredBox(color: TibaneColors.black),
+              ? WebViewWidget(controller: _webview)
+              // Off-screen: drop the platform view so the native webview's
+              // RenderThread stops compositing. The controller + page state
+              // are retained, so switching back re-attaches the live page.
+              : const ColoredBox(color: TibaneColors.black),
         ),
       ],
     );
@@ -399,9 +459,7 @@ class _DAppBrowserViewState extends State<DAppBrowserView> {
       context: context,
       backgroundColor: TibaneColors.dark,
       isScrollControlled: true,
-      builder: (ctx) => _FavoritesSheet(
-        startPage: _resolveStartPage(),
-      ),
+      builder: (ctx) => _FavoritesSheet(startPage: _resolveStartPage()),
     );
     if (picked == null) return;
     final uri = Uri.tryParse(picked);

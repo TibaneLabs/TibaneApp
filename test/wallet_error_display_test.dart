@@ -10,11 +10,27 @@ import 'package:tibaneapp/widgets/wallet_error_display.dart';
 void main() {
   // An error whose real reason ("insufficient lamports") lives in the message
   // and maps to a friendly line, with the raw kept as detail.
-  const insufficient =
-      LibwalletException(message: 'insufficient lamports', code: '500');
+  const insufficient = LibwalletException(
+    message: 'insufficient lamports',
+    code: '500',
+  );
   const friendly = "You don't have enough balance to cover this transaction.";
 
   group('showWalletError', () {
+    testWidgets('Details snackbar expires after three seconds', (tester) async {
+      await _pumpTrigger(tester, StateError('Wrong password'));
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+      final snackbar = tester.widget<SnackBar>(find.byType(SnackBar));
+      expect(snackbar.duration, const Duration(seconds: 3));
+      expect(snackbar.persist, isFalse);
+      expect(find.text('Details'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.text('Incorrect password.'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.byType(SnackBar), findsNothing);
+    });
     testWidgets('shows a SnackBar with the friendly message', (tester) async {
       await _pumpTrigger(tester, insufficient);
       await tester.tap(find.text('go'));
@@ -24,17 +40,32 @@ void main() {
       expect(find.text('insufficient lamports'), findsNothing); // raw hidden
     });
 
+    testWidgets('uses the active locale for friendly messages', (tester) async {
+      await _pumpTrigger(tester, insufficient, locale: const Locale('pt'));
+      await tester.tap(find.text('go'));
+      await tester.pump();
+
+      expect(
+        find.text('Você não tem saldo suficiente para cobrir esta transação.'),
+        findsOneWidget,
+      );
+      expect(find.text(friendly), findsNothing);
+    });
+
     testWidgets('is silent for a user-rejected (4001) error', (tester) async {
-      await _pumpTrigger(tester,
-          const LibwalletException(message: 'User rejected', code: '4001'));
+      await _pumpTrigger(
+        tester,
+        const LibwalletException(message: 'User rejected', code: '4001'),
+      );
       await tester.tap(find.text('go'));
       await tester.pump();
 
       expect(find.byType(SnackBar), findsNothing);
     });
 
-    testWidgets('Details action opens a sheet exposing the raw text',
-        (tester) async {
+    testWidgets('Details action opens a sheet exposing the raw text', (
+      tester,
+    ) async {
       await _pumpTrigger(tester, insufficient);
       await tester.tap(find.text('go'));
       await tester.pump(); // schedule the SnackBar
@@ -69,26 +100,32 @@ void main() {
 
     testWidgets('renders nothing for a silent error', (tester) async {
       await _pumpCard(
-          tester,
-          walletErrorCard(
-              const LibwalletException(message: 'User rejected', code: '4001')));
+        tester,
+        walletErrorCard(
+          const LibwalletException(message: 'User rejected', code: '4001'),
+        ),
+      );
       expect(find.byType(SizedBox), findsWidgets); // shrink
       expect(find.text('Request cancelled.'), findsNothing);
     });
 
-    testWidgets('shows a Retry affordance when onRetry is given',
-        (tester) async {
+    testWidgets('shows a Retry affordance when onRetry is given', (
+      tester,
+    ) async {
       var retried = false;
       await _pumpCard(
-          tester, walletErrorCard(insufficient, onRetry: () => retried = true));
+        tester,
+        walletErrorCard(insufficient, onRetry: () => retried = true),
+      );
       await tester.tap(find.text('Retry'));
       expect(retried, isTrue);
     });
   });
 
   group('logging (Log user errors rule)', () {
-    testWidgets('the raw detail is logged when the error is shown',
-        (tester) async {
+    testWidgets('the raw detail is logged when the error is shown', (
+      tester,
+    ) async {
       final logs = <String>[];
       final original = debugPrint;
       debugPrint = (String? m, {int? wrapWidth}) => logs.add(m ?? '');
@@ -97,34 +134,42 @@ void main() {
       } finally {
         debugPrint = original;
       }
-      expect(logs.any((l) => l.contains('insufficient lamports')), isTrue,
-          reason: 'raw error text must reach the debug log');
+      expect(
+        logs.any((l) => l.contains('insufficient lamports')),
+        isTrue,
+        reason: 'raw error text must reach the debug log',
+      );
       expect(logs.any((l) => l.contains('[WalletError]')), isTrue);
     });
   });
 }
 
 /// Pump a screen with a button that fires [showWalletError] for [error].
-Future<void> _pumpTrigger(WidgetTester tester, Object error) {
-  return tester.pumpWidget(MaterialApp(
-    localizationsDelegates: AppLocalizations.localizationsDelegates,
-    supportedLocales: AppLocalizations.supportedLocales,
-    home: Scaffold(
-      body: Builder(
-        builder: (context) => TextButton(
-          onPressed: () => showWalletError(context, error),
-          child: const Text('go'),
+Future<void> _pumpTrigger(WidgetTester tester, Object error, {Locale? locale}) {
+  return tester.pumpWidget(
+    MaterialApp(
+      locale: locale,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => TextButton(
+            onPressed: () => showWalletError(context, error),
+            child: const Text('go'),
+          ),
         ),
       ),
     ),
-  ));
+  );
 }
 
 /// Pump [child] inside a scaffold so cards render with a Material ancestor.
 Future<void> _pumpCard(WidgetTester tester, Widget child) {
-  return tester.pumpWidget(MaterialApp(
-    localizationsDelegates: AppLocalizations.localizationsDelegates,
-    supportedLocales: AppLocalizations.supportedLocales,
-    home: Scaffold(body: SingleChildScrollView(child: child)),
-  ));
+  return tester.pumpWidget(
+    MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Scaffold(body: SingleChildScrollView(child: child)),
+    ),
+  );
 }

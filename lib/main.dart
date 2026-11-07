@@ -13,12 +13,10 @@ import 'l10n/fallback_localizations_delegate.dart';
 import 'l10n/l10n.dart';
 import 'screens/browser/dapp_browser_screen.dart';
 import 'screens/clawdwallet/pairing_screen.dart';
-import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/swap_screen.dart';
 import 'screens/wallet/biometric_migration_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
-import 'screens/wallet/widgets/catcard_pairing_sheet.dart';
 import 'services/balances_store.dart';
 import 'services/browser_preferences.dart';
 import 'services/favorites_service.dart';
@@ -95,13 +93,15 @@ bool startupGateReady({
 /// behaviour where back on a root tab exited. Pure, for unit testing.
 enum ShellBackAction { popTab, exitApp }
 
+enum ShellTab { wallet, browser, settings }
+
 @visibleForTesting
 ShellBackAction shellBackAction({required bool activeTabCanPop}) =>
     activeTabCanPop ? ShellBackAction.popTab : ShellBackAction.exitApp;
 
 @visibleForTesting
 bool bottomTabTapPopsToRoot(int index) =>
-    index == 0 || index == 1 || index == 3;
+    index == ShellTab.wallet.index || index == ShellTab.settings.index;
 
 /// Lazy-build + pause state for the Browse tab, given whether it was already
 /// built (`wasVisited`) and the active tab index. The heavy webview is built
@@ -112,7 +112,7 @@ bool bottomTabTapPopsToRoot(int index) =>
   required bool wasVisited,
   required int activeIndex,
 }) {
-  final active = activeIndex == 2;
+  final active = activeIndex == ShellTab.browser.index;
   return (visited: wasVisited || active, active: active);
 }
 
@@ -126,15 +126,7 @@ class TibaneApp extends StatelessWidget {
         // App language: null = System default (follow device). Drives
         // MaterialApp.locale; the Settings → General switcher writes to it.
         ChangeNotifierProvider(create: (_) => LocaleController()..load()),
-        ChangeNotifierProvider(
-          create: (_) {
-            final wallet = WalletService();
-            // CatCard pairing sheet + progress, reachable from any screen.
-            installCatCardUi(wallet, rootNavigatorKey);
-            unawaited(wallet.tryRestore());
-            return wallet;
-          },
-        ),
+        ChangeNotifierProvider(create: (_) => WalletService()..tryRestore()),
         // Centralized holdings + tx store; reads WalletService (listed first so
         // it's resolvable here). See BALANCES_STORE_MIGRATION.md.
         ChangeNotifierProvider(
@@ -186,15 +178,15 @@ class TibaneApp extends StatelessWidget {
 
 /// Main app shell with bottom navigation
 class TibaneShell extends StatefulWidget {
-  /// Tab to show on first build. 0=home, 1=wallet/swap, 2=browse, 3=settings.
-  /// Staking and Agents live behind route pushes (Home card / Settings tile).
+  /// Tab to show on first build. 0=wallet/swap, 1=browse, 2=settings.
   final int initialIndex;
 
   /// When non-null, forces the Seeker / non-Seeker layout instead of probing
   /// MWA. `false` selects the Wallet tab; `true` selects the Swap tab.
   final bool? forceSeeker;
 
-  const TibaneShell({super.key, this.initialIndex = 0, this.forceSeeker});
+  const TibaneShell({super.key, this.initialIndex = 0, this.forceSeeker})
+    : assert(initialIndex >= 0 && initialIndex < 3);
 
   @override
   State<TibaneShell> createState() => TibaneShellState();
@@ -207,7 +199,7 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
   /// and the [BottomNavigationBar] remains visible on pushed screens (Swap,
   /// token/staking detail, settings sub-screens). See NAVIGATION_MIGRATION.md.
   final List<GlobalKey<NavigatorState>> _navKeys = List.generate(
-    4,
+    ShellTab.values.length,
     (_) => GlobalKey<NavigatorState>(),
   );
 
@@ -220,7 +212,7 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
   );
 
   /// Null while checking; true shows the mandatory biometric-migration screen
-  /// (Phase 3 / D7); false renders the normal home.
+  /// (Phase 3 / D7); false renders the normal wallet-first shell.
   bool? _needsMigration;
 
   /// Startup splash backstop (D16): reveal even if the wallet snapshot never
@@ -306,7 +298,8 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
   void navigateTo(int index) => _navigateTo(index);
 
   void _navigateTo(int index) {
-    // Home, Wallet/Swap, and Settings act like familiar bottom tabs: tapping
+    if (index < 0 || index >= _navKeys.length) return;
+    // Wallet/Swap and Settings act like familiar bottom tabs: tapping
     // them returns that tab to its root. Browse keeps its current page/state.
     if (bottomTabTapPopsToRoot(index)) {
       _navKeys[index].currentState?.popUntil((r) => r.isFirst);
@@ -329,7 +322,7 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
       return const _StartupSplash();
     }
 
-    // Mandatory one-time biometric migration (Phase 3 / D7) gates the home.
+    // Mandatory one-time biometric migration (Phase 3 / D7) gates the shell.
     if (_needsMigration == true) {
       return BiometricMigrationScreen(
         onDone: () => setState(() => _needsMigration = false),
@@ -369,20 +362,12 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
         body: IndexedStack(
           index: _currentIndex,
           children: [
-            _TabNavigator(
-              navKey: _navKeys[0],
-              rootBuilder: (_) => Scaffold(
-                backgroundColor: TibaneColors.black,
-                appBar: const TibaneAppBar(),
-                body: const HomeScreen(),
-              ),
-            ),
-            // Tab 1 follows the current account's mode: Swap for an MWA account,
+            // Tab 0 follows the current account's mode: Swap for an MWA account,
             // the Wallet dashboard for an in-app MPC account (or no account).
             // The selection lives in [_WalletOrSwapTab] so this Navigator's
             // root stays stable when the account (and thus the mode) changes.
             _TabNavigator(
-              navKey: _navKeys[1],
+              navKey: _navKeys[ShellTab.wallet.index],
               rootBuilder: (_) => Scaffold(
                 backgroundColor: TibaneColors.black,
                 appBar: const TibaneAppBar(),
@@ -392,7 +377,7 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
             // Browse: built (and its heavy webview spun up) only after its first
             // visit, and paused while another tab is active — see [_BrowserTab].
             _TabNavigator(
-              navKey: _navKeys[2],
+              navKey: _navKeys[ShellTab.browser.index],
               rootBuilder: (_) => Scaffold(
                 backgroundColor: TibaneColors.black,
                 appBar: const TibaneAppBar(),
@@ -400,7 +385,7 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
               ),
             ),
             _TabNavigator(
-              navKey: _navKeys[3],
+              navKey: _navKeys[ShellTab.settings.index],
               rootBuilder: (_) => const Scaffold(
                 backgroundColor: TibaneColors.black,
                 appBar: TibaneAppBar(),
@@ -424,11 +409,6 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
         currentIndex: _currentIndex,
         onTap: _navigateTo,
         items: [
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.home_outlined),
-            activeIcon: const Icon(Icons.home),
-            label: l10n.bottomNavHomeLabel,
-          ),
           BottomNavigationBarItem(
             icon: Icon(
               showSwap
@@ -514,7 +494,7 @@ class _TabNavigator extends StatelessWidget {
   }
 }
 
-/// Tab-1 root. Renders Swap for an MWA / Seed Vault account (and not in the UK)
+/// Tab-0 root. Renders Swap for an MWA / Seed Vault account (and not in the UK)
 /// or the Wallet dashboard otherwise, watching the providers itself so the tab
 /// Navigator's root stays stable when the account switches. Mirrors the shell's
 /// `showSwap` logic; [forceSeeker] overrides it for the screenshot harness.
@@ -535,7 +515,7 @@ class _WalletOrSwapTab extends StatelessWidget {
   }
 }
 
-/// Tab-2 root. Builds the heavy dApp browser lazily (only after the tab's first
+/// Tab-1 root. Builds the heavy dApp browser lazily (only after the tab's first
 /// visit) and forwards an `active` flag so the webview pauses while another tab
 /// is showing. Reads tab changes from [activeTab] because this Navigator root
 /// is built once and can't watch the shell's `_currentIndex` directly.

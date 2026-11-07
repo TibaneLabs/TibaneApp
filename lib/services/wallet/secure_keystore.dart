@@ -126,6 +126,38 @@ class SecureKeystore {
     await prefs.setString(_blobKey(walletId), blob);
   }
 
+  /// Persist a device share without introducing an app-specific password.
+  ///
+  /// This is reserved for a simple private-key import before the user opts in
+  /// to MPC. The secret is written only to the platform's encrypted storage
+  /// (iOS Keychain / Android encrypted storage), never SharedPreferences. If
+  /// secure storage is unavailable, fail closed rather than retaining the raw
+  /// imported key in plaintext.
+  Future<void> writeDeviceShareWithoutPassword({
+    required String walletId,
+    required String value,
+  }) async {
+    if (!await isSecureStorageUsable()) {
+      throw StateError('Secure device storage is unavailable');
+    }
+    await _storage.write(
+      key: _dsKey(walletId),
+      value: value,
+      iOptions: _iosPlain,
+      aOptions: _androidPlain,
+    );
+    final readBack = await _storage.read(
+      key: _dsKey(walletId),
+      iOptions: _iosPlain,
+      aOptions: _androidPlain,
+    );
+    if (readBack != value) {
+      throw StateError('Could not verify secure device storage');
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_blobKey(walletId));
+  }
+
   /// Read [walletId]'s device-share private key. [password] is consulted
   /// only if the record is the fallback (AES-GCM) blob. Returns `null` when
   /// no record exists. Throws [WrongPasswordException] if fallback

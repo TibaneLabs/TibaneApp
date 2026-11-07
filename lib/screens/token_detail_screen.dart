@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:libwallet/libwallet.dart' show NetworkType;
 import 'package:provider/provider.dart';
 
 import '../constants/solana_constants.dart';
@@ -12,6 +13,7 @@ import '../services/jupiter_service.dart';
 import '../services/rpc_service.dart';
 import '../services/staker_instructions.dart';
 import '../services/uk_compliance_service.dart';
+import '../services/wallet/swap_asset.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/gradient_button.dart';
@@ -23,6 +25,7 @@ import 'staking/staking_detail_screen.dart';
 import 'swap_screen.dart';
 import 'wallet/receive_screen.dart';
 import 'wallet/send_screen.dart';
+import 'wallet/widgets/wallet_action_button.dart';
 import '../utils/log.dart';
 import '../utils/wallet_error.dart';
 import '../utils/context_extensions.dart';
@@ -35,8 +38,19 @@ import '../utils/context_extensions.dart';
 /// wrapping required.
 class TokenDetailScreen extends StatefulWidget {
   final String mint;
+  final TokenHolding? nativeHolding;
+  final String? nativeAssetPath;
 
-  const TokenDetailScreen({super.key, required this.mint});
+  const TokenDetailScreen({super.key, required this.mint})
+    : nativeHolding = null,
+      nativeAssetPath = null;
+
+  TokenDetailScreen.native({
+    super.key,
+    required TokenHolding holding,
+    this.nativeAssetPath,
+  }) : mint = holding.mint,
+       nativeHolding = holding;
 
   @override
   State<TokenDetailScreen> createState() => _TokenDetailScreenState();
@@ -68,6 +82,22 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
   }
 
   Future<void> _loadToken() async {
+    final nativeHolding = widget.nativeHolding;
+    if (nativeHolding != null) {
+      setState(() {
+        _token = TokenMetadata(
+          mint: nativeHolding.mint,
+          name: nativeHolding.name,
+          symbol: nativeHolding.symbol,
+          decimals: nativeHolding.decimals,
+          pricePerToken: nativeHolding.priceUsd,
+        );
+        _holders = const [];
+        _userBalance = nativeHolding.balance;
+        _loading = false;
+      });
+      return;
+    }
     if (widget.mint.length < 32) {
       setState(() {
         _error = context.l10n.tokenDetailInvalidMint;
@@ -111,7 +141,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
       logError('[token-detail._loadToken] error: $e');
       if (!mounted) return;
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loading = false;
       });
     }
@@ -242,6 +272,7 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
               holders: _holders,
               stakingPool: _stakingPool,
               userBalance: _userBalance,
+              nativeAssetPath: widget.nativeAssetPath,
               onRefresh: _loadToken,
             ),
     );
@@ -253,6 +284,7 @@ class _TokenDetails extends StatelessWidget {
   final List<TokenHolder> holders;
   final StakingPool? stakingPool;
   final BigInt? userBalance;
+  final String? nativeAssetPath;
   final Future<void> Function() onRefresh;
 
   const _TokenDetails({
@@ -261,11 +293,12 @@ class _TokenDetails extends StatelessWidget {
     required this.onRefresh,
     this.stakingPool,
     this.userBalance,
+    this.nativeAssetPath,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isNativeSol = token.mint == wsolMint;
+    final isNative = _isNativeToken(token);
     return RefreshIndicator(
       color: TibaneColors.orange,
       onRefresh: onRefresh,
@@ -275,12 +308,21 @@ class _TokenDetails extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _TokenHeader(token: token),
+            _TokenHeader(
+              token: token,
+              nativeAssetPath: nativeAssetPath,
+              isNative: isNative,
+            ),
             const SizedBox(height: 12),
 
             _TokenActions(token: token, userBalance: userBalance),
 
-            if (!isNativeSol) ...[
+            if (isNative && token.pricePerToken != null) ...[
+              const SizedBox(height: 20),
+              _TokenPriceCard(token: token),
+            ],
+
+            if (!isNative) ...[
               const SizedBox(height: 20),
 
               _SupplySection(token: token),
@@ -390,8 +432,14 @@ class _TokenDetails extends StatelessWidget {
 
 class _TokenHeader extends StatelessWidget {
   final TokenMetadata token;
+  final String? nativeAssetPath;
+  final bool isNative;
 
-  const _TokenHeader({required this.token});
+  const _TokenHeader({
+    required this.token,
+    required this.isNative,
+    this.nativeAssetPath,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -405,9 +453,10 @@ class _TokenHeader extends StatelessWidget {
             children: [
               TokenIcon(
                 imageUrl: token.imageUrl,
+                assetPath: nativeAssetPath,
                 mint: token.mint,
                 symbol: token.symbol ?? token.name ?? '',
-                size: 56,
+                size: 64,
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -433,44 +482,62 @@ class _TokenHeader extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                    if (!isNative) ...[
+                      const SizedBox(height: 7),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(4),
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: token.mint));
+                          context.showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                context.l10n.tokenDetailMintAddressCopied,
+                              ),
+                            ),
+                          );
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  _shortTokenAddress(token.mint),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: monoStyle(
+                                    fontSize: 14,
+                                    color: TibaneColors.textMuted,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              const Icon(
+                                Icons.copy,
+                                size: 18,
+                                color: TibaneColors.textMuted,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  GestureDetector(
-                    onTap: () => favs.toggle(
-                      token.mint,
-                      name: token.name,
-                      symbol: token.symbol,
-                      imageUrl: token.imageUrl,
-                    ),
-                    child: Icon(
-                      isFav ? Icons.star : Icons.star_border,
-                      color: isFav ? TibaneColors.gold : TibaneColors.textDim,
-                      size: 28,
-                    ),
-                  ),
-                  if (token.pricePerToken != null) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      '\$${token.pricePerToken!.toStringAsFixed(token.pricePerToken! < 0.01 ? 8 : 4)}',
-                      style: const TextStyle(
-                        color: TibaneColors.text,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16,
-                      ),
-                    ),
-                    Text(
-                      context.l10n.tokenDetailPerToken,
-                      style: monoStyle(
-                        fontSize: 10,
-                        color: TibaneColors.textDim,
-                      ),
-                    ),
-                  ],
-                ],
+              GestureDetector(
+                onTap: () => favs.toggle(
+                  token.mint,
+                  name: token.name,
+                  symbol: token.symbol,
+                  imageUrl: token.imageUrl,
+                ),
+                child: Icon(
+                  isFav ? Icons.star : Icons.star_border,
+                  color: isFav ? TibaneColors.gold : TibaneColors.textDim,
+                  size: 28,
+                ),
               ),
             ],
           ),
@@ -480,9 +547,7 @@ class _TokenHeader extends StatelessWidget {
   }
 }
 
-/// Receive / Send / Swap as an inline row of bordered icon+text buttons
-/// below the token header. Send disables itself when the balance lookup
-/// returns zero; Swap is hidden in UK mode, matching the rest of the app.
+/// Receive / Send / Swap using the same component as the wallet dashboard.
 class _TokenActions extends StatelessWidget {
   final TokenMetadata token;
   final BigInt? userBalance;
@@ -493,99 +558,75 @@ class _TokenActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final isUk = context.watch<UkComplianceService>().isUk;
+    final isNative = _isNativeToken(token);
     final isNativeSol = token.mint == wsolMint;
+    final network = context.read<WalletService>().libwallet.currentNetwork;
+    final nativeMint = nativeSwapMint(network?.type ?? NetworkType.solana);
+    final nativeSymbol = nativeMint == wsolMint
+        ? 'SOL'
+        : (network?.currencySymbol ?? 'ETH');
+    final nativeName = nativeMint == wsolMint
+        ? 'Solana'
+        : (network?.name ?? 'Ethereum');
     final canSend = userBalance != null && userBalance! > BigInt.zero;
     return Row(
       children: [
-        Expanded(
-          child: _ActionButton(
-            label: l10n.receiveTitle,
-            icon: Icons.arrow_downward,
-            onPressed: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const ReceiveScreen())),
-          ),
+        WalletActionButton(
+          label: l10n.receiveTitle,
+          icon: Icons.arrow_downward,
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const ReceiveScreen())),
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _ActionButton(
-            label: l10n.sendButton,
-            icon: Icons.arrow_upward,
-            onPressed: canSend
-                ? () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => isNativeSol
-                          ? const SendScreen()
-                          : SendScreen(
-                              mint: token.mint,
-                              symbol: token.symbol,
-                              decimals: token.decimals,
-                            ),
-                    ),
-                  )
-                : null,
-          ),
-        ),
-        if (!isUk) ...[
-          const SizedBox(width: 10),
-          Expanded(
-            child: _ActionButton(
-              label: l10n.homeSwapTitle,
-              icon: Icons.swap_horiz,
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => Scaffold(
-                    backgroundColor: TibaneColors.black,
-                    appBar: AppBar(title: Text(l10n.homeSwapTitle)),
-                    body: isNativeSol
-                        ? const SwapScreen(initialInputMint: wsolMint)
-                        : SwapScreen(
-                            initialInputMint: wsolMint,
-                            initialOutputMint: token.mint,
-                            initialOutputSymbol: token.symbol,
-                            initialOutputName: token.name,
-                            initialOutputImageUrl: token.imageUrl,
-                            initialOutputDecimals: token.decimals,
+        const SizedBox(width: 12),
+        WalletActionButton(
+          label: l10n.dashboardSend,
+          icon: Icons.arrow_upward,
+          onTap: canSend
+              ? () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => isNative
+                        ? const SendScreen()
+                        : SendScreen(
+                            mint: token.mint,
+                            symbol: token.symbol,
+                            decimals: token.decimals,
                           ),
                   ),
+                )
+              : null,
+        ),
+        if (!isUk) ...[
+          const SizedBox(width: 12),
+          WalletActionButton(
+            label: l10n.swapButton,
+            icon: Icons.swap_horiz,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => Scaffold(
+                  backgroundColor: TibaneColors.black,
+                  appBar: AppBar(title: Text(l10n.swapButton)),
+                  body: isNative
+                      ? SwapScreen(
+                          initialInputMint: isNativeSol
+                              ? wsolMint
+                              : evmNativeSwapMint,
+                        )
+                      : SwapScreen(
+                          initialInputMint: token.mint,
+                          initialOutputMint: nativeMint,
+                          initialOutputSymbol: nativeSymbol,
+                          initialOutputName: nativeName,
+                          initialOutputDecimals: nativeMint == wsolMint
+                              ? 9
+                              : 18,
+                        ),
                 ),
               ),
             ),
           ),
         ],
       ],
-    );
-  }
-}
-
-/// Bordered icon+text action button sized to share a row equally with
-/// its siblings. Disables (greys) automatically when [onPressed] is
-/// null. Compact padding so three fit across a phone width.
-class _ActionButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final VoidCallback? onPressed;
-
-  const _ActionButton({
-    required this.label,
-    required this.icon,
-    this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 16),
-      label: Text(label),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: TibaneColors.orange,
-        backgroundColor: TibaneColors.card,
-        disabledForegroundColor: TibaneColors.textDim,
-        side: const BorderSide(color: TibaneColors.orange),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
     );
   }
 }
@@ -637,37 +678,57 @@ class _SupplySection extends StatelessWidget {
             icon: Icons.local_fire_department,
           ),
         ],
-        const SizedBox(height: 8),
-        TibaneCard(
-          padding: const EdgeInsets.all(14),
-          onTap: () {
-            Clipboard.setData(ClipboardData(text: token.mint));
-            context.showSnackBar(
-              SnackBar(content: Text(l10n.tokenDetailMintAddressCopied)),
-            );
-          },
-          child: Row(
-            children: [
-              const Icon(
-                Icons.fingerprint,
-                size: 16,
-                color: TibaneColors.textDim,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  token.mint,
-                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const Icon(Icons.copy, size: 14, color: TibaneColors.textDim),
-            ],
-          ),
-        ),
+        if (token.pricePerToken != null) ...[
+          const SizedBox(height: 8),
+          _TokenPriceCard(token: token),
+        ],
       ],
     );
   }
+}
+
+class _TokenPriceCard extends StatelessWidget {
+  final TokenMetadata token;
+
+  const _TokenPriceCard({required this.token});
+
+  @override
+  Widget build(BuildContext context) {
+    final price = token.pricePerToken;
+    if (price == null) return const SizedBox.shrink();
+
+    return TibaneCard(
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: [
+          const Icon(Icons.attach_money, size: 20, color: TibaneColors.gold),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '\$${price.toStringAsFixed(price < 0.01 ? 8 : 4)}',
+              style: const TextStyle(
+                color: TibaneColors.text,
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+              ),
+            ),
+          ),
+          Text(
+            context.l10n.tokenDetailPerToken,
+            style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+bool _isNativeToken(TokenMetadata token) =>
+    token.mint == wsolMint || token.mint.endsWith('.NATIVE');
+
+String _shortTokenAddress(String address) {
+  if (address.length <= 13) return address;
+  return '${address.substring(0, 5)}...${address.substring(address.length - 5)}';
 }
 
 String _formatMarketCap(TokenMetadata token) {

@@ -77,7 +77,7 @@ class _StakingMembersScreenState extends State<StakingMembersScreen> {
     } catch (e) {
       logError('[StakingMembers._loadMembers] load error: $e');
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loading = false;
       });
     }

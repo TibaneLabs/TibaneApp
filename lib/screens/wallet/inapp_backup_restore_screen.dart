@@ -94,13 +94,14 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
       logError('[InAppBackupRestore._pickFile] file pick error: $e');
       setState(() {
         _busy = false;
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
       });
     }
   }
 
   Future<void> _restore() async {
     if (_busy) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
     final l10n = context.l10n;
     final json = _jsonCtrl.text.trim();
     final pw = _pwCtrl.text;
@@ -138,8 +139,17 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
           await wallet.useLibwallet();
         }
         if (!mounted) return;
-        // A backup never contains this device's signing key (StoreKey) — it's
-        // device-only for security. So a freshly restored wallet CAN'T sign yet;
+        if (restoredId != null &&
+            await wallet.libwallet.walletCanSignWithoutDeviceShare(
+              restoredId,
+            )) {
+          if (!mounted) return;
+          Navigator.of(context).pop(true);
+          return;
+        }
+        if (!mounted) return;
+        // StoreKey-based backups do not contain the device's signing key.
+        // Unlike password-only wallets, they cannot sign yet;
         // the restore only becomes usable after "Set up this device" mints a
         // local share via 2FA. Steer the user straight there and explain why,
         // rather than dropping them on a wallet that silently can't send.
@@ -162,13 +172,13 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
         showWalletError(context, err);
         setState(() {
           _busy = false;
-          _error = err;
+          _error = walletErrorMessageForContext(context, err);
         });
       }
     } catch (e) {
       logError('[InAppBackupRestore._restore] restore error: $e');
       if (!mounted) return;
-      final err = WalletError.from(e).message;
+      final err = walletErrorMessageForContext(context, e);
       showWalletError(context, err);
       setState(() {
         _busy = false;
@@ -324,6 +334,10 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
                         obscureText: true,
                         enabled: !_busy,
                         textInputAction: TextInputAction.done,
+                        onChanged: (_) {
+                          ScaffoldMessenger.of(context).removeCurrentSnackBar();
+                          if (_error != null) setState(() => _error = null);
+                        },
                         onSubmitted: (_) => _busy ? null : _restore(),
                         decoration: InputDecoration(
                           labelText: l10n.labelPassword,

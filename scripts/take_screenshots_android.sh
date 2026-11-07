@@ -106,8 +106,8 @@ wait_and_capture() {
     return 1
 }
 
-wait_and_capture 1 "$SCREENSHOTS_DIR/1_home.png"
-wait_and_capture 2 "$SCREENSHOTS_DIR/2_wallet.png"
+wait_and_capture 1 "$SCREENSHOTS_DIR/1_wallet.png"
+wait_and_capture 2 "$SCREENSHOTS_DIR/2_wallet_setup.png"
 wait_and_capture 3 "$SCREENSHOTS_DIR/3_staking_pools.png"
 wait_and_capture 4 "$SCREENSHOTS_DIR/4_staking_detail.png"
 wait_and_capture 5 "$SCREENSHOTS_DIR/5_incinerator.png"

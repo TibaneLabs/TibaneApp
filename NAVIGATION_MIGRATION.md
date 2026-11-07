@@ -1,5 +1,17 @@
 # Navigation Migration — Persistent Bottom Nav (per-tab nested Navigators)
 
+## Current Navigation (2026-11-06)
+
+Home has been removed. The shell now has three tabs: Wallet/Swap (0),
+Browser (1), and Settings (2), defined by `ShellTab`. Wallet is the default.
+The browser still builds lazily and pauses off-screen; Wallet and Settings
+return to their roots when tapped. The app-bar Connect action is hidden when
+there is no saved in-app wallet or active connection.
+Stake, Incinerator and Search are grouped under Settings > Tools. Staking
+retains its regional gate; Solana-only actions keep their account-context check.
+
+The migration notes below describe the earlier four-tab layout.
+
 **Status:** ✅ Implemented — pending on-device validation (do not commit until validated)
 **Goal:** Keep the bottom navigation bar visible on the Swap screen — and, as a
 consequence of doing it the idiomatic way, on *every* pushed detail screen.

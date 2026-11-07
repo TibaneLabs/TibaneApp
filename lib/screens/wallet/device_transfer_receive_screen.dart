@@ -86,12 +86,10 @@ class _DeviceTransferReceiveScreenState
         return;
       }
       if (raw.startsWith(_backupQrPrefix)) {
-        setState(() => _scanHint =
-            context.l10n.deviceReceiveWrongQr);
+        setState(() => _scanHint = context.l10n.deviceReceiveWrongQr);
         return;
       }
-      setState(() => _scanHint =
-          context.l10n.deviceReceiveNotTransferCode);
+      setState(() => _scanHint = context.l10n.deviceReceiveNotTransferCode);
       return;
     }
   }
@@ -115,12 +113,15 @@ class _DeviceTransferReceiveScreenState
     if (ok) {
       setState(() => _phase = _Phase.password);
     } else {
-      logError('[DeviceTransferReceive._startImport] transfer failed: ${wallet.libwallet.error}');
+      logError(
+        '[DeviceTransferReceive._startImport] transfer failed: ${wallet.libwallet.error}',
+      );
       setState(() {
         _phase = _Phase.error;
-        _message = WalletError.from(
+        _message = walletErrorMessageForContext(
+          context,
           wallet.libwallet.error ?? 'Transfer failed',
-        ).message;
+        );
       });
     }
   }
@@ -152,12 +153,15 @@ class _DeviceTransferReceiveScreenState
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } else {
-      logError('[DeviceTransferReceive._activate] activate failed: ${wallet.libwallet.error}');
+      logError(
+        '[DeviceTransferReceive._activate] activate failed: ${wallet.libwallet.error}',
+      );
       setState(() {
         _busy = false;
-        _message = WalletError.from(
+        _message = walletErrorMessageForContext(
+          context,
           wallet.libwallet.error ?? 'Could not activate wallet',
-        ).message;
+        );
       });
     }
   }
@@ -196,8 +200,9 @@ class _DeviceTransferReceiveScreenState
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
-        backgroundColor:
-            _phase == _Phase.scanning ? Colors.black : TibaneColors.black,
+        backgroundColor: _phase == _Phase.scanning
+            ? Colors.black
+            : TibaneColors.black,
         foregroundColor: Colors.white,
         title: Text(l10n.deviceReceiveTitle),
         actions: _phase == _Phase.scanning
@@ -307,9 +312,8 @@ class _DeviceTransferReceiveScreenState
     // Whether there's already an active wallet to keep — drives the
     // "use now" vs "just add" choice. When there's none, the received wallet
     // becomes active unconditionally.
-    final hasActive = (_wallet ?? context.read<WalletService>())
-        .libwallet
-        .hasWallet;
+    final hasActive =
+        (_wallet ?? context.read<WalletService>()).libwallet.hasWallet;
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -335,7 +339,10 @@ class _DeviceTransferReceiveScreenState
             Text(
               l10n.deviceReceivePasswordHint,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
+              style: const TextStyle(
+                color: TibaneColors.textMuted,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 24),
             TextField(
@@ -366,7 +373,9 @@ class _DeviceTransferReceiveScreenState
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: Text(
-                  _busy ? l10n.deviceReceiveSettingUp : l10n.deviceReceiveAddAndSwitch,
+                  _busy
+                      ? l10n.deviceReceiveSettingUp
+                      : l10n.deviceReceiveAddAndSwitch,
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
@@ -393,7 +402,9 @@ class _DeviceTransferReceiveScreenState
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: Text(
-                  _busy ? l10n.deviceReceiveSettingUp : l10n.deviceReceiveFinishSetup,
+                  _busy
+                      ? l10n.deviceReceiveSettingUp
+                      : l10n.deviceReceiveFinishSetup,
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
@@ -494,10 +505,10 @@ class _ScannerErrorView extends StatelessWidget {
     final body = switch (code) {
       MobileScannerErrorCode.permissionDenied =>
         l10n.deviceReceiveCameraPermission,
-      MobileScannerErrorCode.unsupported =>
-        l10n.deviceReceiveCameraUnsupported,
+      MobileScannerErrorCode.unsupported => l10n.deviceReceiveCameraUnsupported,
       _ => l10n.deviceReceiveCameraError(
-          error.errorDetails?.message ?? code.message),
+        error.errorDetails?.message ?? code.message,
+      ),
     };
     return ColoredBox(
       color: Colors.black,

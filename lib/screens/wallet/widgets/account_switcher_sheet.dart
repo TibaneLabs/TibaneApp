@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:libwallet/libwallet.dart' show SigningKey;
 import 'package:provider/provider.dart';
 
 import '../../../l10n/l10n.dart';
@@ -14,9 +15,12 @@ import '../../../theme/tibane_theme.dart';
 import '../../../widgets/network_logos.dart';
 import '../../../widgets/wallet_error_display.dart';
 import '../../../utils/context_extensions.dart';
-import 'account_avatar.dart';
+import '../create_account_screen.dart';
+import '../inapp_import_private_key_screen.dart';
 import 'account_switcher_view_model.dart';
-import 'add_account_dialog.dart';
+import 'sign_sheet.dart';
+
+enum _AddAccountChoice { create, importPrivateKey }
 
 /// Open the account switcher (Atonline-parity §4.1/§4.2, Phase 4b-2): the unified
 /// list of in-app accounts (across all wallets) + the connected MWA account,
@@ -61,67 +65,9 @@ Future<void> showAccountSwitcher(BuildContext context) {
   );
 }
 
-String _short(String addr) => addr.length > 12
-    ? '${addr.substring(0, 4)}...${addr.substring(addr.length - 4)}'
-    : addr;
-
 String? _shortDisplayAddress(UnifiedAccount account) {
   if (account.address.isEmpty) return null;
-  return _short(account.address);
-}
-
-/// Renders [address] middle-truncated to fill the available width — shows as
-/// many leading+trailing characters as fit, ellipsizing only the middle, and
-/// the full address when it fits. Falls back to [_short] when space is tight.
-class _AddressText extends StatelessWidget {
-  final String address;
-  final TextStyle style;
-
-  const _AddressText({required this.address, required this.style});
-
-  @override
-  Widget build(BuildContext context) {
-    final scaler = MediaQuery.textScalerOf(context);
-    return LayoutBuilder(
-      builder: (context, constraints) => Text(
-        _fitAddress(address, style, constraints.maxWidth, scaler),
-        style: style,
-        maxLines: 1,
-        softWrap: false,
-        overflow: TextOverflow.ellipsis,
-      ),
-    );
-  }
-}
-
-/// The widest `head…tail` slice of [address] that fits [maxWidth] in [style]'s
-/// (Space Mono, monospace) font. Returns the full address when it fits.
-String _fitAddress(
-  String address,
-  TextStyle style,
-  double maxWidth,
-  TextScaler scaler,
-) {
-  if (address.isEmpty || !maxWidth.isFinite || maxWidth <= 0) return address;
-  // Monospace: measure a 20-char sample to get the per-character advance
-  // (glyph + letterSpacing), then derive how many characters fit.
-  final probe = TextPainter(
-    text: TextSpan(text: '0' * 20, style: style),
-    textDirection: TextDirection.ltr,
-    textScaler: scaler,
-  )..layout();
-  final charWidth = probe.width / 20;
-  if (charWidth <= 0) return address;
-  final fitChars = maxWidth ~/ charWidth;
-  if (fitChars >= address.length) return address;
-  final maxChars = fitChars - 1; // 1-char safety margin against rounding
-  if (maxChars < 8) return _short(address); // too tight for a useful middle
-  const ellipsis = '...';
-  final keep = maxChars - ellipsis.length;
-  final head = (keep + 1) ~/ 2; // bias the head one longer on odd counts
-  final tail = keep - head;
-  return '${address.substring(0, head)}$ellipsis'
-      '${address.substring(address.length - tail)}';
+  return abbreviateAccountAddress(account.address);
 }
 
 // Cached tile colors — Color.lerp allocates, and these are constant per theme,
@@ -184,8 +130,43 @@ Future<void> _switchAccount(
   }
 }
 
-class AccountSwitcherSheet extends StatelessWidget {
+class AccountSwitcherSheet extends StatefulWidget {
   const AccountSwitcherSheet({super.key});
+
+  @override
+  State<AccountSwitcherSheet> createState() => _AccountSwitcherSheetState();
+}
+
+class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
+  final Set<String> _expandedGroupIds = {};
+  bool _initializedExpansion = false;
+
+  void _initializeExpansion(
+    List<AccountSwitcherGroup> groups,
+    UnifiedAccount? current,
+  ) {
+    if (_initializedExpansion || groups.isEmpty) return;
+    _initializedExpansion = true;
+    AccountSwitcherGroup? selected;
+    if (current != null) {
+      for (final group in groups) {
+        if ([
+          ...group.mainAccounts,
+          ...group.additionalAccounts,
+        ].any((account) => account.id == current.id)) {
+          selected = group;
+          break;
+        }
+      }
+    }
+    _expandedGroupIds.add((selected ?? groups.first).id);
+  }
+
+  void _toggleGroup(String id) {
+    setState(() {
+      if (!_expandedGroupIds.remove(id)) _expandedGroupIds.add(id);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -196,15 +177,15 @@ class AccountSwitcherSheet extends StatelessWidget {
         final current = wallet.currentAccount;
         final target = addAccountTarget(accounts, current);
         final showMwaConnect = Platform.isAndroid && !wallet.mwa.isConnected;
-        final showCatCardConnect = !wallet.catcard.isConnected;
         final groups = buildAccountGroups(
           accounts: wallet.accounts,
           wallets: wallet.accountsService.walletsById.values,
           unnamedLabel: l10n.walletsMgmtUnnamed,
+          attachedWalletParents: wallet.accountsService.attachedWalletParents,
+          walletGroups: wallet.accountsService.walletGroups,
         );
-        final mwaAccounts = accounts
-            .where((account) => account.isExternal)
-            .toList();
+        _initializeExpansion(groups, current);
+        final mwaAccounts = accounts.where((account) => account.isMwa).toList();
         return SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -214,9 +195,14 @@ class AccountSwitcherSheet extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        l10n.accountsTitle,
-                        style: context.textTheme.titleLarge,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          l10n.settingsWalletsAccountsTitle,
+                          maxLines: 1,
+                          style: context.textTheme.titleLarge,
+                        ),
                       ),
                     ),
                     IconButton(
@@ -235,28 +221,54 @@ class AccountSwitcherSheet extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       for (final group in groups) ...[
-                        // One header per wallet (the wallet name), then its main
-                        // per-chain contexts, then an inline divider + its
-                        // user-created accounts.
-                        _SectionTitle(group.walletName),
-                        const SizedBox(height: 8),
-                        for (final account in group.mainAccounts)
-                          _AccountTile(
-                            account: account,
-                            isCurrent: account.id == current?.id,
-                          ),
-                        if (group.additionalAccounts.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          _SubSectionLabel(
-                            l10n.accountSwitcherAdditionalHeader,
-                          ),
-                          const SizedBox(height: 8),
-                          for (final account in group.additionalAccounts)
-                            _AccountTile(
-                              account: account,
-                              isCurrent: account.id == current?.id,
-                            ),
-                        ],
+                        _WalletSectionHeader(
+                          text: group.walletName,
+                          expanded: _expandedGroupIds.contains(group.id),
+                          onTap: () => _toggleGroup(group.id),
+                        ),
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutCubic,
+                          alignment: Alignment.topCenter,
+                          child: !_expandedGroupIds.contains(group.id)
+                              ? const SizedBox.shrink()
+                              : Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    const SizedBox(height: 8),
+                                    Material(
+                                      key: ValueKey(
+                                        'account-switcher-group-${group.id}',
+                                      ),
+                                      color: _accountTileBase,
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          4,
+                                          4,
+                                          4,
+                                          2,
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            for (final account in [
+                                              ...group.mainAccounts,
+                                              ...group.additionalAccounts,
+                                            ])
+                                              _AccountTile(
+                                                account: account,
+                                                grouped: true,
+                                                isCurrent:
+                                                    account.id == current?.id,
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
                         const SizedBox(height: 10),
                       ],
                       if (mwaAccounts.isNotEmpty) ...[
@@ -307,25 +319,7 @@ class AccountSwitcherSheet extends StatelessWidget {
                             }
                           },
                         ),
-                      if (showCatCardConnect)
-                        _ActionTile(
-                          icon: Icons.sd_card_outlined,
-                          label: l10n.accountSwitcherConnectCatCard,
-                          onTap: () async {
-                            final messenger = context.messenger;
-                            Navigator.pop(context);
-                            final ok = await wallet.connectCatCard();
-                            if (!ok) {
-                              final reason = wallet.catcard.error;
-                              if (reason != null) {
-                                messenger.showSnackBar(
-                                  SnackBar(content: Text(reason)),
-                                );
-                              }
-                            }
-                          },
-                        ),
-                      if (current?.isExternal ?? false)
+                      if (current?.isMwa ?? false)
                         _ActionTile(
                           icon: Icons.logout,
                           label: l10n.accountSwitcherDisconnect,
@@ -352,47 +346,245 @@ class AccountSwitcherSheet extends StatelessWidget {
     UnifiedAccount target,
   ) async {
     final l10n = context.l10n;
-    final groups = buildLogicalWallets(
+    final allGroups = buildLogicalWallets(
       wallet.accountsService.walletsById.values,
-    ).where((group) => creationChains(group).isNotEmpty).toList();
+      attachedWalletParents: wallet.accountsService.attachedWalletParents,
+      walletGroups: wallet.accountsService.walletGroups,
+    );
+    if (allGroups.isEmpty) {
+      context.showSnackBar(SnackBar(content: Text(l10n.accountsEmptyTitle)));
+      return;
+    }
+    final choice = await showDialog<_AddAccountChoice>(
+      context: context,
+      builder: (_) => const _AddAccountChoiceDialog(),
+    );
+    if (choice == null || !context.mounted) return;
+    if (choice == _AddAccountChoice.importPrivateKey) {
+      final imported = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) =>
+              InAppImportPrivateKeyScreen(groups: allGroups, target: target),
+        ),
+      );
+      if (imported == true && context.mounted) {
+        await wallet.refreshAccounts();
+        if (context.mounted) Navigator.of(context).pop();
+      }
+      return;
+    }
+
+    final groups = allGroups
+        .where((group) => creationChains(group).isNotEmpty)
+        .toList();
     if (groups.isEmpty) {
       context.showSnackBar(SnackBar(content: Text(l10n.accountsEmptyTitle)));
       return;
     }
 
-    var selectedAvatarAsset = await wallet.accountsService.suggestAvatarAsset();
-
-    if (!context.mounted) {
-      return;
-    }
-    final result = await showDialog<AddAccountResult>(
-      context: context,
-      builder: (_) => AddAccountDialog(
-        wallet: wallet,
-        target: target,
-        groups: groups,
-        initialAvatarAsset: selectedAvatarAsset,
+    final result = await Navigator.of(context).push<AddAccountResult>(
+      MaterialPageRoute(
+        builder: (_) =>
+            CreateAccountScreen(wallet: wallet, target: target, groups: groups),
       ),
     );
     if (result == null) return;
     if (!context.mounted) return;
-    final nav = Navigator.of(context);
+    List<SigningKey>? keys;
+    final targetWallet = wallet.accountsService.walletsById[result.walletId];
+    if (targetWallet?.protocol == 'mnemonic') {
+      keys = await showSignSheet(
+        context,
+        wallet: targetWallet!,
+        readStoreKey: (_, _) async => null,
+        title: l10n.accountAddCreateTitle,
+        subtitlePurpose: l10n.accountAddCreateTitle,
+        actionLabel: l10n.actionConfirm,
+      );
+      if (keys == null || !context.mounted) return;
+    }
     final ok = await wallet.addAccount(
       walletId: result.walletId,
       name: result.name,
       type: accountTypeForChain(result.chain),
       preferredChain: result.chain,
-      avatarAsset: result.avatarAsset,
+      keys: keys,
     );
     if (!context.mounted) return;
     if (ok) {
-      nav.pop(); // close the switcher; the new account is now current
+      Navigator.of(context).pop();
     } else {
       showWalletError(
         context,
         wallet.libwallet.error ?? l10n.accountSwitcherAddFailed,
       );
     }
+  }
+}
+
+class _AddAccountChoiceDialog extends StatelessWidget {
+  const _AddAccountChoiceDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return AlertDialog(
+      backgroundColor: TibaneColors.card,
+      title: Text(l10n.accountAddChoiceTitle),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            l10n.accountAddChoiceBody,
+            style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
+          ),
+          const SizedBox(height: 16),
+          _ChoiceTile(
+            icon: Icons.add_circle_outline,
+            title: l10n.accountAddCreateTitle,
+            subtitle: l10n.accountAddCreateSubtitle,
+            onTap: () => Navigator.pop(context, _AddAccountChoice.create),
+          ),
+          const SizedBox(height: 10),
+          _ChoiceTile(
+            icon: Icons.key_outlined,
+            title: l10n.accountAddImportTitle,
+            subtitle: l10n.accountAddImportSubtitle,
+            onTap: () =>
+                Navigator.pop(context, _AddAccountChoice.importPrivateKey),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(l10n.actionCancel),
+        ),
+      ],
+    );
+  }
+}
+
+class _ChoiceTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _ChoiceTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: TibaneColors.darker,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Icon(icon, color: TibaneColors.orange, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: TibaneColors.text,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: TibaneColors.textMuted,
+                        fontSize: 12,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right,
+                color: TibaneColors.textDim,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WalletSectionHeader extends StatelessWidget {
+  final String text;
+  final bool expanded;
+  final VoidCallback onTap;
+
+  const _WalletSectionHeader({
+    required this.text,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final collapsed = !expanded;
+    return Material(
+      color: collapsed ? TibaneColors.darker : Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: collapsed ? TibaneColors.border : Colors.transparent,
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: collapsed ? 12 : 2,
+            vertical: collapsed ? 12 : 8,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  text,
+                  style: monoStyle(
+                    fontSize: 16,
+                    color: TibaneColors.text,
+                  ).copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+              AnimatedRotation(
+                turns: expanded ? 0 : -0.25,
+                duration: const Duration(milliseconds: 180),
+                child: const Icon(
+                  Icons.keyboard_arrow_down,
+                  size: 20,
+                  color: TibaneColors.textMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -416,45 +608,18 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-/// A lighter inline divider label for the "New accounts" subsection under a
-/// wallet's header.
-class _SubSectionLabel extends StatelessWidget {
-  final String text;
-
-  const _SubSectionLabel(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(
-          text,
-          style: monoStyle(
-            fontSize: 10,
-            color: TibaneColors.textMuted,
-          ).copyWith(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Divider(
-            color: TibaneColors.textMuted.withValues(alpha: 0.22),
-            height: 1,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// A switchable account row. Main wallet contexts (a wallet's per-chain receive
-/// addresses) render compactly — network logo + address (the logo signals the
-/// chain). User-created additional accounts render detailed — avatar + name +
-/// chain label + address. Shows a spinner and blocks re-taps while switching.
+/// A switchable account row with a network title for native contexts, or the
+/// user's account name for added accounts, followed by its receive address.
 class _AccountTile extends StatefulWidget {
   final UnifiedAccount account;
   final bool isCurrent;
+  final bool grouped;
 
-  const _AccountTile({required this.account, required this.isCurrent});
+  const _AccountTile({
+    required this.account,
+    required this.isCurrent,
+    this.grouped = false,
+  });
 
   @override
   State<_AccountTile> createState() => _AccountTileState();
@@ -477,12 +642,15 @@ class _AccountTileState extends State<_AccountTile> {
   Widget build(BuildContext context) {
     final account = widget.account;
     final isCurrent = widget.isCurrent;
-    final compact = account.isMainWalletContext;
-    final radius = compact ? 10.0 : 12.0;
+    final grouped = widget.grouped;
+    final radius = grouped ? 10.0 : 12.0;
     return Padding(
-      padding: EdgeInsets.only(bottom: compact ? 6 : 8),
+      padding: EdgeInsets.only(bottom: grouped ? (isCurrent ? 6 : 2) : 8),
       child: Material(
-        color: _accountTileColor(isCurrent),
+        key: ValueKey('account-switcher-row-${account.id}'),
+        color: grouped && !isCurrent
+            ? Colors.transparent
+            : _accountTileColor(isCurrent),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radius),
           side: _accountTileBorder(isCurrent),
@@ -491,17 +659,19 @@ class _AccountTileState extends State<_AccountTile> {
           borderRadius: BorderRadius.circular(radius),
           onTap: (isCurrent || _switching) ? null : _onTap,
           child: Padding(
-            padding: compact
-                ? const EdgeInsets.symmetric(horizontal: 12, vertical: 9)
-                : const EdgeInsets.all(14),
+            // Grouped rows have an extra 4px inset from their shared background.
+            padding: EdgeInsets.symmetric(
+              horizontal: grouped ? 12 : 16,
+              vertical: 7,
+            ),
             child: Row(
               children: [
                 _leading(),
-                SizedBox(width: compact ? 10 : 14),
-                Expanded(
-                  child: compact ? _compactContent() : _detailedContent(),
-                ),
-                _trailing(compact),
+                const SizedBox(width: 14),
+                Expanded(child: _detailedContent()),
+                _trailing(),
+                if (account.address.isNotEmpty)
+                  _CopyAddressButton(account: account),
               ],
             ),
           ),
@@ -510,25 +680,23 @@ class _AccountTileState extends State<_AccountTile> {
     );
   }
 
-  Widget _trailing(bool compact) {
-    final size = compact ? 19.0 : 20.0;
+  Widget _trailing() {
+    const size = 20.0;
     if (_switching) {
-      return Padding(
-        padding: EdgeInsets.only(left: compact ? 8 : 0),
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: const CircularProgressIndicator(
-            strokeWidth: 2,
-            color: TibaneColors.orange,
-          ),
+      return const SizedBox(
+        width: size,
+        height: size,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: TibaneColors.orange,
         ),
       );
     }
     if (widget.isCurrent) {
-      return Padding(
-        padding: EdgeInsets.only(left: compact ? 8 : 0),
-        child: Icon(Icons.check_circle, color: TibaneColors.orange, size: size),
+      return const Icon(
+        Icons.check_circle,
+        color: TibaneColors.orange,
+        size: size,
       );
     }
     return const SizedBox.shrink();
@@ -536,48 +704,20 @@ class _AccountTileState extends State<_AccountTile> {
 
   Widget _leading() {
     final account = widget.account;
-    if (account.isMainWalletContext) {
-      return _NetworkLogo(
-        asset: networkLogoAssetForChain(account.chain),
-        chain: account.chain,
-      );
-    }
-    return AccountAvatar(
-      asset: account.avatarAsset,
-      active: widget.isCurrent,
-      fallbackIcon: account.isInApp
-          ? Icons.account_circle_outlined
-          : Icons.account_balance_wallet_outlined,
-    );
-  }
-
-  Widget _compactContent() {
-    final account = widget.account;
-    final address = account.address;
-    final style = monoStyle(
-      fontSize: 12.5,
-      color: _accountMutedText,
-    ).copyWith(fontWeight: FontWeight.w600);
-    return Row(
-      children: [
-        Expanded(
-          child: address.isEmpty
-              ? Text('...', style: style)
-              : _AddressText(address: address, style: style),
-        ),
-        if (address.isNotEmpty) ...[
-          const SizedBox(width: 2),
-          _CopyAddressButton(account: account),
-        ],
-      ],
+    return _NetworkLogo(
+      asset: orangeNetworkLogoAssetForChain(account.chain),
+      chain: account.chain,
     );
   }
 
   Widget _detailedContent() {
     final account = widget.account;
     final displayAddress = _shortDisplayAddress(account);
-    final title =
-        account.accountName.isNotEmpty ? account.accountName : account.label;
+    final title = account.isMainWalletContext
+        ? chainLabel(account.chain)
+        : account.accountName.isNotEmpty
+        ? account.accountName
+        : account.label;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -587,41 +727,20 @@ class _AccountTileState extends State<_AccountTile> {
           style: const TextStyle(
             color: TibaneColors.text,
             fontWeight: FontWeight.w600,
-            fontSize: 15,
+            fontSize: 17.25,
           ),
+          maxLines: account.isMainWalletContext ? 2 : 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(
-                      text: chainLabel(account.chain),
-                      style: monoStyle(
-                        fontSize: 11,
-                        color: chainColor(account.chain),
-                      ).copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    if (displayAddress != null)
-                      TextSpan(
-                        text: ' · $displayAddress',
-                        style: monoStyle(
-                          fontSize: 11,
-                          color: _accountMutedText,
-                        ),
-                      ),
-                  ],
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (displayAddress != null) ...[
-              const SizedBox(width: 2),
-              _CopyAddressButton(account: account),
-            ],
-          ],
+        const SizedBox(height: 1),
+        Text(
+          displayAddress ?? '...',
+          style: monoStyle(
+            fontSize: 12.65,
+            color: _accountMutedText,
+          ).copyWith(fontWeight: FontWeight.w600),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );
@@ -648,7 +767,7 @@ class _CopyAddressButton extends StatelessWidget {
           width: 40,
           height: 40,
           child: Center(
-            child: Icon(Icons.copy, size: 17, color: _accountMutedText),
+            child: Icon(Icons.copy, size: 19.55, color: _accountMutedText),
           ),
         ),
       ),
@@ -665,18 +784,25 @@ class _NetworkLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const size = 34.0;
-    if (asset != null) {
-      return ClipOval(
-        child: Image.asset(
-          asset!,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _NetworkLogoFallback(chain: chain),
-        ),
-      );
-    }
-    return _NetworkLogoFallback(chain: chain);
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: TibaneColors.orange.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: TibaneColors.orange.withValues(alpha: 0.24)),
+      ),
+      child: asset == null
+          ? _NetworkLogoFallback(chain: chain)
+          : Padding(
+              padding: const EdgeInsets.all(7),
+              child: Image.asset(
+                asset!,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => _NetworkLogoFallback(chain: chain),
+              ),
+            ),
+    );
   }
 }
 
@@ -687,20 +813,29 @@ class _NetworkLogoFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const size = 34.0;
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: chainColor(chain).withValues(alpha: 0.14),
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
+    if (chain == 'bitcoin') {
+      return const Icon(
+        Icons.currency_bitcoin,
+        size: 20,
+        color: TibaneColors.orange,
+      );
+    }
+    if (chain == 'bitcoin-cash') {
+      return Transform.rotate(
+        angle: -math.pi / 10,
+        child: const Icon(
+          Icons.currency_bitcoin,
+          size: 20,
+          color: TibaneColors.orange,
+        ),
+      );
+    }
+    return Center(
       child: Text(
         chainTicker(chain),
         style: monoStyle(
           fontSize: 10,
-          color: chainColor(chain),
+          color: TibaneColors.orange,
         ).copyWith(fontWeight: FontWeight.w800),
       ),
     );
@@ -737,12 +872,15 @@ class _PrimaryActionTile extends StatelessWidget {
               children: [
                 Icon(icon, color: TibaneColors.black, size: 19),
                 const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: TibaneColors.black,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
+                Flexible(
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: TibaneColors.black,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ],

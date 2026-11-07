@@ -84,7 +84,7 @@ Color chainColor(String chain) {
 
 /// CJK fallback family so Japanese text renders instead of tofu boxes (□).
 ///
-/// DM Sans and Space Mono — the theme's Latin fonts — have no CJK glyphs, so
+/// DM Sans has no CJK glyphs, so
 /// any Japanese run falls back to Noto Sans JP. French/Portuguese accents are
 /// covered by the primary fonts, so this only matters for the `ja` locale.
 /// Cached: the family name is resolved once. Empty when the font can't be
@@ -273,9 +273,9 @@ class TibaneTheme {
         selectedColor: TibaneColors.orange.withValues(alpha: 0.15),
         side: const BorderSide(color: TibaneColors.border),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-        labelStyle: GoogleFonts.spaceMono(
+        labelStyle: GoogleFonts.dmSans(
           fontSize: 11,
-          letterSpacing: 0.5,
+          letterSpacing: 0,
         ).copyWith(fontFamilyFallback: cjkFallback),
       ),
       progressIndicatorTheme: const ProgressIndicatorThemeData(
@@ -293,13 +293,16 @@ class TibaneTheme {
   }
 }
 
-/// Mono text style for addresses, amounts, code
+/// Shared detail style: DM Sans for addresses, amounts and technical text.
 TextStyle monoStyle({double fontSize = 13, Color color = TibaneColors.text}) {
-  return GoogleFonts.spaceMono(
+  return GoogleFonts.dmSans(
     fontSize: fontSize,
     color: color,
-    letterSpacing: -0.3,
-  ).copyWith(fontFamilyFallback: cjkFallback);
+    letterSpacing: 0,
+  ).copyWith(
+    fontFamilyFallback: cjkFallback,
+    fontFeatures: const [FontFeature.tabularFigures()],
+  );
 }
 
 /// Serif italic for decorative accents

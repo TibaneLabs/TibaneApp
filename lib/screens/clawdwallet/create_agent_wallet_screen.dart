@@ -147,7 +147,7 @@ class _CreateAgentWalletScreenState extends State<CreateAgentWalletScreen> {
       if (!mounted) return;
       setState(() {
         _stage = _Stage.error;
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
       });
     }
   }

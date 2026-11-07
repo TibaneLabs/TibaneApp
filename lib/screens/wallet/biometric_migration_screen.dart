@@ -48,7 +48,7 @@ class _BiometricMigrationScreenState extends State<BiometricMigrationScreen> {
     } catch (e) {
       logError('[BiometricMigration._secure] migrate to biometric error: $e');
       if (!mounted) return;
-      setState(() => _error = WalletError.from(e).message);
+      setState(() => _error = walletErrorMessageForContext(context, e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

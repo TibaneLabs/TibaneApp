@@ -69,16 +69,99 @@ Widget _assetImage(String path, double size, String symbol) => ClipRRect(
   ),
 );
 
-Widget _networkImage(String url, double size, String symbol) => ClipRRect(
-  borderRadius: BorderRadius.circular(size / 2),
-  child: Image.network(
-    url,
-    width: size,
-    height: size,
-    fit: BoxFit.cover,
-    errorBuilder: (_, _, _) => tokenIconFallback(symbol, size),
-  ),
-);
+Widget _networkImage(String url, double size, String symbol) =>
+    _ResilientNetworkImage(url: url, size: size, symbol: symbol);
+
+/// Returns the original image URL followed by a public IPFS fallback when the
+/// metadata points at IPFS. Some gateways rate-limit mobile clients even when
+/// the underlying image is healthy.
+@visibleForTesting
+List<String> tokenImageCandidates(String url) {
+  final candidates = <String>[url];
+  String? ipfsPath;
+
+  if (url.startsWith('ipfs://')) {
+    ipfsPath = url
+        .substring('ipfs://'.length)
+        .replaceFirst(RegExp(r'^ipfs/'), '');
+  } else {
+    final marker = url.indexOf('/ipfs/');
+    if (marker >= 0) ipfsPath = url.substring(marker + '/ipfs/'.length);
+  }
+
+  if (ipfsPath != null && ipfsPath.isNotEmpty) {
+    final fallback = 'https://gateway.pinata.cloud/ipfs/$ipfsPath';
+    if (!candidates.contains(fallback)) candidates.add(fallback);
+  }
+  return candidates;
+}
+
+class _ResilientNetworkImage extends StatefulWidget {
+  final String url;
+  final double size;
+  final String symbol;
+
+  const _ResilientNetworkImage({
+    required this.url,
+    required this.size,
+    required this.symbol,
+  });
+
+  @override
+  State<_ResilientNetworkImage> createState() => _ResilientNetworkImageState();
+}
+
+class _ResilientNetworkImageState extends State<_ResilientNetworkImage> {
+  late List<String> _candidates;
+  int _index = 0;
+  bool _advanceQueued = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _candidates = tokenImageCandidates(widget.url);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ResilientNetworkImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _candidates = tokenImageCandidates(widget.url);
+      _index = 0;
+    }
+  }
+
+  void _tryNextCandidate() {
+    if (_advanceQueued || _index >= _candidates.length - 1) return;
+    _advanceQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _advanceQueued = false;
+      if (!mounted || _index >= _candidates.length - 1) return;
+      setState(() => _index++);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = tokenIconFallback(widget.symbol, widget.size);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(widget.size / 2),
+      child: Image.network(
+        _candidates[_index],
+        key: ValueKey(_candidates[_index]),
+        width: widget.size,
+        height: widget.size,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, progress) =>
+            progress == null ? child : fallback,
+        errorBuilder: (_, _, _) {
+          _tryNextCandidate();
+          return fallback;
+        },
+      ),
+    );
+  }
+}
 
 /// Coloured-initial placeholder shown when no logo is available.
 Widget tokenIconFallback(String symbol, double size) => Container(

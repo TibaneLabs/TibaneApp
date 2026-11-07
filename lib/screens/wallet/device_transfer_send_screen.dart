@@ -201,7 +201,7 @@ class _DeviceTransferSendScreenState extends State<DeviceTransferSendScreen> {
       if (!mounted) return;
       setState(() {
         _phase = _Phase.error;
-        _message = WalletError.from(e).message;
+        _message = walletErrorMessageForContext(context, e);
       });
     }
   }

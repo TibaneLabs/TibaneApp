@@ -4,6 +4,8 @@ import 'package:atonline_api/atonline_api.dart' show AtOnlinePlatformException;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libwallet/libwallet.dart' show LibwalletException, SwapError;
 import 'package:tibaneapp/utils/wallet_error.dart';
+import 'package:tibaneapp/l10n/gen/app_localizations.dart';
+import 'package:flutter/widgets.dart';
 
 /// Unit tests for [WalletError.from] — the single point that maps raw
 /// libwallet / chain / aggregator errors to friendly messages while keeping
@@ -151,14 +153,15 @@ void main() {
       expect(we.message, 'The network was busy. Please try again.');
     });
 
-    test('unmatched message is shown with the Exception: prefix stripped', () {
+    test('unmatched native message stays in technical details only', () {
       final we = WalletError.from(
         const LibwalletException(
           message: 'Exception: some novel failure',
           code: '0',
         ),
       );
-      expect(we.message, 'some novel failure');
+      expect(we.key, WalletErrorKey.genericRetry);
+      expect(we.message, 'Something went wrong. Please try again.');
       expect(we.raw, contains('some novel failure'));
     });
   });
@@ -170,19 +173,22 @@ void main() {
       expect(we.raw, contains('SocketException'));
     });
 
-    test('generic exception strips "Exception: " prefix', () {
+    test('generic exception uses a friendly fallback', () {
       final we = WalletError.from(Exception('plain boom'));
-      expect(we.message, 'plain boom');
+      expect(we.key, WalletErrorKey.genericRetry);
+      expect(we.raw, contains('plain boom'));
     });
 
-    test('StateError strips "Bad state: " prefix', () {
+    test('unknown StateError stays in technical details', () {
       final we = WalletError.from(StateError('nothing to export'));
-      expect(we.message, 'nothing to export');
+      expect(we.key, WalletErrorKey.genericRetry);
+      expect(we.raw, contains('nothing to export'));
     });
 
-    test('FormatException uses its message', () {
+    test('FormatException uses a localized validation message', () {
       final we = WalletError.from(const FormatException('not valid base58'));
-      expect(we.message, 'not valid base58');
+      expect(we.key, WalletErrorKey.invalidValue);
+      expect(we.raw, contains('not valid base58'));
     });
   });
 
@@ -207,6 +213,87 @@ void main() {
         AtOnlinePlatformException({'message': 'connection refused'}),
       );
       expect(we.message, contains('Server unavailable'));
+    });
+  });
+
+  group('localized technical errors', () {
+    for (final language in ['en', 'pt', 'fr', 'ja']) {
+      test('mnemonic migration limitation is explicit in $language', () async {
+        final l10n = await AppLocalizations.delegate.load(Locale(language));
+        final error = WalletError.from(
+          const LibwalletException(
+            code: '400',
+            message:
+                'env error: promoteMnemonic: curve ed25519 not yet supported (secp256k1 only)',
+          ),
+        );
+        expect(error.key, WalletErrorKey.mnemonicMpcUnavailable);
+        expect(error.localizedMessage(l10n), l10n.mnemonicMpcUnavailable);
+        expect(
+          error.localizedMessage(l10n),
+          isNot(l10n.walletErrorGenericRetry),
+        );
+      });
+    }
+    const raw =
+        'env error: rest Crypto/Okx:quote error: OKX API error 51006 '
+        'on GET /api/v6/dex/aggregator/quote: Input value is too low. '
+        'Please check the token decimals or token value.';
+    for (final language in ['en', 'pt', 'fr', 'ja']) {
+      test(
+        'quote rejection and unknown errors are localized in $language',
+        () async {
+          final l10n = await AppLocalizations.delegate.load(Locale(language));
+          for (final error in <Object>[
+            const SwapError(code: 'provider_unavailable', message: raw),
+            const LibwalletException(code: '500', message: raw),
+            Exception('$raw (provider_unavailable)'),
+          ]) {
+            final mapped = WalletError.from(error);
+            expect(mapped.key, WalletErrorKey.swapQuoteUnavailable);
+            expect(
+              mapped.localizedMessage(l10n),
+              l10n.walletErrorSwapQuoteUnavailable,
+            );
+            expect(mapped.localizedMessage(l10n), isNot(contains('51006')));
+            expect(mapped.localizedMessage(l10n), isNot(contains('/api/')));
+            expect(mapped.raw, contains(raw));
+          }
+          final unknown = WalletError.from(
+            Exception('env error: unknown backend payload'),
+          );
+          expect(unknown.localizedMessage(l10n), l10n.walletErrorGenericRetry);
+          final expired = WalletError.from(
+            const SwapError(code: 'quote_expired', message: 'x'),
+          );
+          expect(
+            expired.localizedMessage(l10n),
+            l10n.walletErrorSwapQuoteExpired,
+          );
+        },
+      );
+    }
+    test('transient RPC and signing failures have short messages', () {
+      expect(
+        WalletError.from(
+          Exception(
+            'rpc getTokenAccountsByOwner request failed: Resource temporarily unavailable (os error 35)',
+          ),
+        ).key,
+        WalletErrorKey.networkBusy,
+      );
+      expect(
+        WalletError.from(
+          Exception(
+            'tss error: signing committee: threshold must be at least 1',
+          ),
+        ).key,
+        WalletErrorKey.signingUnavailable,
+      );
+      expect(
+        WalletError.from(Exception('token reference required')).key,
+        WalletErrorKey.invalidSwapRequest,
+      );
     });
   });
 

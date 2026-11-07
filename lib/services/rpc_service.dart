@@ -8,7 +8,7 @@ import '../models/staking_pool.dart';
 import '../models/token_account.dart';
 import 'solana_common.dart';
 
-/// Service for Solana RPC calls and Helius API interactions
+/// Solana RPC calls, routed by method to ModChain or Helius.
 class RpcService {
   /// Test/screenshot hook: when set, every `RpcService()` returns this
   /// instance instead of constructing a new one. Subclasses constructed
@@ -17,12 +17,24 @@ class RpcService {
 
   factory RpcService() => testInstance ?? RpcService.real();
 
-  RpcService.real();
+  RpcService.real({http.Client? client}) : _client = client ?? http.Client();
 
-  final http.Client _client = http.Client();
+  final http.Client _client;
   int _requestId = 0;
 
-  /// Make a JSON-RPC request to Helius
+  // Keep index-heavy and DAS requests on Helius until ModChain returns
+  // complete, timely results for the same parameters used by the app.
+  static const _modchainMethods = {
+    'getAccountInfo',
+    'getBalance',
+    'getLatestBlockhash',
+    'getSignatureStatuses',
+    'getSignaturesForAddress',
+    'getTransaction',
+    'getTokenSupply',
+  };
+
+  /// Make a JSON-RPC request to the verified provider for this method.
   Future<dynamic> _rpc(String method, [List<dynamic>? params]) async {
     _requestId++;
     final body = jsonEncode({
@@ -33,7 +45,9 @@ class RpcService {
     });
 
     final response = await _client.post(
-      Uri.parse(heliusRpcUrl),
+      Uri.parse(
+        _modchainMethods.contains(method) ? modchainSolanaRpcUrl : heliusRpcUrl,
+      ),
       headers: {'Content-Type': 'application/json'},
       body: body,
     );
@@ -50,21 +64,17 @@ class RpcService {
     return json['result'];
   }
 
-  /// Broadcast a fully signed transaction; returns its base58 signature.
-  /// Used by backends that sign but cannot send themselves (CatCard).
-  Future<String> sendTransaction(
-    Uint8List signedTx, {
-    bool skipPreflight = false,
-  }) async {
-    final result = await _rpc('sendTransaction', [
-      base64Encode(signedTx),
+  /// Parsed, confirmed transaction including inner instructions and balances.
+  Future<Map<String, dynamic>?> getParsedTransaction(String signature) async {
+    final result = await _rpc('getTransaction', [
+      signature,
       {
-        'encoding': 'base64',
-        'skipPreflight': skipPreflight,
-        'preflightCommitment': 'confirmed',
+        'encoding': 'jsonParsed',
+        'commitment': 'confirmed',
+        'maxSupportedTransactionVersion': 0,
       },
     ]);
-    return result as String;
+    return result == null ? null : Map<String, dynamic>.from(result as Map);
   }
 
   /// Get latest blockhash for transaction building

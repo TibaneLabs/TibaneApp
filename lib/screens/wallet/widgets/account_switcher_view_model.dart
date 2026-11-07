@@ -10,11 +10,13 @@ import '../../../services/wallet/unified_account.dart';
 /// One logical wallet's accounts, split into its native per-chain contexts
 /// ([mainAccounts]) and user-created extra accounts ([additionalAccounts]).
 class AccountSwitcherGroup {
+  final String id;
   final String walletName;
   final List<UnifiedAccount> mainAccounts;
   final List<UnifiedAccount> additionalAccounts;
 
   const AccountSwitcherGroup({
+    required this.id,
     required this.walletName,
     required this.mainAccounts,
     required this.additionalAccounts,
@@ -22,16 +24,22 @@ class AccountSwitcherGroup {
 }
 
 /// Group the in-app [accounts] by logical wallet (Solana + EVM created
-/// together), each split into main contexts vs additional accounts and sorted
-/// for display. In-app accounts not matching any logical wallet are collected
+/// together), with native contexts in network order and additional accounts in
+/// creation order. In-app accounts not matching any logical wallet are collected
 /// into a trailing [unnamedLabel] group. MWA/external accounts are excluded —
 /// the sheet renders those separately.
 List<AccountSwitcherGroup> buildAccountGroups({
   required List<UnifiedAccount> accounts,
   required Iterable<Wallet> wallets,
   required String unnamedLabel,
+  Map<String, String> attachedWalletParents = const {},
+  Map<String, String> walletGroups = const {},
 }) {
-  final logicalWallets = buildLogicalWallets(wallets);
+  final logicalWallets = buildLogicalWallets(
+    wallets,
+    attachedWalletParents: attachedWalletParents,
+    walletGroups: walletGroups,
+  );
   final usedIds = <String>{};
   final groups = <AccountSwitcherGroup>[];
 
@@ -50,32 +58,64 @@ List<AccountSwitcherGroup> buildAccountGroups({
     }
     groups.add(
       AccountSwitcherGroup(
+        id: logicalWallet.id,
         walletName: logicalWallet.displayName(unnamedLabel),
         mainAccounts:
-            walletAccounts.where((a) => a.isMainWalletContext).toList()
+            walletAccounts
+                .where(
+                  (a) =>
+                      a.isMainWalletContext &&
+                      !attachedWalletParents.containsKey(a.walletId),
+                )
+                .toList()
               ..sort(compareAccountsForSwitcher),
-        additionalAccounts:
-            walletAccounts.where((a) => !a.isMainWalletContext).toList()
-              ..sort(compareAccountsForSwitcher),
+        additionalAccounts: _accountsInCreationOrder(
+          walletAccounts.where(
+            (a) =>
+                !a.isMainWalletContext ||
+                attachedWalletParents.containsKey(a.walletId),
+          ),
+        ),
       ),
     );
   }
 
   final leftovers = accounts
       .where((a) => a.isInApp && !usedIds.contains(a.id))
-      .toList()
-    ..sort(compareAccountsForSwitcher);
+      .toList();
   if (leftovers.isNotEmpty) {
     groups.add(
       AccountSwitcherGroup(
+        id: 'unmatched-in-app-accounts',
         walletName: unnamedLabel,
-        mainAccounts: leftovers.where((a) => a.isMainWalletContext).toList(),
-        additionalAccounts:
-            leftovers.where((a) => !a.isMainWalletContext).toList(),
+        mainAccounts: leftovers.where((a) => a.isMainWalletContext).toList()
+          ..sort(compareAccountsForSwitcher),
+        additionalAccounts: _accountsInCreationOrder(
+          leftovers.where((a) => !a.isMainWalletContext),
+        ),
       ),
     );
   }
   return groups;
+}
+
+List<UnifiedAccount> _accountsInCreationOrder(
+  Iterable<UnifiedAccount> accounts,
+) {
+  final indexed = accounts.indexed.toList()
+    ..sort((a, b) {
+      final first = a.$2.createdAt;
+      final second = b.$2.createdAt;
+      final created = first == null
+          ? (second == null ? 0 : 1)
+          : second == null
+          ? -1
+          : first.compareTo(second);
+      if (created != 0) return created;
+      // Keep the source order for tied or unavailable creation timestamps.
+      return a.$1.compareTo(b.$1);
+    });
+  return [for (final (_, account) in indexed) account];
 }
 
 /// Stable switcher order: by chain ([_chainRank]), then account index, then id.
@@ -106,9 +146,8 @@ int _chainRank(String chain) {
   }
 }
 
-/// Chains a new account can be created on for [group]: only the real key-bearing
-/// curves (Solana / Ethereum). Bitcoin-family chains are network contexts over
-/// the Ethereum account, not separate accounts.
+/// Chains available in the create-account flow. libwallet derives each new
+/// account from the selected curve wallet at its next free account index.
 List<String> creationChains(LogicalWallet group) => group.chains
     .where(
       (chain) =>

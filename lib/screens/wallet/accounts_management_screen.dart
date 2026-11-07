@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' as lw;
@@ -5,7 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../l10n/l10n.dart';
 import '../../services/wallet/unified_account.dart'
-    show UnifiedAccount, chainLabel;
+    show UnifiedAccount, abbreviateAccountAddress;
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -14,7 +16,8 @@ import '../../widgets/wallet_error_display.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
 import '../../utils/context_extensions.dart';
-import 'widgets/account_avatar.dart';
+import 'export_private_key_screen.dart';
+import 'widgets/account_switcher_view_model.dart';
 
 /// Lists every chain account derived from libwallet wallets on this device.
 /// Account creation lives in the account switcher; this screen only manages
@@ -64,7 +67,7 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
       logError('[AccountsManagement._load] load accounts error: $e');
       if (!mounted) return;
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loading = false;
       });
     }
@@ -90,6 +93,95 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
     _load();
   }
 
+  bool _canExport(UnifiedAccount account) {
+    final raw = _rawAccountsById[account.accountId];
+    final wallet = context
+        .read<WalletService>()
+        .accountsService
+        .walletsById[account.walletId];
+    return account.isInApp &&
+        !account.isMainWalletContext &&
+        !account.isVirtual &&
+        {'solana', 'ethereum', 'evm'}.contains(account.chain) &&
+        raw != null &&
+        wallet != null &&
+        raw.wallet == wallet.id &&
+        raw.address == account.address &&
+        raw.index == 0 &&
+        wallet.threshold == 0 &&
+        wallet.keys.length == 1 &&
+        wallet.pubkey.isNotEmpty &&
+        raw.pubkey == wallet.pubkey;
+  }
+
+  Future<void> _openAccount(
+    UnifiedAccount account, {
+    required bool active,
+  }) async {
+    final l10n = context.l10n;
+    final canExport = _canExport(account);
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: TibaneColors.card,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                account.accountName.isNotEmpty
+                    ? account.accountName
+                    : account.label,
+                style: Theme.of(sheetContext).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                abbreviateAccountAddress(account.address),
+                style: monoStyle(fontSize: 13, color: TibaneColors.textMuted),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: Icon(
+                  active
+                      ? Icons.check_circle_outline
+                      : Icons.account_circle_outlined,
+                ),
+                title: Text(
+                  active ? l10n.accountsActiveBadge : l10n.accountsUseButton,
+                ),
+                enabled: !active,
+                onTap: () => Navigator.pop(sheetContext, 'use'),
+              ),
+              if (canExport)
+                ListTile(
+                  key: const Key('account-export-private-key'),
+                  leading: const Icon(
+                    Icons.key_outlined,
+                    color: TibaneColors.orange,
+                  ),
+                  title: Text(l10n.privateKeyExportTitle),
+                  onTap: () => Navigator.pop(sheetContext, 'export'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'use') {
+      await _setActive(account);
+    } else if (action == 'export' && _canExport(account)) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ExportPrivateKeyScreen(account: account),
+        ),
+      );
+    }
+  }
+
   Future<void> _remove(UnifiedAccount account) async {
     final rawId = account.accountId;
     if (rawId == null) return;
@@ -103,8 +195,10 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
         title: Text(l10n.accountsRemoveTitle),
         content: Text(
           l10n.accountsRemoveBody(
-            chainLabel(account.chain),
-            rawAccount.path.isNotEmpty ? rawAccount.path : 'index 0',
+            account.accountName.trim().isNotEmpty
+                ? account.accountName
+                : account.label,
+            abbreviateAccountAddress(account.address),
           ),
           style: const TextStyle(color: TibaneColors.textMuted),
         ),
@@ -126,11 +220,23 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
     if (confirmed != true) return;
     if (!mounted) return;
     try {
-      final client = await context
-          .read<WalletService>()
-          .libwallet
-          .ensureClient();
-      await client.accounts.delete(rawAccount.id);
+      final ws = context.read<WalletService>();
+      final walletId = account.walletId;
+      if (walletId != null &&
+          ws.accountsService.attachedWalletParents.containsKey(walletId)) {
+        final removed = await ws.libwallet.removeWallet(walletId);
+        if (!removed) {
+          throw StateError(ws.libwallet.error ?? 'Could not remove account');
+        }
+        await ws.accountsService.detachWalletAccount(walletId);
+      } else {
+        final client = await ws.libwallet.ensureClient();
+        final current = await client.accounts.get(rawAccount.id);
+        if (current.wallet != rawAccount.wallet) {
+          throw StateError('Account no longer belongs to the selected wallet');
+        }
+        await client.accounts.delete(rawAccount.id);
+      }
       _load();
     } catch (e) {
       logError('[AccountsManagement._remove] remove account error: $e');
@@ -195,24 +301,91 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
             }
             final activeId = context.watch<WalletService>().libwallet.accountId;
             final currentId = context.watch<WalletService>().currentAccount?.id;
-            return ListView.separated(
+            final ws = context.read<WalletService>();
+            final groups = buildAccountGroups(
+              accounts: list,
+              wallets: ws.accountsService.walletsById.values,
+              unnamedLabel: l10n.walletsMgmtUnnamed,
+              attachedWalletParents: ws.accountsService.attachedWalletParents,
+            );
+            bool isActive(UnifiedAccount account) =>
+                account.id == currentId ||
+                (!account.isVirtual && account.accountId == activeId);
+            Widget tile(UnifiedAccount account) => _AccountTile(
+              account: account,
+              active: isActive(account),
+              onTap: () => _openAccount(account, active: isActive(account)),
+              onRemove: account.isMainWalletContext
+                  ? null
+                  : () => _remove(account),
+            );
+            return ListView(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
-              itemCount: list.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (_, i) => _AccountTile(
-                account: list[i],
-                active:
-                    list[i].id == currentId ||
-                    (!list[i].isVirtual && list[i].accountId == activeId),
-                onTap: () => _setActive(list[i]),
-                onRemove: list[i].isMainWalletContext
-                    ? null
-                    : () => _remove(list[i]),
-              ),
+              children: [
+                for (final group in groups) ...[
+                  _AccountsWalletHeader(group.walletName),
+                  const SizedBox(height: 8),
+                  for (final account in group.mainAccounts) ...[
+                    tile(account),
+                    const SizedBox(height: 8),
+                  ],
+                  if (group.additionalAccounts.isNotEmpty) ...[
+                    _AccountsSubHeader(l10n.accountSwitcherAdditionalHeader),
+                    const SizedBox(height: 8),
+                    for (final account in group.additionalAccounts) ...[
+                      tile(account),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
+                  const SizedBox(height: 12),
+                ],
+              ],
             );
           },
         ),
       ),
+    );
+  }
+}
+
+class _AccountsWalletHeader extends StatelessWidget {
+  final String name;
+
+  const _AccountsWalletHeader(this.name);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, top: 4),
+      child: Text(
+        name,
+        style: monoStyle(
+          fontSize: 12,
+          color: TibaneColors.textMuted,
+        ).copyWith(fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
+
+class _AccountsSubHeader extends StatelessWidget {
+  final String text;
+
+  const _AccountsSubHeader(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          text,
+          style: monoStyle(fontSize: 10, color: TibaneColors.textMuted),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Divider(color: TibaneColors.textMuted.withValues(alpha: 0.22)),
+        ),
+      ],
     );
   }
 }
@@ -236,7 +409,7 @@ class _AccountTile extends StatelessWidget {
     final addr = account.address;
     final canRemove = onRemove != null;
     return TibaneCard(
-      onTap: active ? null : onTap,
+      onTap: onTap,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
@@ -283,7 +456,7 @@ class _AccountTile extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        '${chainLabel(account.chain)} · $addr',
+                        abbreviateAccountAddress(addr),
                         overflow: TextOverflow.ellipsis,
                         style: monoStyle(
                           fontSize: 11,
@@ -344,46 +517,48 @@ class _ManagedAccountIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!account.isMainWalletContext) {
-      return AccountAvatar(
-        asset: account.avatarAsset,
-        active: active,
-        size: 44,
+    final asset = orangeNetworkLogoAssetForChain(account.chain);
+    Widget fallback() {
+      if (account.chain == 'bitcoin' || account.chain == 'bitcoin-cash') {
+        final icon = const Icon(
+          Icons.currency_bitcoin,
+          color: TibaneColors.orange,
+          size: 26,
+        );
+        return account.chain == 'bitcoin-cash'
+            ? Transform.rotate(angle: -math.pi / 10, child: icon)
+            : icon;
+      }
+      return const Icon(
+        Icons.account_balance_wallet_outlined,
+        color: TibaneColors.orange,
+        size: 26,
       );
     }
-    final asset = networkLogoAssetForChain(account.chain);
-    if (asset == null) {
-      return AccountAvatar(
-        asset: account.avatarAsset,
-        active: active,
-        size: 44,
-      );
-    }
-    return SizedBox.square(
-      dimension: 44,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          ClipOval(
-            child: Image.asset(
-              asset,
-              fit: BoxFit.cover,
-              filterQuality: FilterQuality.high,
-            ),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: active
-                    ? TibaneColors.orange
-                    : TibaneColors.textDim.withValues(alpha: 0.60),
-                width: active ? 1.8 : 1,
+
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: TibaneColors.orange.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(
+          color: active
+              ? TibaneColors.orange
+              : TibaneColors.orange.withValues(alpha: 0.24),
+          width: active ? 1.8 : 1,
+        ),
+      ),
+      child: asset == null
+          ? fallback()
+          : Padding(
+              padding: const EdgeInsets.all(9),
+              child: Image.asset(
+                asset,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => fallback(),
               ),
             ),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -14,6 +14,7 @@ import '../services/jupiter_service.dart';
 import '../services/rpc_service.dart';
 import '../services/tx_confirmation.dart';
 import '../services/uk_compliance_service.dart';
+import '../services/wallet/asset_network.dart';
 import '../services/wallet/libwallet_backend.dart' show TokenSearchResult;
 import '../services/wallet/send_asset.dart' show mintFromAssetKey;
 import '../services/wallet/swap_asset.dart';
@@ -52,6 +53,9 @@ class SwapScreen extends StatefulWidget {
   final String? initialOutputImageUrl;
   final int? initialOutputDecimals;
 
+  /// Optional data source for previews and isolated widget tests.
+  final JupiterService? jupiter;
+
   const SwapScreen({
     super.key,
     this.initialInputMint,
@@ -60,6 +64,7 @@ class SwapScreen extends StatefulWidget {
     this.initialOutputName,
     this.initialOutputImageUrl,
     this.initialOutputDecimals,
+    this.jupiter,
   });
 
   @override
@@ -67,7 +72,7 @@ class SwapScreen extends StatefulWidget {
 }
 
 class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
-  final _jupiter = JupiterService();
+  late final _jupiter = widget.jupiter ?? JupiterService();
   final _amountController = TextEditingController();
   WalletService? _wallet;
 
@@ -111,17 +116,28 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   int _slippageBps = 100;
   static const _slippagePresets = <int>[50, 100, 300];
 
-  // Cached `maxSpendable` (UI units) for the current native-SOL input + the
-  // mint it was computed for. The displayed SOL holding is over-reserved (a
-  // flat 0.01 SOL via Jupiter's fetchHoldings) vs libwallet's precise
-  // `maxSpendable`, so validating native-SOL amounts against the raw balance
-  // falsely rejects the Max value. We validate against this instead.
-  double? _maxSpendableUi;
-  String? _maxSpendableForMint;
+  // The displayed holding is the full balance. Cache the backend's spendable
+  // maximum separately: it accounts for fees and output-account rent.
+  BigInt? _maxSpendableRaw;
+  String? _maxSpendableForPair;
+  bool _loadingMax = false;
+  int _amountRequest = 0;
+  int _quoteRequest = 0;
+  int _holdingsRequest = 0;
+  String? _lastAccountContext;
+  String get _accountContext =>
+      '${_wallet?.kind}:${_wallet?.currentAccount?.id}:'
+      '${_wallet?.publicKey}:${_wallet?.libwallet.currentNetwork?.id}';
+
+  String get _swapPairKey =>
+      '${_wallet?.publicKey}:${_wallet?.libwallet.currentNetwork?.id}:'
+      '${_selectedInput?.mint}:${_selectedOutput?.mint}:$_slippageBps';
 
   // Swap availability on the active network (per libwallet's policy).
   lw.SwapAvailability? _swapAvailability;
   bool _checkingAvailability = false;
+  int _availabilityRequest = 0;
+  String? _availabilityForNetwork;
   bool _switchingNetwork = false;
   String? _lastCheckedNetworkId;
 
@@ -173,6 +189,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     // showing the pre-swap numbers until the user navigates away and back.
     wallet.libwallet.balanceTick.addListener(_onBalanceTick);
     wallet.swapCommittedTick.addListener(_onBalanceTick);
+    _lastAccountContext = _accountContext;
     if (wallet.isConnected) {
       _walletWasConnected = true;
       _loadHoldings();
@@ -199,6 +216,31 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
   void _onWalletChanged() {
     final wallet = context.read<WalletService>();
+    final changed = _lastAccountContext != _accountContext;
+    if (changed) {
+      _lastAccountContext = _accountContext;
+      _quoteDebounce?.cancel();
+      _quoteRequest++;
+      _amountRequest++;
+      _holdingsRequest++;
+      setState(() {
+        _holdings = [];
+        _selectedInput = null;
+        _outputHolding = null;
+        _jupiterQuote = null;
+        _lwQuote = null;
+        _hasQuote = false;
+        _quoteOutUi = null;
+        _quoteError = null;
+        _error = null;
+        _loadingQuote = false;
+        _loadingMax = false;
+        _maxSpendableRaw = null;
+        _maxSpendableForPair = null;
+        _amountController.clear();
+      });
+      if (wallet.isConnected) _loadHoldings();
+    }
     // Re-check swap availability whenever the active network changes.
     final netId = wallet.libwallet.currentNetwork?.id;
     if (netId != _lastCheckedNetworkId) {
@@ -231,13 +273,16 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     _wallet?.swapCommittedTick.removeListener(_onBalanceTick);
     _amountController.dispose();
     _quoteDebounce?.cancel();
-    _jupiter.dispose();
+    if (widget.jupiter == null) _jupiter.dispose();
     super.dispose();
   }
 
   void _onAmountChanged() {
+    _amountRequest++;
+    _quoteRequest++;
     _quoteDebounce?.cancel();
     setState(() {
+      _loadingMax = false;
       _jupiterQuote = null;
       _lwQuote = null;
       _hasQuote = false;
@@ -255,21 +300,32 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   /// network. The result drives a banner that replaces the swap form
   /// when the answer is no.
   Future<void> _checkAvailability() async {
-    if (_checkingAvailability) return;
+    final wallet = context.read<WalletService>();
+    final network = wallet.libwallet.currentNetwork?.id;
+    if (_checkingAvailability && _availabilityForNetwork == network) return;
+    final request = ++_availabilityRequest;
+    _availabilityForNetwork = network;
     setState(() => _checkingAvailability = true);
     try {
-      final wallet = context.read<WalletService>();
       final client = await wallet.libwallet.ensureClient();
       await wallet.libwallet.refreshCurrentNetwork();
+      if (!mounted || request != _availabilityRequest) return;
+      final resolvedNetwork = wallet.libwallet.currentNetwork?.id;
+      _availabilityForNetwork = resolvedNetwork;
       final avail = await client.swap.availability();
-      if (!mounted) return;
+      if (!mounted || request != _availabilityRequest) return;
+      if (resolvedNetwork != wallet.libwallet.currentNetwork?.id) {
+        setState(() => _checkingAvailability = false);
+        _checkAvailability();
+        return;
+      }
       setState(() {
         _swapAvailability = avail;
         _lastCheckedNetworkId = wallet.libwallet.currentNetwork?.id;
         _checkingAvailability = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || request != _availabilityRequest) return;
       setState(() => _checkingAvailability = false);
       debugPrint('swap.availability failed: $e');
     }
@@ -383,17 +439,21 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       case 'unsupported_chain':
         return l10n.swapUnavailableUnsupportedChain;
       case 'missing_api_key':
-        return l10n.swapUnavailableMissingApiKey;
+        return l10n.walletErrorSwapsTemporarilyUnavailable;
       default:
-        return a.reason.isEmpty
-            ? l10n.swapUnavailableDefault
-            : l10n.swapUnavailableReason(a.reason);
+        return l10n.swapUnavailableDefault;
     }
   }
 
   Future<void> _loadHoldings() async {
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
+    final accountContext = _accountContext;
+    final request = ++_holdingsRequest;
+    bool isCurrent() =>
+        mounted &&
+        request == _holdingsRequest &&
+        accountContext == _accountContext;
 
     // The default output (ChiefPussy) is a Solana token — invalid on other
     // chains. Clear it on non-Solana (unless the caller specified an output)
@@ -415,9 +475,12 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       // selected output token's own balance + price for the To section, then
       // derive the input list by filtering the output mint out locally.
       final all = _isSolana
-          ? await _jupiter.fetchHoldings(wallet.publicKey!)
+          ? await _jupiter.fetchHoldings(
+              wallet.publicKey!,
+              reserveSolForFees: false,
+            )
           : await _holdingsFromLibwallet(wallet);
-      if (!mounted) return;
+      if (!isCurrent()) return;
       final outMint = _selectedOutput?.mint;
       final holdings = outMint == null
           ? all
@@ -469,37 +532,77 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       });
     } catch (e) {
       logError('[swap._loadHoldings] error: $e');
-      if (!mounted) return;
+      if (!isCurrent()) return;
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loadingHoldings = false;
       });
     }
   }
 
-  /// Non-Solana input holdings from libwallet `getAssets` (chain-aware): the
-  /// native asset (mint = the OKX `'NATIVE'` sentinel) + each token (mint = its
-  /// contract), with real on-chain decimals. Jupiter is Solana-only, so this is
-  /// the EVM/other-chain equivalent.
+  /// Non-Solana holdings from libwallet, with the mainnet ETH amount corrected
+  /// by the same RPC snapshot used on the wallet dashboard.
   Future<List<TokenHolding>> _holdingsFromLibwallet(
     WalletService wallet,
   ) async {
     final net = wallet.libwallet.currentNetwork;
-    final assets = await wallet.libwallet.getAssets();
+    final isEthereumMainnet =
+        wallet.kind == WalletKind.inapp &&
+        net?.type == lw.NetworkType.evm &&
+        net?.chainId == '1';
+    if (isEthereumMainnet) await wallet.refreshBalances();
+    final assets = isEthereumMainnet
+        ? wallet.assets
+        : await wallet.libwallet.getAssets();
+    final ethWei = isEthereumMainnet ? wallet.ethBalanceWei : null;
     final out = <TokenHolding>[];
+    var hasNative = false;
     for (final a in assets) {
-      if (net != null && a.network != net.id) continue;
+      if (net != null && !assetBelongsToNetwork(a, net)) continue;
       final mint = a.isNative ? evmNativeSwapMint : mintFromAssetKey(a.key);
       if (mint.isEmpty) continue;
+      if (a.isNative) hasNative = true;
+      final balance = a.isNative && ethWei != null ? ethWei : a.amount.value;
+      final uiBalance = a.isNative && ethWei != null
+          ? ethWei.toDouble() / 1e18
+          : a.amount.toDouble();
+      final assetUiBalance = a.amount.toDouble();
+      final assetFiat = a.fiatAmount?.toDouble();
+      final libwalletPriceUsd =
+          a.fiatQuote?.price ??
+          (assetUiBalance > 0 && assetFiat != null
+              ? assetFiat / assetUiBalance
+              : null);
+      final nativePriceUsd = libwalletPriceUsd != null && libwalletPriceUsd > 0
+          ? libwalletPriceUsd
+          : (a.isNative && isEthereumMainnet ? wallet.ethPriceUsd : null);
       out.add(
         TokenHolding(
           mint: mint,
           symbol: a.symbol.isNotEmpty ? a.symbol : a.name,
           name: a.name,
-          balance: a.amount.value,
-          decimals: a.amount.exp,
-          uiBalance: a.amount.toDouble(),
-          valueUsd: a.fiatAmount?.toDouble(),
+          balance: balance,
+          decimals: a.isNative && ethWei != null ? 18 : a.amount.exp,
+          uiBalance: uiBalance,
+          valueUsd: a.isNative && ethWei != null
+              ? (nativePriceUsd == null ? null : uiBalance * nativePriceUsd)
+              : a.fiatAmount?.toDouble(),
+        ),
+      );
+    }
+    if (!hasNative && ethWei != null) {
+      out.insert(
+        0,
+        TokenHolding(
+          mint: evmNativeSwapMint,
+          symbol: 'ETH',
+          name: net?.name ?? 'Ethereum',
+          balance: ethWei,
+          decimals: 18,
+          uiBalance: ethWei.toDouble() / 1e18,
+          valueUsd: wallet.ethPriceUsd == null
+              ? null
+              : ethWei.toDouble() / 1e18 * wallet.ethPriceUsd!,
         ),
       );
     }
@@ -514,42 +617,33 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     final amountStr = normalizeDecimal(_amountController.text);
     if (amountStr.isEmpty) return;
 
-    final amountFloat = double.tryParse(amountStr);
-    if (amountFloat == null || amountFloat <= 0) return;
-    // Ceiling for native SOL is libwallet's `maxSpendable` (reserves the wSOL
-    // wrap + output-ATA rent precisely) when we have it — the displayed SOL
-    // balance is over-reserved by a flat 0.01 SOL, which would falsely reject
-    // the Max value (and let a manual near-max amount revert on-chain as 0xb).
-    final isNativeSol = _selectedInput!.mint == wsolMint;
-    final ceiling =
-        (isNativeSol &&
-            _maxSpendableUi != null &&
-            _maxSpendableForMint == _selectedInput!.mint)
-        ? _maxSpendableUi!
-        : _selectedInput!.uiBalance;
-    if (amountFloat > ceiling) {
+    final rawAmount = parseTokenAmount(amountStr, _selectedInput!.decimals);
+    if (rawAmount == null || rawAmount <= BigInt.zero) return;
+    // Prefer the backend's fee/rent-adjusted limit when available; otherwise
+    // check the full balance here and let quoting enforce spendability.
+    final hasSpendableMax =
+        _maxSpendableRaw != null && _maxSpendableForPair == _swapPairKey;
+    var ceiling = hasSpendableMax ? _maxSpendableRaw! : _selectedInput!.balance;
+    if (ceiling > _selectedInput!.balance) ceiling = _selectedInput!.balance;
+    if (rawAmount > ceiling) {
       debugPrint(
-        '[swap.validate] EXCEEDS amount=$amountFloat ceiling=$ceiling '
+        '[swap.validate] EXCEEDS raw=$rawAmount ceiling=$ceiling '
         'uiBalance=${_selectedInput!.uiBalance} '
-        'maxSpendableUi=$_maxSpendableUi '
+        'maxSpendableRaw=$_maxSpendableRaw '
         'symbol=${_selectedInput!.symbol} dec=${_selectedInput!.decimals}',
       );
       final l10n = context.l10n;
       setState(
-        () => _quoteError = isNativeSol && _maxSpendableUi != null
+        () => _quoteError = hasSpendableMax
             ? l10n.swapExceedsSpendableMax
             : l10n.swapExceedsBalance,
       );
       return;
     }
 
-    final rawAmount = BigInt.from(
-      amountFloat * BigInt.from(10).pow(_selectedInput!.decimals).toDouble(),
-    );
-    if (rawAmount <= BigInt.zero) return;
-
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
+    final request = ++_quoteRequest;
 
     setState(() {
       _loadingQuote = true;
@@ -558,15 +652,15 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
     try {
       if (wallet.kind == WalletKind.inapp) {
-        await _fetchQuoteLibwallet(wallet, rawAmount);
+        await _fetchQuoteLibwallet(wallet, rawAmount, request);
       } else {
-        await _fetchQuoteJupiter(wallet, rawAmount);
+        await _fetchQuoteJupiter(wallet, rawAmount, request);
       }
     } catch (e) {
       logError('[swap._fetchQuote] error: $e');
-      if (!mounted) return;
+      if (!mounted || request != _quoteRequest) return;
       setState(() {
-        _quoteError = WalletError.from(e).message;
+        _quoteError = walletErrorMessageForContext(context, e);
         _loadingQuote = false;
       });
     }
@@ -575,6 +669,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   Future<void> _fetchQuoteJupiter(
     WalletService wallet,
     BigInt rawAmount,
+    int request,
   ) async {
     final quote = await _jupiter.fetchQuote(
       inputMint: _selectedInput!.mint,
@@ -583,7 +678,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       taker: wallet.publicKey!,
       outputDecimals: _outputDecimals,
     );
-    if (!mounted) return;
+    if (!mounted || request != _quoteRequest) return;
     setState(() {
       _jupiterQuote = quote;
       _lwQuote = null;
@@ -596,10 +691,12 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   Future<void> _fetchQuoteLibwallet(
     WalletService wallet,
     BigInt rawAmount,
+    int request,
   ) async {
     final inputMint = _selectedInput!.mint;
     final outputMint = _selectedOutput!.mint;
     final client = await wallet.libwallet.ensureClient();
+    if (!mounted || request != _quoteRequest) return;
     final inTokenAddr = swapTokenAddress(inputMint, nativeMint: _nativeMint);
     final outTokenAddr = swapTokenAddress(outputMint, nativeMint: _nativeMint);
     // libwallet 0.4.31 dropped the silent Jupiter→dFlow fallback from
@@ -615,7 +712,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       amountIn: rawAmount.toString(),
       slippageBps: _slippageBps,
     );
-    if (!mounted) return;
+    if (!mounted || request != _quoteRequest) return;
     lw.QuoteAttempt? best;
     for (final a in attempts) {
       if (!a.isOk) continue;
@@ -632,10 +729,8 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
             ? attempts.first
             : const lw.QuoteAttempt(provider: '', providerLabel: ''),
       );
-      final code = firstErr.error?.code ?? 'no_route';
-      final msg =
-          firstErr.error?.message ?? 'No provider could quote this pair';
-      throw Exception('$msg ($code)');
+      throw firstErr.error ??
+          const lw.SwapError(code: 'no_route', message: 'No quote available');
     }
     final quote = best.quote!;
     setState(() {
@@ -648,95 +743,125 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   }
 
   Future<void> _setPercent(int percent) async {
-    if (_selectedInput == null) return;
-    // For 100% with both tokens picked, ask libwallet for the true
-    // maxSpendable — it reserves gas and accounts for ATA-creation rent
-    // on the output mint. Falls back to raw balance × percent on hard
-    // errors (network etc.) so the Max button never appears broken.
-    double amount;
-    if (percent == 100 && _selectedOutput != null) {
+    final input = _selectedInput;
+    if (input == null) return;
+    final request = ++_amountRequest;
+    final pair = _swapPairKey;
+    final output = _selectedOutput;
+    final wallet = context.read<WalletService>();
+    bool isCurrent() =>
+        mounted && request == _amountRequest && pair == _swapPairKey;
+    var raw = input.balance * BigInt.from(percent) ~/ BigInt.from(100);
+    lw.SwapQuote? maxQuote;
+    // Token fees are paid in the native currency, not subtracted from tokens.
+    // Filling MAX must not depend on a second balance scan or a swap route.
+    if (percent == 100 && input.mint == _nativeMint && output != null) {
+      _quoteDebounce?.cancel();
+      _quoteRequest++;
+      setState(() {
+        _loadingMax = true;
+        _loadingQuote = false;
+        _quoteError = null;
+        _error = null;
+        _hasQuote = false;
+        _lwQuote = null;
+        _jupiterQuote = null;
+        _quoteOutUi = null;
+      });
       try {
-        final wallet = context.read<WalletService>();
         final client = await wallet.libwallet.ensureClient();
-        final quote = await client.swap.maxSpendable(
-          tokenIn: SwapTokenRef(
-            address: swapTokenAddress(
-              _selectedInput!.mint,
-              nativeMint: _nativeMint,
-            ),
-            decimals: _selectedInput!.decimals,
-            symbol: _selectedInput!.symbol,
-          ),
-          tokenOut: SwapTokenRef(
-            // tokenOut.decimals is only used for output-amount formatting (we
-            // don't read it out of the maxSpendable response); _outputDecimals
-            // tracks the selected token's real decimals.
-            address: swapTokenAddress(
-              _selectedOutput!.mint,
-              nativeMint: _nativeMint,
-            ),
-            decimals: _outputDecimals,
-            symbol: _selectedOutput!.symbol,
-          ),
-          from: wallet.publicKey,
-        );
-        if (!mounted) return;
-        // libwallet 0.4.35: soft failures (balance_too_small / no_route)
-        // no longer throw — maxSpendable returns a non-executable quote
-        // with a human-readable statusMessage. Surface it instead of
-        // silently filling the field with an amount that won't actually
-        // swap.
-        if (!quote.isExecutable) {
-          final l10n = context.l10n;
-          context.showSnackBar(
-            SnackBar(
-              content: Text(
-                quote.statusMessage.isNotEmpty
-                    ? quote.statusMessage
-                    : l10n.swapMaxAmountUnavailable,
+        if (!isCurrent()) return;
+        final quote = await client.swap
+            .maxSpendable(
+              tokenIn: SwapTokenRef(
+                address: swapTokenAddress(input.mint, nativeMint: _nativeMint),
+                decimals: input.decimals,
+                symbol: input.symbol,
               ),
+              tokenOut: SwapTokenRef(
+                address: swapTokenAddress(output.mint, nativeMint: _nativeMint),
+                decimals: _outputDecimals,
+                symbol: output.symbol,
+              ),
+              from: wallet.kind == WalletKind.inapp
+                  ? wallet.libwallet.accountId ?? wallet.publicKey
+                  : wallet.publicKey,
+              network: wallet.libwallet.currentNetwork?.id,
+              slippageBps: _slippageBps,
+            )
+            .timeout(const Duration(seconds: 10));
+        if (!isCurrent()) return;
+        if (!quote.isExecutable && quote.status != 'no_route') {
+          setState(
+            () => _quoteError = walletErrorMessageForContext(
+              context,
+              lw.SwapError(code: quote.status, message: quote.statusMessage),
             ),
           );
           return;
         }
-        final raw = quote.amountIn.value;
-        final divisor = BigInt.from(10).pow(_selectedInput!.decimals);
-        amount = raw / divisor;
-        // Cache the authoritative spendable max so the amount validation
-        // (and a manual near-max entry) checks against it, not the
-        // over-reserved displayed balance.
-        _maxSpendableUi = amount;
-        _maxSpendableForMint = _selectedInput!.mint;
-        // Safety buffer for native SOL: don't park the user at the exact
-        // spendable edge — to-the-penny max reverts on-chain as 0xb when the
-        // wSOL wrap/ATA rent + fee variance tips it over. Cap the Max *button*
-        // at the already-buffered displayed balance (Tibane reserves ~0.01 SOL
-        // there), matching how every Solana wallet keeps a SOL reserve on Max.
-        // `maxSpendable` stays the hard validation ceiling.
-        if (_selectedInput!.mint == wsolMint &&
-            _selectedInput!.uiBalance < amount) {
-          amount = _selectedInput!.uiBalance;
+        final quoteRaw = quote.amountIn.isMax
+            ? null
+            : parseTokenAmount(quote.amountIn.toString(), input.decimals);
+        if (quoteRaw == null || quoteRaw <= BigInt.zero) {
+          setState(
+            () => _quoteError = walletErrorMessageForContext(
+              context,
+              lw.SwapError(code: quote.status, message: quote.statusMessage),
+            ),
+          );
+          return;
+        }
+        raw = quoteRaw < input.balance ? quoteRaw : input.balance;
+        if (raw <= BigInt.zero) {
+          setState(() => _quoteError = context.l10n.swapMaxAmountUnavailable);
+          return;
+        }
+        _maxSpendableRaw = raw;
+        _maxSpendableForPair = pair;
+        if (quote.isExecutable &&
+            raw == quoteRaw &&
+            wallet.kind == WalletKind.inapp) {
+          maxQuote = quote;
         }
       } catch (e) {
-        debugPrint('swap.maxSpendable fallback (amount=uiBalance): $e');
-        amount = _selectedInput!.uiBalance;
+        if (!isCurrent()) return;
+        setState(() => _quoteError = context.l10n.swapMaxAmountUnavailable);
+        debugPrint('swap.maxSpendable failed: $e');
+        return;
+      } finally {
+        if (mounted && request == _amountRequest) {
+          setState(() => _loadingMax = false);
+        }
       }
-    } else {
-      amount = _selectedInput!.uiBalance * percent / 100;
+    } else if (percent == 100 && input.mint == _nativeMint) {
+      setState(() => _quoteError = context.l10n.swapMaxAmountUnavailable);
+      return;
     }
-    final decimals = _selectedInput!.decimals.clamp(0, 6);
-    var text = amount.toStringAsFixed(decimals);
-    if (text.contains('.')) {
-      text = text.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
-    }
-    if (!mounted) return;
+    if (!isCurrent()) return;
+    // Format the official base-unit amount exactly; rounding can exceed MAX.
+    final text = formatExactTokenAmount(raw, input.decimals);
     _amountController.text = text;
+    if (maxQuote != null) {
+      _quoteDebounce?.cancel();
+      setState(() {
+        _lwQuote = maxQuote;
+        _jupiterQuote = null;
+        _hasQuote = true;
+        _quoteOutUi = maxQuote!.amountOut.toDouble();
+        _loadingQuote = false;
+      });
+    }
   }
 
   Future<void> _executeSwap() async {
     if (!_hasQuote || _swapping) return;
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
+    final accountContext = _accountContext;
+    final pair = _swapPairKey;
+    bool isCurrent() =>
+        mounted && accountContext == _accountContext && pair == _swapPairKey;
     final l10n = context.l10n;
 
     // Snapshot the trade before clearing state on success so the review +
@@ -761,11 +886,11 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       outputMint: outputMint ?? '',
       outputImageUrl: outputImageUrl,
     );
-    if (approved != true || !mounted) return;
+    if (approved != true || !mounted || !isCurrent() || !_hasQuote) return;
 
     final auth = await authorizeBatch(context);
     if (auth == null) return;
-    if (!mounted) return;
+    if (!isCurrent() || !_hasQuote) return;
 
     final viaOkx = _lwQuote != null;
     setState(() {
@@ -873,7 +998,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       logError('[swap._executeSwap] error: $e');
       if (!mounted) return;
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
       });
     } finally {
       if (mounted) {
@@ -1198,156 +1323,169 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       // numeric keyboard (which has no Done key by default).
       onTap: () => context.unfocus(),
       behavior: HitTestBehavior.translucent,
-      child: RefreshIndicator(
-        onRefresh: _loadHoldings,
-        color: TibaneColors.orange,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          // Scrolling the list also dismisses the keyboard.
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          children: [
-            if (!wallet.isConnected) ...[
-              TibaneCard(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 40),
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.account_balance_wallet_outlined,
-                          size: 48,
-                          color: TibaneColors.textDim,
+      child: Column(
+        children: [
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _loadHoldings,
+              color: TibaneColors.orange,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                // Scrolling the list also dismisses the keyboard.
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                children: [
+                  if (!wallet.isConnected) ...[
+                    TibaneCard(
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 40),
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.account_balance_wallet_outlined,
+                                size: 48,
+                                color: TibaneColors.textDim,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                l10n.swapConnectWallet,
+                                style: context.textTheme.bodyLarge,
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          l10n.swapConnectWallet,
-                          style: context.textTheme.bodyLarge,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ] else if (_swapAvailability != null &&
-                !_swapAvailability!.available) ...[
-              _buildUnavailableBanner(),
-            ] else ...[
-              // From section
-              _buildFromSection(l10n),
-              const SizedBox(height: 8),
-
-              // Flip button
-              Center(
-                child: IconButton(
-                  onPressed: _flipTokens,
-                  icon: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: TibaneColors.surface,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: TibaneColors.border),
-                    ),
-                    child: const Icon(
-                      Icons.swap_vert,
-                      color: TibaneColors.orange,
-                      size: 24,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // To section
-              _buildToSection(l10n),
-              const SizedBox(height: 16),
-
-              // Quote details
-              if (_loadingQuote)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Center(
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: TibaneColors.orange,
                       ),
                     ),
-                  ),
-                ),
+                  ] else if (_swapAvailability != null &&
+                      !_swapAvailability!.available) ...[
+                    _buildUnavailableBanner(),
+                  ] else ...[
+                    // From section
+                    _buildFromSection(l10n),
+                    const SizedBox(height: 8),
 
-              if (_quoteError != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: TibaneCard(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.warning_amber,
-                          color: TibaneColors.warning,
-                          size: 18,
+                    // Flip button
+                    Center(
+                      child: IconButton(
+                        onPressed: _flipTokens,
+                        icon: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: TibaneColors.surface,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: TibaneColors.border),
+                          ),
+                          child: const Icon(
+                            Icons.swap_vert,
+                            color: TibaneColors.orange,
+                            size: 24,
+                          ),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _quoteError!,
-                            style: TextStyle(
-                              color: TibaneColors.warning,
-                              fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // To section
+                    _buildToSection(l10n),
+                    const SizedBox(height: 6),
+
+                    // Quote details
+                    if (_loadingQuote)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Center(
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: TibaneColors.orange,
                             ),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                ),
+                      ),
 
-              if (_hasQuote) _buildQuoteDetails(l10n),
-
-              // Error
-              if (_error != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: TibaneCard(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.error_outline,
-                          color: TibaneColors.error,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _error!,
-                            style: TextStyle(
-                              color: TibaneColors.error,
-                              fontSize: 13,
-                            ),
+                    if (_quoteError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: TibaneCard(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.warning_amber,
+                                color: TibaneColors.warning,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _quoteError!,
+                                  style: TextStyle(
+                                    color: TibaneColors.warning,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
+                      ),
+
+                    if (_hasQuote) _buildQuoteDetails(l10n),
+
+                    // Error
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: TibaneCard(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.error_outline,
+                                color: TibaneColors.error,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _error!,
+                                  style: TextStyle(
+                                    color: TibaneColors.error,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    // Slippage selector — only the in-app (OKX) path honors it.
+                    if (wallet.kind == WalletKind.inapp)
+                      _buildSlippageSelector(l10n),
+                    const SizedBox(height: 8),
+                    SafeArea(
+                      top: false,
+                      child: GradientButton(
+                        key: const Key('swap-submit'),
+                        label: _swapping ? l10n.swapSwapping : l10n.swapButton,
+                        icon: Icons.swap_horiz,
+                        expanded: true,
+                        loading: _swapping,
+                        onPressed: _hasQuote && !_swapping
+                            ? _executeSwap
+                            : null,
+                      ),
                     ),
-                  ),
-                ),
-
-              // Slippage selector — only the in-app (OKX) path honors it.
-              if (wallet.kind == WalletKind.inapp) _buildSlippageSelector(l10n),
-
-              // Swap button
-              GradientButton(
-                label: _swapping ? l10n.swapSwapping : l10n.swapButton,
-                icon: Icons.swap_horiz,
-                expanded: true,
-                loading: _swapping,
-                onPressed: _hasQuote && !_swapping ? _executeSwap : null,
+                  ],
+                ],
               ),
-            ],
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1380,6 +1518,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
               // Token selector
               Expanded(
                 child: InkWell(
+                  key: const Key('swap-input-selector'),
                   onTap: _loadingHoldings ? null : _showInputPicker,
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
@@ -1451,6 +1590,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
           const SizedBox(height: 10),
           // Amount input
           TextField(
+            key: const Key('swap-amount-input'),
             controller: _amountController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textInputAction: TextInputAction.done,
@@ -1478,8 +1618,11 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                   child: Padding(
                     padding: EdgeInsets.only(right: pct == 100 ? 0 : 6),
                     child: _PercentButton(
+                      key: Key('swap-percent-$pct'),
                       label: pct == 100 ? l10n.sendMax : '$pct%',
-                      onTap: _selectedInput != null
+                      loading: pct == 100 && _loadingMax,
+                      onTap:
+                          _selectedInput != null && !(pct == 100 && _loadingMax)
                           ? () => _setPercent(pct)
                           : null,
                     ),
@@ -1620,42 +1763,80 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   Widget _buildSlippageSelector(AppLocalizations l10n) {
     final isCustom = !_slippagePresets.contains(_slippageBps);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Text(
-            l10n.swapMaxSlippage,
-            style: TextStyle(color: TibaneColors.textMuted, fontSize: 13),
-          ),
-          const Spacer(),
-          for (final bps in _slippagePresets)
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: _slippageChip(
-                _formatBps(bps),
-                _slippageBps == bps,
-                () => _setSlippage(bps),
+      key: const Key('swap-slippage'),
+      padding: const EdgeInsets.only(bottom: 4),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 340;
+          final gap = compact ? 5.0 : 8.0;
+          final chipHorizontalPadding = compact ? 8.0 : 10.0;
+          final chipFontSize = compact ? 11.0 : 12.0;
+          final labelFontSize = compact ? 12.0 : 13.0;
+          final chips = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final bps in _slippagePresets) ...[
+                if (bps != _slippagePresets.first) SizedBox(width: gap),
+                _slippageChip(
+                  _formatBps(bps),
+                  _slippageBps == bps,
+                  () => _setSlippage(bps),
+                  horizontalPadding: chipHorizontalPadding,
+                  fontSize: chipFontSize,
+                ),
+              ],
+              SizedBox(width: gap),
+              _slippageChip(
+                isCustom ? _formatBps(_slippageBps) : l10n.swapSlippageCustom,
+                isCustom,
+                _promptCustomSlippage,
+                horizontalPadding: chipHorizontalPadding,
+                fontSize: chipFontSize,
               ),
-            ),
-          Padding(
-            padding: const EdgeInsets.only(left: 8),
-            child: _slippageChip(
-              isCustom ? _formatBps(_slippageBps) : l10n.swapSlippageCustom,
-              isCustom,
-              _promptCustomSlippage,
-            ),
-          ),
-        ],
+            ],
+          );
+          return Row(
+            children: [
+              Text(
+                l10n.swapMaxSlippage,
+                style: TextStyle(
+                  color: TibaneColors.textMuted,
+                  fontSize: labelFontSize,
+                ),
+              ),
+              SizedBox(width: gap),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: chips,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  Widget _slippageChip(String label, bool selected, VoidCallback onTap) {
+  Widget _slippageChip(
+    String label,
+    bool selected,
+    VoidCallback onTap, {
+    double horizontalPadding = 10,
+    double fontSize = 12,
+  }) {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: EdgeInsets.symmetric(
+          horizontal: horizontalPadding,
+          vertical: 6,
+        ),
         decoration: BoxDecoration(
           color: selected
               ? TibaneColors.orange.withValues(alpha: 0.15)
@@ -1669,7 +1850,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
           label,
           style: TextStyle(
             color: selected ? TibaneColors.orange : TibaneColors.textMuted,
-            fontSize: 12,
+            fontSize: fontSize,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -1726,14 +1907,8 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   }
 
   Widget _buildJupiterQuoteDetails(SwapQuote q, AppLocalizations l10n) {
-    final summary = StringBuffer();
-    if (q.outUsdValue != null) {
-      summary.write('\$${q.outUsdValue!.toStringAsFixed(2)}');
-    }
-    summary.write('  ·  ${q.priceImpactPct}% impact');
-    summary.write('  ·  0.5% fee');
-    return _expandableCard(
-      summary: summary.toString(),
+    return _expandableFees(
+      title: l10n.swapFees,
       children: [
         if (q.inUsdValue != null)
           _quoteRow(l10n.swapYouPay, '\$${q.inUsdValue!.toStringAsFixed(2)}'),
@@ -1756,16 +1931,8 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
   Widget _buildLwQuoteDetails(lw.SwapQuote q, AppLocalizations l10n) {
     final provider = q.providerLabel.isNotEmpty ? q.providerLabel : q.provider;
-    final summary = StringBuffer();
-    summary.write(
-      '${_formatOutputAmount(q.amountOut.toDouble())} ${q.tokenOut.symbol}',
-    );
-    if (q.priceImpact > 0) {
-      summary.write('  ·  ${(q.priceImpact * 100).toStringAsFixed(2)}% impact');
-    }
-    summary.write('  ·  via $provider');
-    return _expandableCard(
-      summary: summary.toString(),
+    return _expandableFees(
+      title: l10n.swapFees,
       children: [
         _quoteRow(l10n.swapProvider, provider),
         _quoteRow(
@@ -1784,7 +1951,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         if (q.networkFee != null)
           _quoteRow(
             l10n.swapNetworkFee,
-            '${q.networkFee!.toDouble().toStringAsFixed(6)} SOL',
+            '${q.networkFee!.toDouble().toStringAsFixed(6)} ${_wallet?.libwallet.currentNetwork?.currencySymbol ?? (_isSolana ? 'SOL' : 'ETH')}',
           ),
         _quoteRow(l10n.swapFee, '${(q.feeBps / 100).toStringAsFixed(1)}%'),
         if (q.route.isNotEmpty)
@@ -1793,51 +1960,53 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     );
   }
 
-  /// Collapsible quote-details card. Default state is a one-line summary
-  /// so the swap form fits on shorter screens; tapping the row reveals
-  /// the full breakdown.
-  Widget _expandableCard({
-    required String summary,
+  /// Details are opt-in; only the arrow expands the compact Fees header.
+  Widget _expandableFees({
+    required String title,
     required List<Widget> children,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: TibaneCard(
-        padding: EdgeInsets.zero,
-        onTap: () =>
-            setState(() => _quoteDetailsExpanded = !_quoteDetailsExpanded),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+      key: const Key('swap-fees-details'),
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      summary,
-                      style: monoStyle(
-                        fontSize: 11,
-                        color: TibaneColors.textMuted,
-                      ),
-                    ),
+              Expanded(
+                child: Text(
+                  title,
+                  style: monoStyle(
+                    fontSize: 11 * 1.15,
+                    color: TibaneColors.textMuted,
                   ),
-                  Icon(
-                    _quoteDetailsExpanded
-                        ? Icons.expand_less
-                        : Icons.expand_more,
-                    color: TibaneColors.textDim,
-                    size: 18,
-                  ),
-                ],
+                ),
               ),
-              if (_quoteDetailsExpanded) ...[
-                const SizedBox(height: 6),
-                ...children,
-              ],
+              IconButton(
+                key: const Key('swap-fees-toggle'),
+                tooltip: title,
+                constraints: const BoxConstraints.tightFor(
+                  width: 40,
+                  height: 36,
+                ),
+                padding: EdgeInsets.zero,
+                onPressed: () => setState(
+                  () => _quoteDetailsExpanded = !_quoteDetailsExpanded,
+                ),
+                icon: Icon(
+                  _quoteDetailsExpanded ? Icons.expand_less : Icons.expand_more,
+                ),
+                color: TibaneColors.textDim,
+                iconSize: 18,
+              ),
             ],
           ),
-        ),
+          if (_quoteDetailsExpanded) ...[
+            const SizedBox(height: 6),
+            ...children,
+            const SizedBox(height: 8),
+          ],
+        ],
       ),
     );
   }
@@ -1848,15 +2017,21 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+          Expanded(
+            child: Text(
+              label,
+              style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
+            ),
           ),
-          Text(
-            value,
-            style: monoStyle(
-              fontSize: 11,
-              color: valueColor ?? TibaneColors.text,
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: monoStyle(
+                fontSize: 11,
+                color: valueColor ?? TibaneColors.text,
+              ),
             ),
           ),
         ],
@@ -1921,8 +2096,14 @@ class _SwapToken {
 class _PercentButton extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
+  final bool loading;
 
-  const _PercentButton({required this.label, this.onTap});
+  const _PercentButton({
+    super.key,
+    required this.label,
+    this.onTap,
+    this.loading = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1937,12 +2118,31 @@ class _PercentButton extends StatelessWidget {
           border: Border.all(color: TibaneColors.border),
         ),
         child: Center(
-          child: Text(
-            label,
-            style: monoStyle(
-              fontSize: 11,
-              color: onTap != null ? TibaneColors.orange : TibaneColors.textDim,
-            ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Opacity(
+                opacity: loading ? 0 : 1,
+                child: Text(
+                  label,
+                  style: monoStyle(
+                    fontSize: 11,
+                    color: onTap != null
+                        ? TibaneColors.orange
+                        : TibaneColors.textDim,
+                  ),
+                ),
+              ),
+              if (loading)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: TibaneColors.orange,
+                  ),
+                ),
+            ],
           ),
         ),
       ),

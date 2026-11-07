@@ -1,4 +1,23 @@
 import 'package:libwallet/libwallet.dart' show Wallet;
+import 'wallet_export_format.dart' show isNormalMnemonicWallet;
+
+enum WalletContentsKind { native, added, imported }
+
+/// User-facing origin for a technical wallet contained in a logical wallet.
+/// Imported private keys are represented by a single-share wallet, while
+/// older additional-account flows may be attached as their own wallet.
+WalletContentsKind walletContentsKind(
+  Wallet wallet, {
+  Map<String, String> attachedWalletParents = const {},
+}) {
+  if (wallet.keys.length == 1 && !isNormalMnemonicWallet(wallet)) {
+    return WalletContentsKind.imported;
+  }
+  if (attachedWalletParents.containsKey(wallet.id)) {
+    return WalletContentsKind.added;
+  }
+  return WalletContentsKind.native;
+}
 
 /// A user-facing Tibane wallet can be backed by two libwallet wallets: ed25519
 /// for Solana and secp256k1 for Ethereum/Bitcoin.
@@ -47,18 +66,48 @@ class LogicalWallet {
   }
 }
 
-List<LogicalWallet> buildLogicalWallets(Iterable<Wallet> wallets) {
+List<LogicalWallet> buildLogicalWallets(
+  Iterable<Wallet> wallets, {
+  Map<String, String> attachedWalletParents = const {},
+  Map<String, String> walletGroups = const {},
+}) {
   final list = wallets.toList();
   final used = <String>{};
   final groups = <LogicalWallet>[];
+  final attachedIds = attachedWalletParents.keys.toSet();
   for (final wallet in list) {
-    if (used.contains(wallet.id)) continue;
-    final peer = _findCreatePeer(wallet, list, used);
-    final groupWallets = peer == null ? [wallet] : [wallet, peer];
+    if (used.contains(wallet.id) || attachedIds.contains(wallet.id)) continue;
+    final groupId = walletGroups[wallet.id];
+    final groupWallets = groupId == null
+        ? [wallet]
+        : list
+              .where(
+                (candidate) =>
+                    !used.contains(candidate.id) &&
+                    !attachedIds.contains(candidate.id) &&
+                    walletGroups[candidate.id] == groupId,
+              )
+              .toList();
     for (final grouped in groupWallets) {
       used.add(grouped.id);
     }
     groups.add(LogicalWallet(groupWallets));
+  }
+
+  // A private-key import has its own technical wallet. Keep it attached to the
+  // logical wallet selected by the user instead of presenting it as an
+  // unrelated top-level wallet. The relation is explicit and persisted by
+  // AccountsService; name/time heuristics are never used here.
+  for (final child in list.where((w) => attachedIds.contains(w.id))) {
+    final parentId = attachedWalletParents[child.id];
+    final groupIndex = groups.indexWhere(
+      (group) => parentId != null && group.containsWallet(parentId),
+    );
+    if (groupIndex < 0) {
+      groups.add(LogicalWallet([child]));
+      continue;
+    }
+    groups[groupIndex] = LogicalWallet([...groups[groupIndex].wallets, child]);
   }
   return groups;
 }
@@ -88,31 +137,6 @@ List<String> chainsForWallet(Wallet wallet) {
     default:
       return const [];
   }
-}
-
-Wallet? _findCreatePeer(Wallet wallet, List<Wallet> wallets, Set<String> used) {
-  if (wallet.name.trim().isEmpty) return null;
-  final curve = wallet.curve;
-  final peerCurve = switch (curve) {
-    'ed25519' => 'secp256k1',
-    'secp256k1' => 'ed25519',
-    _ => null,
-  };
-  if (peerCurve == null) return null;
-  Wallet? best;
-  Duration? bestDiff;
-  for (final candidate in wallets) {
-    if (candidate.id == wallet.id || used.contains(candidate.id)) continue;
-    if (candidate.curve != peerCurve) continue;
-    if (candidate.name.trim() != wallet.name.trim()) continue;
-    final diff = candidate.created.difference(wallet.created).abs();
-    if (diff > const Duration(minutes: 10)) continue;
-    if (bestDiff == null || diff < bestDiff) {
-      best = candidate;
-      bestDiff = diff;
-    }
-  }
-  return best;
 }
 
 int _curveRank(String curve) {
