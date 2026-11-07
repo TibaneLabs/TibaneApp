@@ -33,6 +33,12 @@ bool canAssembleThreshold(Wallet wallet) =>
     collectibleSigningKeys(wallet.keys).length >=
     requiredSigningShares(wallet.threshold);
 
+/// Password-only MPC wallets do not have a device key to restore. Their
+/// Password shares are collected independently at signing time.
+bool canSignWithoutDeviceShare(Wallet wallet) =>
+    wallet.keys.where((key) => key.isPassword).length >=
+    requiredSigningShares(wallet.threshold);
+
 /// Whether the sheet has collected enough shares to enable "Confirm".
 bool signSheetReady(int collectedCount, int threshold) =>
     collectedCount >= requiredSigningShares(threshold);
@@ -78,11 +84,10 @@ bool useSignSheetFor({required bool isInApp}) => isInApp;
   String? paramStoreKeyPriv,
   String? cachedPassword,
   String? cachedStoreKeyPriv,
-}) =>
-    (
-      password: paramPassword ?? cachedPassword,
-      storeKeyPriv: paramStoreKeyPriv ?? cachedStoreKeyPriv,
-    );
+}) => (
+  password: paramPassword ?? cachedPassword,
+  storeKeyPriv: paramStoreKeyPriv ?? cachedStoreKeyPriv,
+);
 
 /// Build the OLD (authorizing) + NEW (target) committees for a management
 /// reshare — change-password and rotate-device-share — per the libwallet
@@ -112,7 +117,7 @@ bool useSignSheetFor({required bool isInApp}) => isInApp;
 /// libwallet client. After the reshare the caller must re-read ALL new key ids
 /// (the generation bumps and every share id changes).
 ({List<KeyDescription> oldKeys, List<KeyDescription> newKeys})
-    buildManagementReshareCommittee({
+buildManagementReshareCommittee({
   required String oldStoreKeyId,
   required String storeSecret,
   required String oldPasswordKeyId,
@@ -120,17 +125,14 @@ bool useSignSheetFor({required bool isInApp}) => isInApp;
   required String newStorePublic,
   required String newRemoteKey,
   required String newPassword,
-}) =>
-        (
-          oldKeys: [
-            KeyDescription(
-                type: 'StoreKey', id: oldStoreKeyId, key: storeSecret),
-            KeyDescription(
-                type: 'Password', id: oldPasswordKeyId, key: oldPassword),
-          ],
-          newKeys: [
-            KeyDescription(type: 'StoreKey', key: newStorePublic),
-            KeyDescription(type: 'RemoteKey', key: newRemoteKey),
-            KeyDescription(type: 'Password', key: newPassword),
-          ],
-        );
+}) => (
+  oldKeys: [
+    KeyDescription(type: 'StoreKey', id: oldStoreKeyId, key: storeSecret),
+    KeyDescription(type: 'Password', id: oldPasswordKeyId, key: oldPassword),
+  ],
+  newKeys: [
+    KeyDescription(type: 'StoreKey', key: newStorePublic),
+    KeyDescription(type: 'RemoteKey', key: newRemoteKey),
+    KeyDescription(type: 'Password', key: newPassword),
+  ],
+);

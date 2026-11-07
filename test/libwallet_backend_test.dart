@@ -55,10 +55,10 @@ void main() {
       );
     });
 
-    test('secp256k1 exposes Ethereum; Bitcoin is a network context', () {
+    test('secp256k1 exposes Ethereum plus a Bitcoin backing account', () {
       expect(
         LibwalletBackend.defaultAccountTypesForCurve('secp256k1'),
-        equals(['ethereum']),
+        equals(['ethereum', 'bitcoin']),
       );
     });
 
@@ -212,6 +212,30 @@ void main() {
     final ed = _walletWithKeys([], id: 'sol-wallet', curve: 'ed25519');
     final secp = _walletWithKeys([], id: 'evm-wallet', curve: 'secp256k1');
 
+    test('an Ethereum private-key import never gets a Bitcoin default', () {
+      final imported = _walletWithKeys(
+        [_key(id: 'device', type: 'StoreKey', key: 'public')],
+        id: 'imported-eth',
+        curve: 'secp256k1',
+      );
+      final plan = LibwalletBackend.planDefaultAccounts(
+        accounts: [],
+        walletsById: {imported.id: imported},
+        alreadyEnsured: {},
+      );
+      expect(plan.toCreate[imported.id], ['ethereum']);
+    });
+
+    test('an attached MPC Ethereum account also stays Ethereum-only', () {
+      final plan = LibwalletBackend.planDefaultAccounts(
+        accounts: [],
+        walletsById: {secp.id: secp},
+        alreadyEnsured: {},
+        accountOnlyWalletIds: {secp.id},
+      );
+      expect(plan.toCreate[secp.id], ['ethereum']);
+    });
+
     test('a wallet missing its default type is scheduled for creation', () {
       final plan = LibwalletBackend.planDefaultAccounts(
         accounts: const [],
@@ -219,35 +243,41 @@ void main() {
         alreadyEnsured: const {},
       );
       expect(plan.toCreate[ed.id], ['solana']);
-      expect(plan.toCreate[secp.id], ['ethereum']);
+      expect(plan.toCreate[secp.id], ['ethereum', 'bitcoin']);
       expect(plan.ensured, isEmpty);
     });
 
-    test('a wallet that already has its default type is ensured, not created', () {
-      final plan = LibwalletBackend.planDefaultAccounts(
-        accounts: [
-          _account(id: 'a1', wallet: ed.id, type: 'solana'),
-          _account(id: 'a2', wallet: secp.id, type: 'ethereum'),
-        ],
-        walletsById: {ed.id: ed, secp.id: secp},
-        alreadyEnsured: const {},
-      );
-      expect(plan.toCreate, isEmpty);
-      expect(plan.ensured, {ed.id, secp.id});
-    });
+    test(
+      'a wallet that already has its default type is ensured, not created',
+      () {
+        final plan = LibwalletBackend.planDefaultAccounts(
+          accounts: [
+            _account(id: 'a1', wallet: ed.id, type: 'solana'),
+            _account(id: 'a2', wallet: secp.id, type: 'ethereum'),
+            _account(id: 'a3', wallet: secp.id, type: 'bitcoin'),
+          ],
+          walletsById: {ed.id: ed, secp.id: secp},
+          alreadyEnsured: const {},
+        );
+        expect(plan.toCreate, isEmpty);
+        expect(plan.ensured, {ed.id, secp.id});
+      },
+    );
 
-    test('an already-ensured wallet is skipped even when the list looks partial',
-        () {
-      // Simulates a transiently-partial accounts.list(): the default row is
-      // absent, but the persisted flag prevents a duplicate-creating backfill.
-      final plan = LibwalletBackend.planDefaultAccounts(
-        accounts: const [],
-        walletsById: {secp.id: secp},
-        alreadyEnsured: {secp.id},
-      );
-      expect(plan.toCreate, isEmpty);
-      expect(plan.ensured, {secp.id});
-    });
+    test(
+      'an already-ensured wallet is skipped even when the list looks partial',
+      () {
+        // Simulates a transiently-partial accounts.list(): the default row is
+        // absent, but the persisted flag prevents a duplicate-creating backfill.
+        final plan = LibwalletBackend.planDefaultAccounts(
+          accounts: const [],
+          walletsById: {secp.id: secp},
+          alreadyEnsured: {secp.id},
+        );
+        expect(plan.toCreate, isEmpty);
+        expect(plan.ensured, {secp.id});
+      },
+    );
 
     test('a wallet whose curve has no default types is ignored', () {
       final unknown = _walletWithKeys([], id: 'x', curve: 'unknown');
@@ -258,6 +288,29 @@ void main() {
       );
       expect(plan.toCreate, isEmpty);
       expect(plan.ensured, isEmpty);
+    });
+  });
+
+  group('LibwalletBackend.passwordPublicKeyMatches', () {
+    test('accepts only the public key derived from the original password', () {
+      expect(
+        LibwalletBackend.passwordPublicKeyMatches(
+          'stored-public',
+          'stored-public',
+        ),
+        isTrue,
+      );
+      expect(
+        LibwalletBackend.passwordPublicKeyMatches(
+          'stored-public',
+          'other-public',
+        ),
+        isFalse,
+      );
+    });
+
+    test('never accepts an empty stored key', () {
+      expect(LibwalletBackend.passwordPublicKeyMatches('', ''), isFalse);
     });
   });
 }

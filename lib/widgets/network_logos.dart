@@ -60,3 +60,21 @@ String? networkLogoAssetForChain(String chain) {
       return null;
   }
 }
+
+/// Monochrome Tibane-orange network mark used on branded account surfaces.
+/// Bitcoin and Bitcoin Cash intentionally fall back to Flutter's Bitcoin
+/// glyph because their bundled artwork is full-color.
+String? orangeNetworkLogoAssetForChain(String chain) {
+  switch (chain) {
+    case 'solana':
+      return 'assets/icons/solana-sol-logo-orange-network.png';
+    case 'ethereum':
+      return 'assets/icons/ethereum-eth-logo-orange-network.png';
+    case 'dogecoin':
+      return 'assets/icons/dogecoin-doge-logo-orange-network.png';
+    case 'litecoin':
+      return 'assets/icons/litecoin-ltc-logo-orange-network.png';
+    default:
+      return null;
+  }
+}

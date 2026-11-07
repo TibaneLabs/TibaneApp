@@ -1,12 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:libwallet/libwallet.dart' show Asset, NetworkType, Transaction;
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants/solana_constants.dart';
+import '../../models/transaction_activity.dart';
 import '../../l10n/l10n.dart';
 import '../../services/balances_store.dart';
 import '../../services/jupiter_service.dart';
+import '../../services/portfolio_performance.dart';
+import '../../services/wallet/asset_network.dart';
 import '../../services/uk_compliance_service.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
@@ -17,7 +22,11 @@ import '../swap_screen.dart';
 import '../token_detail_screen.dart';
 import 'receive_screen.dart';
 import 'send_screen.dart';
+import 'transaction_details_screen.dart';
+import 'widgets/activity_token_amount.dart';
+import 'widgets/wallet_action_button.dart';
 import '../../utils/context_extensions.dart';
+import '../../widgets/wallet_error_display.dart';
 
 class WalletDashboard extends StatefulWidget {
   const WalletDashboard({super.key});
@@ -37,6 +46,11 @@ class _WalletDashboardState extends State<WalletDashboard> {
     final wallet = context.watch<WalletService>();
     final store = context.watch<BalancesStore>();
     final addr = wallet.publicKey ?? '';
+    final displayTokens = _displayTokens(
+      wallet,
+      store.holdings,
+      nativeSolHolding: store.nativeSolHolding,
+    );
 
     return RefreshIndicator(
       // Pull-to-refresh: the store forces fresh balances + on-chain SPL
@@ -46,48 +60,97 @@ class _WalletDashboardState extends State<WalletDashboard> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Total portfolio balance (SOL fiat from libwallet + sum of
-          // every on-chain SPL holding's USD value) on top, with the
-          // native SOL amount underneath as a secondary line.
+          // Total portfolio balance from the current native position and
+          // non-native token holdings.
           Center(
             child: Builder(
               builder: (context) {
-                final solFiat = wallet.assets
-                    .where((a) => a.isNative)
-                    .fold<double>(
-                      0,
-                      (sum, a) => sum + (a.fiatAmount?.toDouble() ?? 0),
-                    );
+                final nativeAssets = wallet.assets
+                    .where(
+                      (asset) =>
+                          asset.isNative &&
+                          wallet.libwallet.currentNetwork != null &&
+                          assetBelongsToNetwork(
+                            asset,
+                            wallet.libwallet.currentNetwork!,
+                          ),
+                    )
+                    .toList();
+                final libwalletNativeFiat = nativeAssets.fold<double>(
+                  0,
+                  (sum, a) => sum + (a.fiatAmount?.toDouble() ?? 0),
+                );
+                final nativeSol = store.nativeSolHolding;
+                final nativeHolding = displayTokens.firstOrNull;
+                final nativeFiat =
+                    nativeHolding?.valueUsd ??
+                    (wallet.libwallet.currentNetwork?.type == NetworkType.solana
+                        ? nativeSol?.valueUsd
+                        : null) ??
+                    libwalletNativeFiat;
+                final nativeFiatUnknown =
+                    nativeHolding != null &&
+                    nativeHolding.uiBalance > 0 &&
+                    nativeHolding.valueUsd == null;
                 // Sum every non-native displayed token's USD value. On
                 // Solana these are the Jupiter holdings; on EVM/BTC they
                 // are the libwallet asset rows — keeping the headline in
                 // step with the token list on every chain.
-                final tokensFiat = _displayTokens(wallet, store.holdings)
+                final tokensFiat = displayTokens
                     .where((h) => !h.mint.endsWith('.NATIVE'))
                     .fold<double>(0, (sum, h) => sum + (h.valueUsd ?? 0));
-                final totalUsd = solFiat + tokensFiat;
+                final totalUsd = nativeFiat + tokensFiat;
+                final performance = nativeFiatUnknown
+                    ? null
+                    : calculatePortfolioPerformance24h([
+                        if (nativeHolding != null)
+                          PortfolioPosition24h(
+                            currentValueUsd: nativeFiat,
+                            percentChange24h:
+                                nativeHolding.priceChange24h ??
+                                nativeAssets
+                                    .firstOrNull
+                                    ?.fiatQuote
+                                    ?.percentChange24h,
+                          ),
+                        for (final token in displayTokens)
+                          if (!token.mint.endsWith('.NATIVE'))
+                            PortfolioPosition24h(
+                              currentValueUsd: token.valueUsd ?? 0,
+                              percentChange24h: token.priceChange24h,
+                            ),
+                      ]);
                 // Express the dollar total in SOL when we have enough
                 // signal to compute the SOL price (native fiat ÷ native
                 // ui-balance). Falls back to silence on non-Solana
                 // networks or when balances haven't loaded yet rather
                 // than printing a misleading 0.
-                final solUi = wallet.solBalance.toDouble() / 1e9;
-                final solPriceUsd = (solFiat > 0 && solUi > 0)
-                    ? solFiat / solUi
+                final solUi =
+                    nativeSol?.uiBalance ?? wallet.solBalance.toDouble() / 1e9;
+                final solPriceUsd = (nativeFiat > 0 && solUi > 0)
+                    ? nativeFiat / solUi
                     : null;
                 final totalInSol = solPriceUsd != null
                     ? totalUsd / solPriceUsd
                     : null;
+                final totalStyle = context.textTheme.displaySmall;
                 return Column(
                   children: [
-                    Text(
-                      '\$${totalUsd.toStringAsFixed(2)}',
-                      style: context.textTheme.displaySmall?.copyWith(
-                        fontWeight: FontWeight.w700,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        nativeFiatUnknown
+                            ? '--'
+                            : '\$${totalUsd.toStringAsFixed(2)}',
+                        key: const Key('wallet-total-balance'),
+                        style: totalStyle?.copyWith(
+                          fontSize: (totalStyle.fontSize ?? 36) * 1.38 * 1.15,
+                          fontWeight: FontWeight.w700,
+                          height: 1,
+                        ),
                       ),
                     ),
                     if (totalInSol != null) ...[
-                      const SizedBox(height: 6),
                       Text(
                         '${totalInSol.toStringAsFixed(4)} SOL',
                         style: monoStyle(
@@ -95,6 +158,10 @@ class _WalletDashboardState extends State<WalletDashboard> {
                           color: TibaneColors.textMuted,
                         ),
                       ),
+                    ],
+                    if (performance != null) ...[
+                      const SizedBox(height: 8),
+                      _PortfolioPerformanceLine(performance: performance),
                     ],
                   ],
                 );
@@ -109,7 +176,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
               final isUk = context.watch<UkComplianceService>().isUk;
               return Row(
                 children: [
-                  _ActionButton(
+                  WalletActionButton(
                     icon: Icons.arrow_downward,
                     label: l10n.receiveTitle,
                     onTap: () => Navigator.push(
@@ -118,7 +185,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  _ActionButton(
+                  WalletActionButton(
                     icon: Icons.arrow_upward,
                     label: l10n.dashboardSend,
                     onTap: () => Navigator.push(
@@ -128,7 +195,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                   ),
                   if (!isUk) ...[
                     const SizedBox(width: 12),
-                    _ActionButton(
+                    WalletActionButton(
                       icon: Icons.swap_horiz,
                       label: l10n.swapButton,
                       onTap: () => _openSwap(context),
@@ -145,11 +212,14 @@ class _WalletDashboardState extends State<WalletDashboard> {
           _TabSwitcher(
             selected: _selectedTab,
             labels: [l10n.dashboardTabTokens, l10n.dashboardTabActivity],
-            onChanged: (i) => setState(() => _selectedTab = i),
+            onChanged: (i) {
+              setState(() => _selectedTab = i);
+              if (i == 1) unawaited(store.refreshHistory());
+            },
           ),
           const SizedBox(height: 12),
           if (_selectedTab == 0) ...[
-            if (_displayTokens(wallet, store.holdings).isEmpty)
+            if (displayTokens.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Center(
@@ -160,7 +230,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 ),
               )
             else
-              ..._displayTokens(wallet, store.holdings).map((h) {
+              ...displayTokens.map((h) {
                 final isNativeRow = h.mint.endsWith('.NATIVE');
                 final net = wallet.libwallet.currentNetwork;
                 final isSolanaNative =
@@ -173,14 +243,30 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 final assetPath = isNativeRow && !isSolanaNative && net != null
                     ? networkLogoAsset(net)
                     : null;
-                // Resolve the on-chain mint to push to TokenDetailScreen.
-                // Native SOL opens a compact SOL detail page through wSOL's
-                // mint; native rows for other chains stay non-tappable.
-                final detailMint = isSolanaNative
-                    ? wsolMint
-                    : isNativeRow
-                    ? null
-                    : h.mint;
+                final isEvmNative = isNativeRow && net?.type == NetworkType.evm;
+                VoidCallback? openDetails;
+                if (isSolanaNative) {
+                  openDetails = () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const TokenDetailScreen(mint: wsolMint),
+                    ),
+                  );
+                } else if (isEvmNative) {
+                  openDetails = () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => TokenDetailScreen.native(
+                        holding: h,
+                        nativeAssetPath: assetPath,
+                      ),
+                    ),
+                  );
+                } else if (!isNativeRow) {
+                  openDetails = () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => TokenDetailScreen(mint: h.mint),
+                    ),
+                  );
+                }
                 // The mint we hand to TokenIcon: for Solana-native, use
                 // wsolMint so the bundled sol.png wins; otherwise pass
                 // the row's mint untouched (synthetic `.NATIVE` sentinel
@@ -190,14 +276,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                   padding: const EdgeInsets.only(bottom: 6),
                   child: TibaneCard(
                     padding: const EdgeInsets.all(12),
-                    onTap: detailMint == null
-                        ? null
-                        : () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  TokenDetailScreen(mint: detailMint),
-                            ),
-                          ),
+                    onTap: openDetails,
                     child: Row(
                       children: [
                         TokenIcon(
@@ -205,7 +284,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                           assetPath: assetPath,
                           mint: iconMint,
                           symbol: h.symbol.isNotEmpty ? h.symbol : h.name,
-                          size: 32,
+                          size: 44.85,
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -216,7 +295,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                                 h.symbol.isNotEmpty ? h.symbol : h.name,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 14,
+                                  fontSize: 16.1,
                                   color: TibaneColors.text,
                                 ),
                               ),
@@ -224,7 +303,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                                 Text(
                                   h.name,
                                   style: monoStyle(
-                                    fontSize: 11,
+                                    fontSize: 13.2,
                                     color: TibaneColors.textMuted,
                                   ),
                                 ),
@@ -240,13 +319,13 @@ class _WalletDashboardState extends State<WalletDashboard> {
                                 h.decimals,
                                 displayDecimals: 4,
                               ),
-                              style: monoStyle(fontSize: 13),
+                              style: monoStyle(fontSize: 18.4),
                             ),
                             if (h.valueUsd != null)
                               Text(
                                 '\$${h.valueUsd!.toStringAsFixed(2)}',
                                 style: monoStyle(
-                                  fontSize: 11,
+                                  fontSize: 13.2,
                                   color: TibaneColors.textMuted,
                                 ),
                               ),
@@ -258,6 +337,16 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 );
               }),
           ] else ...[
+            if (wallet.libwallet.currentNetwork?.type == NetworkType.bitcoin &&
+                (wallet.libwallet.currentNetwork?.txHistoryProvider.isEmpty ??
+                    true))
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  l10n.activityHistoryLimited,
+                  style: const TextStyle(color: TibaneColors.textMuted),
+                ),
+              ),
             if (store.loadingTxs)
               const Center(
                 child: Padding(
@@ -283,6 +372,25 @@ class _WalletDashboardState extends State<WalletDashboard> {
                   tokenInfo: _resolveTokenInfo(tx, wallet, store.holdings),
                 ),
               ),
+            if (store.historyHasMore)
+              TextButton.icon(
+                icon: store.loadingMoreHistory
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.expand_more),
+                label: Text(l10n.activityLoadMore),
+                onPressed: store.loadingMoreHistory
+                    ? null
+                    : () async {
+                        try {
+                          await store.loadMoreHistory();
+                        } catch (error) {
+                          if (context.mounted) showWalletError(context, error);
+                        }
+                      },
+              ),
           ],
         ],
       ),
@@ -299,13 +407,17 @@ class _WalletDashboardState extends State<WalletDashboard> {
   /// `Asset` in `_assets` when it has loaded; otherwise the row falls
   /// back to the network's `currencySymbol` and a zero balance so the
   /// list isn't empty during the brief window before assets arrive.
-  /// `_holdings` is built with `excludeMint: wsolMint`, so the SPL
-  /// path never duplicates SOL.
+  /// [BalancesStore] keeps its native SOL quote separate, so the SPL path
+  /// never duplicates SOL.
   List<TokenHolding> _displayTokens(
     WalletService wallet,
-    List<TokenHolding> holdings,
-  ) {
-    final native = _nativeRowForCurrentNetwork(wallet);
+    List<TokenHolding> holdings, {
+    TokenHolding? nativeSolHolding,
+  }) {
+    final native = _nativeRowForCurrentNetwork(
+      wallet,
+      nativeSolHolding: nativeSolHolding,
+    );
     final net = wallet.libwallet.currentNetwork;
     final isSolana = (net?.type ?? NetworkType.solana) == NetworkType.solana;
 
@@ -322,7 +434,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
     // network; the native asset is already rendered by `native`.
     final tokens = <TokenHolding>[];
     for (final a in wallet.assets) {
-      if (net != null && a.network != net.id) continue;
+      if (net != null && !assetBelongsToNetwork(a, net)) continue;
       if (a.isNative) continue;
       tokens.add(_assetToHolding(a));
     }
@@ -355,23 +467,69 @@ class _WalletDashboardState extends State<WalletDashboard> {
       uiBalance: uiBalance,
       priceUsd: priceUsd,
       valueUsd: (valueUsd != null && valueUsd > 0) ? valueUsd : null,
+      priceChange24h: a.fiatQuote?.percentChange24h,
     );
   }
 
-  TokenHolding? _nativeRowForCurrentNetwork(WalletService wallet) {
+  TokenHolding? _nativeRowForCurrentNetwork(
+    WalletService wallet, {
+    TokenHolding? nativeSolHolding,
+  }) {
     final net = wallet.libwallet.currentNetwork;
     if (net == null) return null;
     final mintKey = '${net.type.name}.${net.chainId}.NATIVE';
+
+    if (net.type == NetworkType.solana && nativeSolHolding != null) {
+      return TokenHolding(
+        mint: mintKey,
+        symbol: 'SOL',
+        name: 'Solana',
+        imageUrl: null,
+        balance: nativeSolHolding.balance,
+        decimals: 9,
+        uiBalance: nativeSolHolding.uiBalance,
+        priceUsd: nativeSolHolding.priceUsd,
+        valueUsd: nativeSolHolding.valueUsd,
+        priceChange24h: nativeSolHolding.priceChange24h,
+      );
+    }
 
     // Asset rows are what libwallet's getAssets returns; the native one
     // is whichever entry has the .NATIVE suffix on its key and matches
     // the active network. There is at most one per (account, network).
     Asset? nativeAsset;
     for (final a in wallet.assets) {
-      if (a.isNative && a.network == net.id) {
+      if (a.isNative && assetBelongsToNetwork(a, net)) {
         nativeAsset = a;
         break;
       }
+    }
+
+    final ethWei = net.type == NetworkType.evm && net.chainId == '1'
+        ? wallet.ethBalanceWei
+        : null;
+    if (ethWei != null) {
+      final uiBalance = ethWei.toDouble() / 1e18;
+      final assetUi = nativeAsset?.amount.toDouble() ?? 0;
+      final fiatAmount = nativeAsset?.fiatAmount?.toDouble();
+      final libwalletPrice =
+          nativeAsset?.fiatQuote?.price ??
+          (assetUi > 0 && fiatAmount != null ? fiatAmount / assetUi : null);
+      final priceUsd = libwalletPrice != null && libwalletPrice > 0
+          ? libwalletPrice
+          : wallet.ethPriceUsd;
+      return TokenHolding(
+        mint: mintKey,
+        symbol: 'ETH',
+        name: net.name,
+        imageUrl: null,
+        balance: ethWei,
+        decimals: 18,
+        uiBalance: uiBalance,
+        priceUsd: priceUsd,
+        valueUsd: priceUsd == null ? null : uiBalance * priceUsd,
+        priceChange24h: nativeAsset?.fiatQuote?.percentChange24h,
+      );
     }
 
     if (nativeAsset != null) {
@@ -381,10 +539,22 @@ class _WalletDashboardState extends State<WalletDashboard> {
       final uiBalance = decimals > 0
           ? balance.toDouble() / divisor.toDouble()
           : balance.toDouble();
-      final valueUsd = nativeAsset.fiatAmount?.toDouble();
-      final priceUsd = (uiBalance > 0 && valueUsd != null && valueUsd > 0)
-          ? valueUsd / uiBalance
+      final libwalletValueUsd = nativeAsset.fiatAmount?.toDouble();
+      final libwalletPriceUsd = nativeAsset.fiatQuote?.price;
+      final priceUsd = libwalletPriceUsd != null && libwalletPriceUsd > 0
+          ? libwalletPriceUsd
+          : uiBalance > 0 && libwalletValueUsd != null && libwalletValueUsd > 0
+          ? libwalletValueUsd / uiBalance
+          : net.type == NetworkType.bitcoin
+          ? wallet.bitcoinFamilyPriceUsd
           : null;
+      final valueUsd = uiBalance == 0
+          ? 0.0
+          : libwalletValueUsd != null && libwalletValueUsd > 0
+          ? libwalletValueUsd
+          : priceUsd == null
+          ? null
+          : uiBalance * priceUsd;
       return TokenHolding(
         mint: mintKey,
         symbol: nativeAsset.symbol.isNotEmpty
@@ -396,7 +566,8 @@ class _WalletDashboardState extends State<WalletDashboard> {
         decimals: decimals,
         uiBalance: uiBalance,
         priceUsd: priceUsd,
-        valueUsd: (valueUsd != null && valueUsd > 0) ? valueUsd : null,
+        valueUsd: valueUsd,
+        priceChange24h: nativeAsset.fiatQuote?.percentChange24h,
       );
     }
 
@@ -516,62 +687,69 @@ class _WalletDashboardState extends State<WalletDashboard> {
   }
 }
 
-class _ActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
+class _PortfolioPerformanceLine extends StatelessWidget {
+  final PortfolioPerformance24h performance;
 
-  const _ActionButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
+  const _PortfolioPerformanceLine({required this.performance});
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Material(
-        color: TibaneColors.card,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: TibaneColors.border),
-            ),
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: TibaneColors.orange.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, color: TibaneColors.orange, size: 26.5),
+    final positive = performance.amountUsd >= 0;
+    final color = positive ? TibaneColors.success : TibaneColors.error;
+    final percent = _signedNumber(performance.percent, suffix: '%');
+    final amount = NumberFormat.currency(
+      locale: 'en_US',
+      symbol: r'$',
+      decimalDigits: 2,
+    ).format(performance.amountUsd.abs());
+    final signedAmount = '${positive ? '+' : '-'}$amount';
+
+    return Semantics(
+      label: context.l10n.dashboardPnl24hSemantics(percent, signedAmount),
+      child: Transform.translate(
+        offset: const Offset(-3, 0),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            key: const Key('wallet-pnl-content'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: color.withValues(alpha: 0.35)),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: Color.lerp(
-                      TibaneColors.textMuted,
-                      TibaneColors.text,
-                      0.10,
-                    ),
-                    fontSize: 16.4,
-                    fontWeight: FontWeight.w500,
-                  ),
+                child: Text(
+                  percent,
+                  style: monoStyle(
+                    fontSize: 11,
+                    color: color,
+                  ).copyWith(fontWeight: FontWeight.w800),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                amount,
+                style: monoStyle(
+                  fontSize: 12,
+                  color: color,
+                ).copyWith(fontWeight: FontWeight.w600),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+}
+
+String _signedNumber(double value, {String suffix = ''}) {
+  final sign = value >= 0 ? '+' : '-';
+  final absolute = value.abs();
+  final decimals = absolute >= 10 ? 1 : 2;
+  return '$sign${absolute.toStringAsFixed(decimals)}$suffix';
 }
 
 class _TabSwitcher extends StatelessWidget {
@@ -588,6 +766,7 @@ class _TabSwitcher extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      key: const Key('wallet-activity-tabs'),
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: TibaneColors.card,
@@ -606,15 +785,28 @@ class _TabSwitcher extends StatelessWidget {
                   onTap: () => onChanged(i),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Text(
-                      labels[i],
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: i == selected
-                            ? TibaneColors.black
-                            : TibaneColors.textMuted,
+                    child: SizedBox(
+                      height:
+                          MediaQuery.textScalerOf(context).scale(13) *
+                          (DefaultTextStyle.of(context).style.height ?? 1),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          labels[i],
+                          maxLines: 1,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13 * 1.2,
+                            height:
+                                (DefaultTextStyle.of(context).style.height ??
+                                    1) /
+                                1.2,
+                            color: i == selected
+                                ? TibaneColors.black
+                                : TibaneColors.textMuted,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -656,21 +848,46 @@ class _TransactionRow extends StatelessWidget {
     required this.tokenInfo,
   });
 
-  bool get _isSend => tx.from == myAddr;
+  bool get _isSend => tx.asset.startsWith('evm.')
+      ? tx.from.toLowerCase() == myAddr.toLowerCase()
+      : tx.from == myAddr;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final counterparty = _isSend ? tx.to : tx.from;
+    final activity = context.watch<BalancesStore>().activityFor(tx);
+    final isSolana = tx.asset.startsWith('solana.');
+    final kind =
+        activity?.kind ??
+        (isSolana
+            ? ActivityKind.transaction
+            : _isSend
+            ? ActivityKind.sent
+            : ActivityKind.received);
+    final label = activity?.failed == true
+        ? l10n.activityFailed
+        : switch (kind) {
+            ActivityKind.swap => l10n.swapButton,
+            ActivityKind.sent => l10n.dashboardTxSent,
+            ActivityKind.received => l10n.dashboardTxReceived,
+            ActivityKind.transaction => l10n.labelTransaction,
+          };
+    final counterparty =
+        kind == ActivityKind.swap || kind == ActivityKind.transaction
+        ? tx.hash ?? tx.id
+        : kind == ActivityKind.sent
+        ? activity?.recipient ?? tx.to
+        : activity?.sender ?? tx.from;
     final amt = tx.amount;
     final amountStr = amt != null && !amt.isMax
-        ? formatAmountTrimmed(amt.value, amt.exp)
+        ? formatActivityAmount(amt.value.abs(), amt.exp, maxDecimals: 4)
         : '';
-    final fiatStr = tx.fiatAmount != null
+    final fiatStr = !isSolana && tx.fiatAmount != null
         ? '\$${tx.fiatAmount!.toDouble().toStringAsFixed(2)}'
         : null;
-    final timeStr = tx.created != null
-        ? '${tx.created!.month}/${tx.created!.day} ${tx.created!.hour}:${tx.created!.minute.toString().padLeft(2, '0')}'
+    final created = (activity?.created ?? tx.created)?.toLocal();
+    final timeStr = created != null
+        ? '${created.month}/${created.day} ${created.hour}:${created.minute.toString().padLeft(2, '0')}'
         : '';
     final amountColor = _isSend ? TibaneColors.error : TibaneColors.cyan;
     final amountLine = StringBuffer(_isSend ? '-' : '+')..write(amountStr);
@@ -683,49 +900,81 @@ class _TransactionRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: TibaneCard(
+        key: Key('activity-transaction-${tx.id}'),
         padding: const EdgeInsets.all(12),
-        onTap: tx.url != null && tx.url!.isNotEmpty
-            ? () => launchUrl(Uri.parse(tx.url!))
-            : null,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => TransactionDetailsScreen(
+              transaction: tx,
+              owner: myAddr,
+              network: context.read<WalletService>().libwallet.currentNetwork,
+            ),
+          ),
+        ),
         child: Row(
           children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                TokenIcon(
-                  imageUrl: tokenInfo.imageUrl,
-                  mint: tokenInfo.mint ?? '',
-                  symbol: tokenInfo.symbol,
-                  size: 32,
+            if (kind == ActivityKind.swap)
+              Container(
+                key: Key('activity-swap-icon-${tx.id}'),
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: TibaneColors.orange.withValues(alpha: 0.1),
                 ),
-                Positioned(
-                  right: -2,
-                  bottom: -2,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: TibaneColors.card,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      _isSend ? Icons.arrow_upward : Icons.arrow_downward,
-                      size: 12,
-                      color: amountColor,
+                child: const Icon(
+                  Icons.swap_horiz,
+                  size: 24,
+                  color: TibaneColors.orange,
+                ),
+              )
+            else if (kind == ActivityKind.transaction)
+              Icon(
+                Icons.receipt_long_outlined,
+                size: 32,
+                color: TibaneColors.orange,
+              )
+            else
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  TokenIcon(
+                    imageUrl: tokenInfo.imageUrl,
+                    mint: tokenInfo.mint ?? '',
+                    symbol: tokenInfo.symbol,
+                    size: 32,
+                  ),
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: TibaneColors.card,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        kind == ActivityKind.sent
+                            ? Icons.arrow_upward
+                            : Icons.arrow_downward,
+                        size: 12,
+                        color: amountColor,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
             const SizedBox(width: 12),
             Expanded(
+              flex: 2,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _isSend ? l10n.dashboardTxSent : l10n.dashboardTxReceived,
+                    label,
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 13,
+                      fontSize: 13 * 1.15,
                     ),
                   ),
                   Text(
@@ -738,31 +987,44 @@ class _TransactionRow extends StatelessWidget {
                 ],
               ),
             ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  amountLine.toString(),
-                  style: TextStyle(
-                    color: amountColor,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-                if (fiatStr != null)
-                  Text(
-                    fiatStr,
-                    style: monoStyle(
-                      fontSize: 11,
-                      color: TibaneColors.textMuted,
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (activity != null)
+                    for (final change in [
+                      ...activity.changes.where((c) => c.amount.isNegative),
+                      ...activity.changes.where((c) => !c.amount.isNegative),
+                    ])
+                      ActivityTokenAmount(change: change, compact: true)
+                  else if (!isSolana)
+                    Text(
+                      amountLine.toString(),
+                      style: TextStyle(
+                        color: amountColor,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
                     ),
-                  ),
-                if (timeStr.isNotEmpty)
-                  Text(
-                    timeStr,
-                    style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
-                  ),
-              ],
+                  if (fiatStr != null)
+                    Text(
+                      fiatStr,
+                      style: monoStyle(
+                        fontSize: 11,
+                        color: TibaneColors.textMuted,
+                      ),
+                    ),
+                  if (timeStr.isNotEmpty)
+                    Text(
+                      timeStr,
+                      style: monoStyle(
+                        fontSize: 10,
+                        color: TibaneColors.textDim,
+                      ),
+                    ),
+                ],
+              ),
             ),
           ],
         ),

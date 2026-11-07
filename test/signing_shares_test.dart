@@ -9,7 +9,8 @@ import 'package:tibaneapp/services/wallet/signing.dart';
 WalletKey _key(String type) =>
     WalletKey(id: 'id-$type', wallet: 'w1', type: type, key: 'k-$type', gen: 0);
 
-Wallet _wallet({required int threshold, required List<String> keyTypes}) => Wallet(
+Wallet _wallet({required int threshold, required List<String> keyTypes}) =>
+    Wallet(
       id: 'w1',
       name: 'Test',
       curve: 'ed25519',
@@ -23,6 +24,49 @@ Wallet _wallet({required int threshold, required List<String> keyTypes}) => Wall
     );
 
 void main() {
+  group('canSignWithoutDeviceShare', () {
+    test('D5 wallets already have a password signing quorum', () {
+      expect(
+        canSignWithoutDeviceShare(
+          _wallet(
+            threshold: 1,
+            keyTypes: ['Password', 'Password', 'RemoteKey'],
+          ),
+        ),
+        isTrue,
+      );
+    });
+    test('StoreKey-based MPC still needs device setup after restore', () {
+      expect(
+        canSignWithoutDeviceShare(
+          _wallet(
+            threshold: 1,
+            keyTypes: ['StoreKey', 'RemoteKey', 'Password'],
+          ),
+        ),
+        isFalse,
+      );
+    });
+    test('a private-key import still requires its stored device key', () {
+      expect(
+        canSignWithoutDeviceShare(
+          _wallet(threshold: 0, keyTypes: ['StoreKey']),
+        ),
+        isFalse,
+      );
+    });
+    test('counts password shares against the actual threshold', () {
+      expect(
+        canSignWithoutDeviceShare(
+          _wallet(
+            threshold: 2,
+            keyTypes: ['Password', 'Password', 'RemoteKey'],
+          ),
+        ),
+        isFalse,
+      );
+    });
+  });
   group('requiredSigningShares', () {
     test('is threshold + 1 (S1: t+1 parties to sign)', () {
       expect(requiredSigningShares(1), 2); // standard 2-of-3
@@ -44,8 +88,16 @@ void main() {
   });
 
   group('canAssembleThreshold', () {
+    test('single StoreKey import, threshold 0 → signable', () {
+      final w = _wallet(threshold: 0, keyTypes: ['StoreKey']);
+      expect(canAssembleThreshold(w), isTrue);
+    });
+
     test('standard StoreKey+RemoteKey+Password, threshold 1 → signable', () {
-      final w = _wallet(threshold: 1, keyTypes: ['StoreKey', 'RemoteKey', 'Password']);
+      final w = _wallet(
+        threshold: 1,
+        keyTypes: ['StoreKey', 'RemoteKey', 'Password'],
+      );
       expect(canAssembleThreshold(w), isTrue); // 2 collectible >= 2 required
     });
 
@@ -55,10 +107,19 @@ void main() {
       expect(canAssembleThreshold(w), isFalse);
     });
 
-    test('multi-password committee (D5), threshold 1 → signable from password', () {
-      final w = _wallet(threshold: 1, keyTypes: ['Password', 'Password', 'RemoteKey']);
-      expect(canAssembleThreshold(w), isTrue); // 2 Password shares >= 2 required
-    });
+    test(
+      'multi-password committee (D5), threshold 1 → signable from password',
+      () {
+        final w = _wallet(
+          threshold: 1,
+          keyTypes: ['Password', 'Password', 'RemoteKey'],
+        );
+        expect(
+          canAssembleThreshold(w),
+          isTrue,
+        ); // 2 Password shares >= 2 required
+      },
+    );
   });
 
   group('signSheetReady', () {
@@ -131,14 +192,17 @@ void main() {
       expect(creds.storeKeyPriv, 'new-sk');
     });
 
-    test('falls back to the cached session when params are null (old path)', () {
-      final creds = effectiveManagementCreds(
-        cachedPassword: 'cached-pw',
-        cachedStoreKeyPriv: 'cached-sk',
-      );
-      expect(creds.password, 'cached-pw');
-      expect(creds.storeKeyPriv, 'cached-sk');
-    });
+    test(
+      'falls back to the cached session when params are null (old path)',
+      () {
+        final creds = effectiveManagementCreds(
+          cachedPassword: 'cached-pw',
+          cachedStoreKeyPriv: 'cached-sk',
+        );
+        expect(creds.password, 'cached-pw');
+        expect(creds.storeKeyPriv, 'cached-sk');
+      },
+    );
 
     test('resolves each field independently', () {
       // Password from the sheet, StoreKey from the cache (and vice versa).
@@ -163,14 +227,17 @@ void main() {
       expect(creds.storeKeyPriv, isNull);
     });
 
-    test('password-only wallet: password resolves, storeKeyPriv stays null', () {
-      final creds = effectiveManagementCreds(
-        paramPassword: 'pw',
-        // No StoreKey anywhere — D5 committee.
-      );
-      expect(creds.password, 'pw');
-      expect(creds.storeKeyPriv, isNull);
-    });
+    test(
+      'password-only wallet: password resolves, storeKeyPriv stays null',
+      () {
+        final creds = effectiveManagementCreds(
+          paramPassword: 'pw',
+          // No StoreKey anywhere — D5 committee.
+        );
+        expect(creds.password, 'pw');
+        expect(creds.storeKeyPriv, isNull);
+      },
+    );
   });
 
   group('buildManagementReshareCommittee (6D-2 reshare recipe)', () {
@@ -188,25 +255,34 @@ void main() {
       newPassword: 'newpw',
     );
 
-    test('OLD is exactly the two held shares (StoreKey + Password, no RemoteKey)',
-        () {
-      expect(c.oldKeys.length, 2);
-      expect(c.oldKeys.map((k) => k.type), ['StoreKey', 'Password']);
-      expect(c.oldKeys.any((k) => k.type == 'RemoteKey'), isFalse);
-    });
+    test(
+      'OLD is exactly the two held shares (StoreKey + Password, no RemoteKey)',
+      () {
+        expect(c.oldKeys.length, 2);
+        expect(c.oldKeys.map((k) => k.type), ['StoreKey', 'Password']);
+        expect(c.oldKeys.any((k) => k.type == 'RemoteKey'), isFalse);
+      },
+    );
 
     test('OLD descriptors carry their WalletKey id (the missing-id bug)', () {
       expect(c.oldKeys[0].id, 'wkey-store');
       expect(c.oldKeys[1].id, 'wkey-pass');
     });
 
-    test('OLD StoreKey key is the device SECRET, Password key is the raw pw', () {
-      expect(c.oldKeys[0].key, 'device-secret-64b');
-      expect(c.oldKeys[1].key, 'oldpw');
-    });
+    test(
+      'OLD StoreKey key is the device SECRET, Password key is the raw pw',
+      () {
+        expect(c.oldKeys[0].key, 'device-secret-64b');
+        expect(c.oldKeys[1].key, 'oldpw');
+      },
+    );
 
     test('NEW is the full 3-share committee in order', () {
-      expect(c.newKeys.map((k) => k.type), ['StoreKey', 'RemoteKey', 'Password']);
+      expect(c.newKeys.map((k) => k.type), [
+        'StoreKey',
+        'RemoteKey',
+        'Password',
+      ]);
     });
 
     test('NEW StoreKey key is the PUBLIC; RemoteKey is the FRESH session', () {
@@ -218,22 +294,24 @@ void main() {
       expect(c.newKeys[2].key, 'newpw');
     });
 
-    test('rotation shape: fresh public in NEW, unchanged password both sides',
-        () {
-      final r = buildManagementReshareCommittee(
-        oldStoreKeyId: 'wkey-store',
-        storeSecret: 'old-secret',
-        oldPasswordKeyId: 'wkey-pass',
-        oldPassword: 'pw',
-        newStorePublic: 'FRESH-pub',
-        newRemoteKey: 'crws-fresh',
-        newPassword: 'pw', // rotate keeps the password
-      );
-      expect(r.oldKeys[0].key, 'old-secret'); // authorize with current secret
-      expect(r.newKeys[0].key, 'FRESH-pub'); // move to the fresh keypair
-      expect(r.newKeys[1].key, 'crws-fresh'); // fresh remote session
-      expect(r.oldKeys[1].key, 'pw');
-      expect(r.newKeys[2].key, 'pw');
-    });
+    test(
+      'rotation shape: fresh public in NEW, unchanged password both sides',
+      () {
+        final r = buildManagementReshareCommittee(
+          oldStoreKeyId: 'wkey-store',
+          storeSecret: 'old-secret',
+          oldPasswordKeyId: 'wkey-pass',
+          oldPassword: 'pw',
+          newStorePublic: 'FRESH-pub',
+          newRemoteKey: 'crws-fresh',
+          newPassword: 'pw', // rotate keeps the password
+        );
+        expect(r.oldKeys[0].key, 'old-secret'); // authorize with current secret
+        expect(r.newKeys[0].key, 'FRESH-pub'); // move to the fresh keypair
+        expect(r.newKeys[1].key, 'crws-fresh'); // fresh remote session
+        expect(r.oldKeys[1].key, 'pw');
+        expect(r.newKeys[2].key, 'pw');
+      },
+    );
   });
 }

@@ -3,6 +3,10 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:libwallet/libwallet.dart';
 
+import 'web3_origin.dart';
+import 'web3_request_coordinator.dart';
+import 'libwallet_request_bridge.dart';
+
 import '../../screens/walletconnect/wc_proposal_sheet.dart';
 import 'accounts_service.dart';
 import 'libwallet_backend.dart';
@@ -222,10 +226,24 @@ class WalletConnectBridge extends ChangeNotifier {
 
   Future<void> _handleRequest(WcSessionRequest r) async {
     final url = (r.peerMetadata['url'] as String?) ?? 'walletconnect:';
+    final origin = web3SecurityOrigin(url) ?? 'walletconnect://${r.topic}';
     try {
-      final result = await client.web3.request(
-        origin: url,
+      final context = rootNavigatorKey.currentContext;
+      if (context == null) throw StateError('Wallet approval UI unavailable');
+      final signingContext = backend.signingContext;
+      final approval = LibwalletRequestBridge(
+        client: client,
+        backend: backend,
+        contextProvider: () => context,
+        requestIsCurrent: (_) =>
+            context.mounted && backend.signingContext == signingContext,
+      );
+      final result = await Web3RequestCoordinator.forClient(client).request(
+        origin: origin,
         query: <String, dynamic>{'method': r.method, 'params': r.params},
+        isCurrent: () =>
+            context.mounted && backend.signingContext == signingContext,
+        approve: approval.handle,
       );
       await client.walletConnect.respond(r.topic, r.id, result);
     } catch (e) {

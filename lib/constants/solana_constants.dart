@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 const heliusRpcUrl = 'https://kristi-cykm4t-fast-mainnet.helius-rpc.com';
+const modchainSolanaRpcUrl = 'https://rpc.modchain.net/chain/solana/rpc';
 
 // Program IDs
 const chiefStakerProgramId = '3Ecf8gyRURyrBtGHS1XAVXyQik5PqgDch4VkxrH4ECcr';

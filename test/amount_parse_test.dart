@@ -6,6 +6,39 @@ import 'package:tibaneapp/utils/amount.dart';
 /// understand a dot, so `parseAmount` / `normalizeDecimal` must convert `,`
 /// to `.` (and trim) before the value is parsed or sent on-chain.
 void main() {
+  test(
+    'exact MAX formatting preserves integer zeros and arbitrary precision',
+    () {
+      expect(formatExactTokenAmount(BigInt.from(20000), 0), '20000');
+      expect(formatExactTokenAmount(BigInt.from(20000000000), 6), '20000');
+      expect(
+        formatExactTokenAmount(BigInt.parse('9007199254740993'), 9),
+        '9007199.254740993',
+      );
+      expect(formatExactTokenAmount(BigInt.zero, 9), '0');
+    },
+  );
+  group('parseTokenAmount', () {
+    test('preserves lamports and wei exactly', () {
+      expect(parseTokenAmount('0.003024662', 9), BigInt.from(3024662));
+      expect(parseTokenAmount('0.000000000000000001', 18), BigInt.one);
+      expect(
+        parseTokenAmount('99999999999.999999', 6),
+        BigInt.parse('99999999999999999'),
+      );
+    });
+    test('accepts comma and leading fractional separators', () {
+      expect(parseTokenAmount('0,003024662', 9), BigInt.from(3024662));
+      expect(parseTokenAmount(',5', 6), BigInt.from(500000));
+      expect(parseTokenAmount('1.', 0), BigInt.one);
+    });
+    test('rejects negative, malformed and excess nonzero precision', () {
+      for (final text in ['', '.', '-1', '1e3', 'NaN', '1.0000001']) {
+        expect(parseTokenAmount(text, 6), isNull);
+      }
+      expect(parseTokenAmount('1.0000000', 6), BigInt.from(1000000));
+    });
+  });
   group('normalizeDecimal', () {
     test('converts a comma decimal separator to a dot', () {
       expect(normalizeDecimal('1,5'), '1.5');

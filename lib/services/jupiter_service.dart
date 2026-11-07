@@ -57,6 +57,7 @@ class TokenHolding {
   final double uiBalance;
   final double? priceUsd;
   final double? valueUsd;
+  final double? priceChange24h;
 
   TokenHolding({
     required this.mint,
@@ -68,6 +69,17 @@ class TokenHolding {
     required this.uiBalance,
     this.priceUsd,
     this.valueUsd,
+    this.priceChange24h,
+  });
+}
+
+class TokenPriceQuote {
+  final double priceUsd;
+  final double? percentChange24h;
+
+  const TokenPriceQuote({
+    required this.priceUsd,
+    required this.percentChange24h,
   });
 }
 
@@ -112,6 +124,7 @@ class JupiterService {
   Future<List<TokenHolding>> fetchHoldings(
     String walletAddress, {
     String? excludeMint,
+    bool reserveSolForFees = true,
   }) async {
     final rpc = RpcService();
     try {
@@ -143,10 +156,13 @@ class JupiterService {
       }
 
       // Add native SOL (reserve ~0.01 for fees)
-      final usableSol = solBalance > BigInt.from(10000000)
-          ? solBalance - BigInt.from(10000000)
-          : BigInt.zero;
-      if (usableSol > BigInt.zero && excludeMint != wsolMint) {
+      final usableSol = reserveSolForFees
+          ? (solBalance > BigInt.from(10000000)
+                ? solBalance - BigInt.from(10000000)
+                : BigInt.zero)
+          : solBalance;
+      if (excludeMint != wsolMint &&
+          (usableSol > BigInt.zero || !reserveSolForFees)) {
         raw.add((
           mint: wsolMint,
           balance: usableSol,
@@ -160,19 +176,19 @@ class JupiterService {
       // Fetch metadata and prices in parallel
       final mints = raw.map((r) => r.mint).toList();
       final metaFuture = _fetchTokenMetadata(mints, rpc);
-      final priceFuture = fetchTokenPrices(mints);
+      final priceFuture = fetchTokenPriceQuotes(mints);
       final results2 = await Future.wait([metaFuture, priceFuture]);
 
       final metaMap =
           results2[0]
               as Map<String, ({String name, String symbol, String? image})>;
-      final priceMap = results2[1] as Map<String, double>;
+      final priceMap = results2[1] as Map<String, TokenPriceQuote>;
 
       final holdings = <TokenHolding>[];
       for (final r in raw) {
         final meta = metaMap[r.mint];
-        final price = priceMap[r.mint];
-        final valueUsd = price != null ? r.uiBalance * price : null;
+        final quote = priceMap[r.mint];
+        final valueUsd = quote != null ? r.uiBalance * quote.priceUsd : null;
 
         holdings.add(
           TokenHolding(
@@ -183,8 +199,9 @@ class JupiterService {
             balance: r.balance,
             decimals: r.decimals,
             uiBalance: r.uiBalance,
-            priceUsd: price,
+            priceUsd: quote?.priceUsd,
             valueUsd: valueUsd,
+            priceChange24h: quote?.percentChange24h,
           ),
         );
       }
@@ -232,7 +249,15 @@ class JupiterService {
 
   /// Fetch token prices from Jupiter Price API
   Future<Map<String, double>> fetchTokenPrices(List<String> mints) async {
-    final map = <String, double>{};
+    final quotes = await fetchTokenPriceQuotes(mints);
+    return quotes.map((mint, quote) => MapEntry(mint, quote.priceUsd));
+  }
+
+  /// Fetch current prices and 24-hour changes from Jupiter Price API.
+  Future<Map<String, TokenPriceQuote>> fetchTokenPriceQuotes(
+    List<String> mints,
+  ) async {
+    final map = <String, TokenPriceQuote>{};
     if (mints.isEmpty) return map;
 
     // Batch in groups of 50
@@ -246,19 +271,32 @@ class JupiterService {
         );
         if (response.statusCode != 200) continue;
         final json = jsonDecode(response.body) as Map<String, dynamic>;
-        for (final entry in json.entries) {
-          if (entry.value is Map<String, dynamic>) {
-            final price = (entry.value as Map<String, dynamic>)['usdPrice'];
-            if (price is num) {
-              map[entry.key] = price.toDouble();
-            }
-          }
-        }
+        map.addAll(parseTokenPriceQuotes(json));
       } catch (e) {
-        debugPrint('fetchTokenPrices error: $e');
+        debugPrint('fetchTokenPriceQuotes error: $e');
       }
     }
     return map;
+  }
+
+  @visibleForTesting
+  static Map<String, TokenPriceQuote> parseTokenPriceQuotes(
+    Map<String, dynamic> json,
+  ) {
+    final quotes = <String, TokenPriceQuote>{};
+    for (final entry in json.entries) {
+      if (entry.value is! Map<String, dynamic>) continue;
+      final data = entry.value as Map<String, dynamic>;
+      final price = data['usdPrice'];
+      final change = data['priceChange24h'];
+      if (price is num) {
+        quotes[entry.key] = TokenPriceQuote(
+          priceUsd: price.toDouble(),
+          percentChange24h: change is num ? change.toDouble() : null,
+        );
+      }
+    }
+    return quotes;
   }
 
   /// Fetch a quote from Jupiter Ultra API

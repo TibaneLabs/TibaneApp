@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../../services/wallet/auto_backup_store.dart';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -28,6 +29,8 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   bool _loading = true;
   bool _busy = false;
   String? _error;
+  List<AutoBackupEntry> _backups = [];
+  String? _selectedBackupId;
 
   @override
   void initState() {
@@ -37,15 +40,34 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
 
   Future<void> _refresh() async {
     if (mounted) setState(() => _loading = true);
-    final wallet = context.read<WalletService>();
-    final last = await wallet.libwallet.lastAutoBackup();
-    final body = await wallet.libwallet.readAutoBackup();
-    if (!mounted) return;
-    setState(() {
-      _lastBackup = last;
-      _backupBytes = body?.length;
-      _loading = false;
-    });
+    try {
+      final wallet = context.read<WalletService>();
+      final backups = await wallet.libwallet.listAutoBackups();
+      final active =
+          wallet.accountsService.walletGroups[wallet.libwallet.walletId] ??
+          wallet.libwallet.walletId;
+      final selected =
+          backups
+              .where((e) => e.id == (_selectedBackupId ?? active))
+              .firstOrNull ??
+          backups.firstOrNull;
+      final last = selected?.updated;
+      final body = selected?.bundle;
+      if (!mounted) return;
+      setState(() {
+        _lastBackup = last;
+        _backups = backups;
+        _selectedBackupId = selected?.id;
+        _backupBytes = body?.length;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = walletErrorMessageForContext(context, error);
+      });
+    }
   }
 
   Future<void> _backupNow() async {
@@ -63,21 +85,24 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     final ts = await wallet.libwallet.writeAutoBackup(pw);
     if (!mounted) return;
     if (ts == null) {
-      logError('[CloudBackup._backupNow] backup failed: ${wallet.libwallet.error}');
+      logError(
+        '[CloudBackup._backupNow] backup failed: ${wallet.libwallet.error}',
+      );
     }
     setState(() {
       _busy = false;
       if (ts == null) {
-        _error = WalletError.from(
+        _error = walletErrorMessageForContext(
+          context,
           wallet.libwallet.error ?? 'Backup failed',
-        ).message;
+        );
       }
     });
     await _refresh();
     if (!mounted) return;
     if (ts != null) {
       context.showSnackBar(
-        SnackBar(content: Text(context.l10n.cloudBackupWritten)),
+        SnackBar(content: Text(context.l10n.localBackupSaved)),
       );
     }
   }
@@ -85,13 +110,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
   Future<void> _restore() async {
     final l10n = context.l10n;
     final wallet = context.read<WalletService>();
-    if (wallet.libwallet.hasWallet) {
-      context.showSnackBar(
-        SnackBar(content: Text(l10n.cloudBackupDisconnectFirst)),
-      );
-      return;
-    }
-    final json = await wallet.libwallet.readAutoBackup();
+    final json = await wallet.libwallet.readAutoBackup(
+      backupId: _selectedBackupId,
+    );
     if (json == null) {
       if (!mounted) return;
       context.showSnackBar(
@@ -115,14 +136,17 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     );
     if (!mounted) return;
     if (!ok) {
-      logError('[CloudBackup._restore] restore failed: ${wallet.libwallet.error}');
+      logError(
+        '[CloudBackup._restore] restore failed: ${wallet.libwallet.error}',
+      );
     }
     setState(() {
       _busy = false;
       if (!ok) {
-        _error = WalletError.from(
+        _error = walletErrorMessageForContext(
+          context,
           wallet.libwallet.error ?? 'Restore failed',
-        ).message;
+        );
       }
     });
     if (ok) {
@@ -162,7 +186,13 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
       ),
     );
     if (confirmed != true) return;
-    await wallet.libwallet.clearAutoBackup();
+    try {
+      await wallet.libwallet.clearAutoBackup(backupId: _selectedBackupId);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = walletErrorMessageForContext(context, error));
+      return;
+    }
     if (!mounted) return;
     await _refresh();
   }
@@ -221,7 +251,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
     final hasWallet = wallet.libwallet.hasWallet;
     final hasBackup = _lastBackup != null;
     // Platform labels are proper nouns — not translated.
-    final platformLabel = Platform.isIOS ? 'iCloud Backup' : 'Google Auto Backup';
+    final platformLabel = Platform.isIOS
+        ? 'iCloud Backup'
+        : 'Google Auto Backup';
 
     return Scaffold(
       backgroundColor: TibaneColors.black,
@@ -283,9 +315,33 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                           ),
                         ),
                         const SizedBox(height: 6),
+                        if (_backups.isNotEmpty)
+                          DropdownButtonFormField<String>(
+                            key: ValueKey(_selectedBackupId),
+                            initialValue: _selectedBackupId,
+                            isExpanded: true,
+                            items: [
+                              for (final backup in _backups)
+                                DropdownMenuItem(
+                                  value: backup.id,
+                                  child: Text(
+                                    backup.name,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                            ],
+                            onChanged: _busy
+                                ? null
+                                : (id) {
+                                    setState(() => _selectedBackupId = id);
+                                    _refresh();
+                                  },
+                          ),
                         Text(
                           hasBackup
-                              ? l10n.cloudBackupLastBackup(_formatTime(_lastBackup!))
+                              ? l10n.cloudBackupLastBackup(
+                                  _formatTime(_lastBackup!),
+                                )
                               : l10n.cloudBackupNone,
                           style: const TextStyle(color: TibaneColors.text),
                         ),
@@ -313,7 +369,9 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                   FilledButton.icon(
                     onPressed: !hasWallet || _busy ? null : _backupNow,
                     icon: const Icon(Icons.cloud_upload_outlined),
-                    label: Text(_busy ? l10n.commonWorking : l10n.cloudBackupNowButton),
+                    label: Text(
+                      _busy ? l10n.commonWorking : l10n.cloudBackupNowButton,
+                    ),
                     style: FilledButton.styleFrom(
                       backgroundColor: TibaneColors.orange,
                       foregroundColor: TibaneColors.black,
@@ -330,23 +388,13 @@ class _CloudBackupScreenState extends State<CloudBackupScreen> {
                     ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
-                    onPressed: !hasBackup || hasWallet || _busy
-                        ? null
-                        : _restore,
+                    onPressed: !hasBackup || _busy ? null : _restore,
                     icon: const Icon(Icons.cloud_download_outlined),
                     label: Text(l10n.cloudBackupRestoreButton),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                   ),
-                  if (hasWallet)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        l10n.cloudBackupDisconnectHint,
-                        style: const TextStyle(color: TibaneColors.textMuted),
-                      ),
-                    ),
                   const SizedBox(height: 8),
                   TextButton.icon(
                     onPressed: !hasBackup || _busy ? null : _delete,

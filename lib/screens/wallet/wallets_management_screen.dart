@@ -4,12 +4,18 @@ import 'package:provider/provider.dart';
 
 import '../../l10n/l10n.dart';
 import '../../services/wallet/logical_wallet.dart';
+import '../../services/wallet/unified_account.dart';
+import '../../services/wallet/wallet_export_format.dart'
+    show isNormalMnemonicWallet;
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
+import '../../widgets/network_logos.dart';
+import '../../widgets/wallet_error_display.dart';
+import 'widgets/account_switcher_view_model.dart';
+import 'inapp_export_screen.dart';
 import 'device_transfer_receive_screen.dart';
-import 'inapp_create_screen.dart';
-import 'share_labels.dart';
+import 'wallet_welcome_screen.dart';
 import 'wallet_details_screen.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
@@ -95,7 +101,7 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
       logError('[WalletsManagement._load] load wallets error: $e');
       if (!mounted) return;
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loading = false;
       });
     }
@@ -104,7 +110,7 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
   Future<void> _addWallet() async {
     await Navigator.of(
       context,
-    ).push(MaterialPageRoute(builder: (_) => const InAppCreateScreen()));
+    ).push(MaterialPageRoute(builder: (_) => const WalletWelcomeScreen()));
     // Creating a wallet switches the active one (the listener refreshes), but
     // the create -> import -> seed-phrase path adds a wallet WITHOUT changing
     // the active one, so reload explicitly on return to be safe.
@@ -112,24 +118,18 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
   }
 
   Future<void> _openWalletGroup(LogicalWallet group) async {
-    if (group.wallets.length == 1) {
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => WalletDetailsScreen(walletId: group.wallets.first.id),
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WalletGroupDetailsScreen(
+          initialWallets: group.wallets,
+          activeWalletId:
+              (_wallet ?? context.read<WalletService>()).libwallet.walletId,
+          attachedWalletParents: (_wallet ?? context.read<WalletService>())
+              .accountsService
+              .attachedWalletParents,
         ),
-      );
-    } else {
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => WalletGroupDetailsScreen(
-            initialWallets: group.wallets,
-            activeWalletId:
-                (_wallet ?? context.read<WalletService>()).libwallet.walletId,
-            withShare: _withShare,
-          ),
-        ),
-      );
-    }
+      ),
+    );
     if (mounted) _scheduleLoad();
   }
 
@@ -186,7 +186,17 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
               );
             }
             final list = _wallets ?? const [];
-            final groups = buildLogicalWallets(list);
+            final groups = buildLogicalWallets(
+              list,
+              walletGroups: context
+                  .read<WalletService>()
+                  .accountsService
+                  .walletGroups,
+              attachedWalletParents: context
+                  .read<WalletService>()
+                  .accountsService
+                  .attachedWalletParents,
+            );
             if (groups.isEmpty) {
               return Center(
                 child: Padding(
@@ -222,7 +232,7 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
                 group: groups[i],
                 active: groups[i].wallets.any((w) => w.id == activeId),
                 usableHere: groups[i].wallets.every(
-                  (w) => _withShare.contains(w.id),
+                  (w) => isNormalMnemonicWallet(w) || _withShare.contains(w.id),
                 ),
                 onTap: () => _openWalletGroup(groups[i]),
               ),
@@ -237,13 +247,13 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
 class WalletGroupDetailsScreen extends StatefulWidget {
   final List<lw.Wallet> initialWallets;
   final String? activeWalletId;
-  final Set<String> withShare;
+  final Map<String, String> attachedWalletParents;
 
   const WalletGroupDetailsScreen({
     super.key,
     required this.initialWallets,
     required this.activeWalletId,
-    required this.withShare,
+    required this.attachedWalletParents,
   });
 
   @override
@@ -252,19 +262,98 @@ class WalletGroupDetailsScreen extends StatefulWidget {
 }
 
 class _WalletGroupDetailsScreenState extends State<WalletGroupDetailsScreen> {
-  late final List<lw.Wallet> _wallets = sortWalletsForDisplay(
-    widget.initialWallets,
-  );
+  List<UnifiedAccount> _accounts = const [];
+  bool _loading = true;
+  bool _busy = false;
 
-  Future<void> _openTechnicalWallet(lw.Wallet wallet) async {
-    final removed = await Navigator.of(context).push<bool>(
+  late List<lw.Wallet> _wallets = sortWalletsForDisplay(widget.initialWallets);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAccounts();
+  }
+
+  Future<void> _loadAccounts() async {
+    final service = context.read<WalletService>();
+    await service.refreshAccounts();
+    if (!mounted) return;
+    setState(() {
+      _accounts = service.accounts
+          .where((a) => a.isInApp && _wallets.any((w) => w.id == a.walletId))
+          .toList();
+      _loading = false;
+    });
+  }
+
+  Future<void> _rename() async {
+    final name = await showRenameWalletDialog(
+      context,
+      LogicalWallet(_wallets).displayName(context.l10n.walletsMgmtUnnamed),
+    );
+    if (name == null || !mounted) return;
+    final service = context.read<WalletService>();
+    setState(() => _busy = true);
+    try {
+      for (final wallet in _wallets) {
+        if (!await service.libwallet.renameWallet(wallet.id, name)) {
+          throw StateError(service.libwallet.error ?? 'Rename failed');
+        }
+      }
+    } catch (error) {
+      if (mounted) showWalletError(context, error);
+    } finally {
+      try {
+        final client = await service.libwallet.ensureClient();
+        final ids = _wallets.map((w) => w.id).toSet();
+        final updated = (await client.wallets.list())
+            .where((w) => ids.contains(w.id))
+            .toList();
+        if (mounted && updated.isNotEmpty) {
+          setState(() => _wallets = sortWalletsForDisplay(updated));
+        }
+        if (mounted) await _loadAccounts();
+      } catch (error) {
+        if (mounted) showWalletError(context, error);
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
+    }
+  }
+
+  Future<void> _remove() async {
+    final confirmed = await showRemoveWalletDialog(context);
+    if (confirmed != true || !mounted) return;
+    final service = context.read<WalletService>();
+    setState(() => _busy = true);
+    final ids = _wallets.map((wallet) => wallet.id).toSet();
+    final removed = await service.libwallet.removeWallets(ids);
+    await service.refreshAccounts();
+    if (!mounted) return;
+    if (removed) {
+      Navigator.of(context).pop(true);
+    } else {
+      setState(() => _busy = false);
+      showWalletError(
+        context,
+        service.libwallet.error ?? context.l10n.walletDetailsRemoveFailed,
+      );
+    }
+  }
+
+  Future<void> _backup() async {
+    await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => WalletDetailsScreen(walletId: wallet.id),
+        builder: (_) => InAppExportScreen(
+          walletIds: _wallets.map((w) => w.id).toSet(),
+          walletName: LogicalWallet(
+            _wallets,
+          ).displayName(context.l10n.walletsMgmtUnnamed),
+        ),
       ),
     );
-    if (!mounted) return;
-    if (removed == true) {
-      Navigator.of(context).pop(true);
+    if (mounted) {
+      await _loadAccounts();
     }
   }
 
@@ -272,59 +361,159 @@ class _WalletGroupDetailsScreenState extends State<WalletGroupDetailsScreen> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final group = LogicalWallet(_wallets);
-    final networks = _walletGroupNetworks(group, l10n);
+    final main =
+        _accounts
+            .where(
+              (a) =>
+                  a.isMainWalletContext &&
+                  !widget.attachedWalletParents.containsKey(a.walletId),
+            )
+            .toList()
+          ..sort(compareAccountsForSwitcher);
+    final added = _accounts.where((a) => !main.contains(a)).toList()
+      ..sort(compareAccountsForSwitcher);
+    final canBackup =
+        _wallets.isNotEmpty &&
+        _wallets.every((wallet) => wallet.keys.any((key) => key.isPassword));
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: Text(group.displayName(l10n.walletsMgmtUnnamed))),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            TibaneCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.all(20),
                 children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final network in networks)
-                        _WalletNetworkBadge(network: network, active: false),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
                   Text(
-                    networks.map((n) => n.label).join(' · '),
-                    style: context.textTheme.titleMedium,
+                    l10n.walletGroupContentsTitle,
+                    style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
+                  ),
+                  const SizedBox(height: 10),
+                  if (main.isNotEmpty)
+                    TibaneCard(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 4,
+                      ),
+                      child: Column(
+                        children: [
+                          for (final account in main)
+                            _WalletAccountRow(account: account),
+                        ],
+                      ),
+                    ),
+                  if (added.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      l10n.accountSwitcherAdditionalHeader,
+                      style: monoStyle(
+                        fontSize: 13.2,
+                        color: TibaneColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    for (final account in added) ...[
+                      TibaneCard(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 4,
+                        ),
+                        child: _WalletAccountRow(account: account),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ],
+                  const SizedBox(height: 20),
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _rename,
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: Text(l10n.walletDetailsRenameTitle),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    l10n.walletGroupBody,
-                    style: const TextStyle(
-                      color: TibaneColors.textMuted,
-                      height: 1.4,
+                  Tooltip(
+                    message: canBackup
+                        ? l10n.walletDetailsExportButton
+                        : l10n.walletGroupBackupUnavailable,
+                    child: OutlinedButton.icon(
+                      onPressed: _busy || !canBackup ? null : _backup,
+                      icon: const Icon(Icons.download_outlined, size: 18),
+                      label: Text(l10n.walletDetailsExportButton),
                     ),
+                  ),
+                  if (!canBackup)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        l10n.walletGroupBackupUnavailable,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: TibaneColors.orange,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _remove,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: TibaneColors.error,
+                    ),
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: Text(l10n.actionRemove),
                   ),
                 ],
               ),
+      ),
+    );
+  }
+}
+
+class _WalletAccountRow extends StatelessWidget {
+  const _WalletAccountRow({required this.account});
+  final UnifiedAccount account;
+  @override
+  Widget build(BuildContext context) {
+    final asset = orangeNetworkLogoAssetForChain(account.chain);
+    return Padding(
+      key: ValueKey('wallet-account-${account.id}'),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          _WalletNetworkBadge(
+            network: _WalletNetwork(
+              label: chainLabel(account.chain),
+              chain: account.chain,
+              asset: asset,
+              fallbackIcon: Icons.currency_bitcoin,
             ),
-            const SizedBox(height: 20),
-            Text(
-              l10n.walletGroupTechnicalKeysTitle,
-              style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
+            active: false,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  account.accountName.isNotEmpty
+                      ? account.accountName
+                      : chainLabel(account.chain),
+                  style: const TextStyle(
+                    fontSize: 17.25,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  abbreviateAccountAddress(account.address),
+                  style: monoStyle(
+                    fontSize: 12.65,
+                    color: TibaneColors.textMuted,
+                  ).copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            for (final wallet in _wallets) ...[
-              _TechnicalWalletTile(
-                wallet: wallet,
-                active: wallet.id == widget.activeWalletId,
-                usableHere: widget.withShare.contains(wallet.id),
-                onTap: () => _openTechnicalWallet(wallet),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -415,98 +604,6 @@ class _WalletGroupRow extends StatelessWidget {
   }
 }
 
-class _TechnicalWalletTile extends StatelessWidget {
-  final lw.Wallet wallet;
-  final bool active;
-  final bool usableHere;
-  final VoidCallback onTap;
-
-  const _TechnicalWalletTile({
-    required this.wallet,
-    required this.active,
-    required this.usableHere,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final networks = _walletNetworks(wallet, l10n);
-    final subkeys = wallet.keys
-        .map((k) => shareTypeLabel(k.type, l10n))
-        .join(' · ');
-    return TibaneCard(
-      onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Row(
-        children: [
-          SizedBox(
-            width: networks.length > 1 ? 64 : 32,
-            child: Wrap(
-              spacing: 4,
-              children: [
-                for (final network in networks)
-                  _WalletNetworkBadge(network: network, active: active),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  networks.map((n) => n.label).join(' · '),
-                  style: const TextStyle(
-                    color: TibaneColors.text,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  l10n.walletsMgmtCurve(wallet.curve),
-                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
-                ),
-                Text(
-                  l10n.walletsMgmtShares(subkeys),
-                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
-                ),
-                if (!usableHere)
-                  Text(
-                    l10n.walletsMgmtNeeds2fa,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: TibaneColors.orange,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          if (active)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: TibaneColors.cyan.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                l10n.walletsMgmtInUseBadge,
-                style: monoStyle(fontSize: 10, color: TibaneColors.cyan),
-              ),
-            ),
-          const SizedBox(width: 6),
-          const Icon(
-            Icons.chevron_right,
-            color: TibaneColors.textDim,
-            size: 18,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _WalletNetwork {
   final String label;
   final String chain;
@@ -540,12 +637,13 @@ List<_WalletNetwork> _walletNetworks(lw.Wallet wallet, AppLocalizations l10n) {
           asset: 'assets/icons/ethereum-eth-logo-orange-network.png',
           fallbackIcon: Icons.account_tree_outlined,
         ),
-        _WalletNetwork(
-          label: l10n.sendNetworkBitcoin,
-          chain: 'bitcoin',
-          asset: null,
-          fallbackIcon: Icons.currency_bitcoin,
-        ),
+        if (wallet.keys.length != 1 || isNormalMnemonicWallet(wallet))
+          _WalletNetwork(
+            label: l10n.sendNetworkBitcoin,
+            chain: 'bitcoin',
+            asset: null,
+            fallbackIcon: Icons.currency_bitcoin,
+          ),
       ];
     default:
       return [
@@ -581,16 +679,16 @@ class _WalletNetworkBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = chainColor(network.chain);
+    const color = TibaneColors.orange;
     final asset = network.asset;
     return Tooltip(
       message: network.label,
       child: Container(
-        width: 30,
-        height: 30,
+        width: 34,
+        height: 34,
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(9),
+          borderRadius: BorderRadius.circular(8),
           border: active
               ? Border.all(color: TibaneColors.orange.withValues(alpha: 0.55))
               : Border.all(color: color.withValues(alpha: 0.18)),

@@ -2,35 +2,35 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
-import 'package:libwallet/libwallet.dart' show Asset, NetworkType, Transaction;
+import 'package:libwallet/libwallet.dart'
+    show Asset, NetworkType, Transaction, SigningKey;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/solana_constants.dart';
-import 'catcard/catcard_wallet_backend.dart';
+import 'coinbase_spot_price_service.dart';
+import 'eth_usd_price_service.dart';
+import 'ethereum_rpc_service.dart';
 import 'relay_service.dart';
 import 'rpc_service.dart';
 import 'tx_confirmation.dart';
 import 'wallet/accounts_service.dart';
+import 'wallet/asset_network.dart';
 import 'wallet/libwallet_backend.dart';
+import 'wallet/logical_wallet.dart';
 import 'wallet/mwa_wallet_backend.dart';
 import 'wallet/unified_account.dart';
 import 'wallet/wallet_backend.dart';
 import 'wallet/walletconnect_bridge.dart';
 
 /// Backend selector persisted across launches.
-enum WalletKind { mwa, inapp, catcard }
+enum WalletKind { mwa, inapp }
 
 WalletKind _parseKind(String? s) => switch (s) {
   'inapp' => WalletKind.inapp,
-  'catcard' => WalletKind.catcard,
   _ => WalletKind.mwa,
 };
 
-String _kindToString(WalletKind k) => switch (k) {
-  WalletKind.inapp => 'inapp',
-  WalletKind.catcard => 'catcard',
-  WalletKind.mwa => 'mwa',
-};
+String _kindToString(WalletKind k) => k == WalletKind.inapp ? 'inapp' : 'mwa';
 
 /// Resolve the effective backend kind. If MWA is selected but not connected
 /// while an in-app wallet is available, fall back to in-app — otherwise the
@@ -43,12 +43,8 @@ WalletKind reconcileWalletKind({
   required WalletKind kind,
   required bool mwaConnected,
   required bool inAppHasWallet,
-  bool catCardConnected = false,
 }) {
   if (kind == WalletKind.mwa && !mwaConnected && inAppHasWallet) {
-    return WalletKind.inapp;
-  }
-  if (kind == WalletKind.catcard && !catCardConnected && inAppHasWallet) {
     return WalletKind.inapp;
   }
   return kind;
@@ -74,20 +70,29 @@ const Duration kPostConfirmRefreshInterval = Duration(seconds: 2);
 /// Façade that routes every wallet call to the active [WalletBackend]. Screens
 /// and auth flows continue to use this class; only the backends change.
 class WalletService extends ChangeNotifier {
-  WalletService() {
-    _accountsService = AccountsService(_libwallet, _mwa, catcard: _catcard);
+  WalletService({
+    EthereumRpcService? ethereumRpc,
+    EthUsdPriceService? ethPriceService,
+    LibwalletBackend? libwalletBackend,
+    MwaWalletBackend? mwaBackend,
+  }) : _libwallet = libwalletBackend ?? LibwalletBackend(),
+       _mwa = mwaBackend ?? MwaWalletBackend(),
+       _ethereumRpc = ethereumRpc ?? EthereumRpcService(),
+       _ethPriceService = ethPriceService ?? EthUsdPriceService() {
+    _accountsService = AccountsService(_libwallet, _mwa);
     // Re-emit so existing `context.watch<WalletService>()` consumers rebuild
     // when the account list / current account changes.
     _accountsService.addListener(notifyListeners);
     _mwa.addListener(_onBackendChanged);
-    _catcard.addListener(_onBackendChanged);
     _libwallet.addListener(_onBackendChanged);
     _libwallet.balanceTick.addListener(_onBalanceTick);
   }
 
-  final MwaWalletBackend _mwa = MwaWalletBackend();
-  final LibwalletBackend _libwallet = LibwalletBackend();
-  final CatCardWalletBackend _catcard = CatCardWalletBackend();
+  final MwaWalletBackend _mwa;
+  final LibwalletBackend _libwallet;
+  final EthereumRpcService _ethereumRpc;
+  final EthUsdPriceService _ethPriceService;
+  final Map<String, CoinbaseSpotPriceService> _bitcoinPriceServices = {};
 
   /// Single source of truth for the account list + current account (Phase
   /// "accounts cubit"). WalletService delegates its account API to this.
@@ -98,12 +103,10 @@ class WalletService extends ChangeNotifier {
 
   WalletKind _kind = WalletKind.mwa;
 
-  // Fallback SOL / ChiefPussy balances for MWA mode, where libwallet has no
-  // account context and [_assets] isn't populated (filled by the RPC scan in
-  // _refreshBalancesOnce). For in-app wallets the balances are derived from
-  // [_assets] (the single source) — see the [solBalance]/[chiefPussyBalance]
-  // getters; these fields are NOT read there.
+  // RPC balances for MWA mode and the dashboard's direct Solana scan.
+  // The direct scan can correct a missing or stale native SOL Asset.
   BigInt _solBalanceFallback = BigInt.zero;
+  bool _hasSolRpcBalance = false;
   BigInt _chiefPussyFallback = BigInt.zero;
 
   // The current account's asset list (Atonline AssetCubit equivalent, §4.4).
@@ -128,11 +131,7 @@ class WalletService extends ChangeNotifier {
 
   // --- public API kept compatible with previous WalletService ---
 
-  WalletBackend get active => switch (_kind) {
-    WalletKind.inapp => _libwallet,
-    WalletKind.catcard => _catcard,
-    WalletKind.mwa => _mwa,
-  };
+  WalletBackend get active => _kind == WalletKind.inapp ? _libwallet : _mwa;
 
   /// The current backend kind. UI reads this to decide what buttons to show.
   WalletKind get kind => _kind;
@@ -154,9 +153,6 @@ class WalletService extends ChangeNotifier {
 
   /// Direct access to specific backends for setup flows (create wallet, unlock).
   MwaWalletBackend get mwa => _mwa;
-
-  /// The CatCard hardware wallet over USB.
-  CatCardWalletBackend get catcard => _catcard;
 
   LibwalletBackend get libwallet => _libwallet;
 
@@ -184,15 +180,60 @@ class WalletService extends ChangeNotifier {
   /// The WC bridge if it has been initialized in this session, else null.
   WalletConnectBridge? get wcOrNull => _wc;
 
+  String? _resetError;
+  String? get resetError => _resetError;
+
   String? get publicKey => active.publicKey;
 
   String? get walletName => active.walletName;
 
-  /// Native SOL balance for the current account. Single source of truth is the
-  /// libwallet asset list ([assets]); falls back to the cached RPC value for
-  /// MWA, where [assets] isn't populated.
-  BigInt get solBalance =>
-      _nativeSolAsset()?.amount.value ?? _solBalanceFallback;
+  /// Native SOL balance for the current account. A fresh direct Solana scan
+  /// takes priority when available; otherwise use libwallet's asset list.
+  BigInt get solBalance => _hasSolRpcBalance && _solanaNetworkActive
+      ? _solBalanceFallback
+      : (_nativeSolAsset()?.amount.value ?? _solBalanceFallback);
+
+  BigInt? get ethBalanceWei =>
+      _ethereumMainnetActive && _ethBalanceContext == _balanceContextKey()
+      ? _ethBalanceWei
+      : null;
+
+  BigInt? _ethBalanceWei;
+  String? _ethBalanceContext;
+  double? _ethPriceUsd;
+  String? _ethPriceContext;
+  double? _bitcoinFamilyPriceUsd;
+  String? _bitcoinFamilyPriceContext;
+
+  double? get ethPriceUsd =>
+      _ethereumMainnetActive && _ethPriceContext == _balanceContextKey()
+      ? _ethPriceUsd
+      : null;
+
+  double? get bitcoinFamilyPriceUsd =>
+      _bitcoinFamilySymbol != null &&
+          _bitcoinFamilyPriceContext == _balanceContextKey()
+      ? _bitcoinFamilyPriceUsd
+      : null;
+
+  String? get _bitcoinFamilySymbol {
+    final network = _libwallet.currentNetwork;
+    if (_kind != WalletKind.inapp || network?.type != NetworkType.bitcoin) {
+      return null;
+    }
+    return switch (network?.chainId) {
+      'bitcoin' => 'BTC',
+      'bitcoin-cash' => 'BCH',
+      'dogecoin' => 'DOGE',
+      'litecoin' => 'LTC',
+      _ => null,
+    };
+  }
+
+  bool get _ethereumMainnetActive =>
+      _kind == WalletKind.inapp &&
+      _libwallet.currentNetwork?.type == NetworkType.evm &&
+      _libwallet.currentNetwork?.chainId == '1';
 
   /// ChiefPussy is a Solana-only SPL token — report a balance only while a
   /// Solana network is active (or MWA, which is Solana). Off-Solana it's
@@ -205,7 +246,6 @@ class WalletService extends ChangeNotifier {
   /// Solana, or MWA (Seed Vault is Solana-only).
   bool get _solanaNetworkActive =>
       _kind == WalletKind.mwa ||
-      _kind == WalletKind.catcard ||
       _libwallet.currentNetwork?.type == NetworkType.solana;
 
   Asset? _nativeSolAsset() {
@@ -241,13 +281,12 @@ class WalletService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _kind = _parseKind(prefs.getString('wallet_backend'));
     await _mwa.tryRestore();
-    await _catcard.tryRestore();
     await _libwallet.tryRestore();
     // libwallet's built-in default is Ethereum mainnet, so a fresh install can
     // boot into the wrong family before an account is active. Normalize to
     // Solana mainnet on cold start; account switches still move libwallet to a
     // compatible default network for the selected account family.
-    unawaited(_libwallet.ensureSolanaDefault());
+    await _libwallet.ensureSolanaDefault();
     // A persisted `mwa` selection with no restored MWA session would leave the
     // app stuck on "Connect" despite an in-app wallet being present — fall back.
     _reconcileKind();
@@ -259,12 +298,14 @@ class WalletService extends ChangeNotifier {
     await refreshAccounts();
     final cur = _accountsService.current;
     if (cur != null) {
-      final desired = cur.isMwa
-          ? WalletKind.mwa
-          : cur.isCatCard
-          ? WalletKind.catcard
-          : WalletKind.inapp;
-      if (desired != _kind) await _setKind(desired);
+      if (cur.isInApp &&
+          (!_libwallet.hasWallet || _libwallet.accountId != cur.accountId)) {
+        // Older seed imports saved accounts without persisting an active wallet.
+        await setCurrentAccount(cur);
+      } else {
+        final desired = cur.isMwa ? WalletKind.mwa : WalletKind.inapp;
+        if (desired != _kind) await _setKind(desired);
+      }
     }
     if (isConnected) {
       refreshBalances();
@@ -295,19 +336,6 @@ class WalletService extends ChangeNotifier {
     return true;
   }
 
-  /// Connect a CatCard over USB: pair (code compared on both screens) and
-  /// have the person share an account on the device. Switches to it on
-  /// success; a cancelled or failed pairing leaves the current wallet active
-  /// (the reason is on [catcard].error).
-  Future<bool> connectCatCard() async {
-    final ok = await _catcard.connect();
-    if (!ok) return false;
-    await _setKind(WalletKind.catcard);
-    refreshBalances();
-    unawaited(refreshAccounts());
-    return true;
-  }
-
   /// Switch to the in-app libwallet backend. Assumes the wallet has already
   /// been created or unlocked via the in-app setup flow.
   Future<void> useLibwallet() async {
@@ -326,7 +354,7 @@ class WalletService extends ChangeNotifier {
   /// "disconnect". Guards against the historical footgun where the account
   /// switcher's Disconnect erased the active wallet.
   Future<void> disconnect() async {
-    if (_kind != WalletKind.mwa && _kind != WalletKind.catcard) return;
+    if (_kind != WalletKind.mwa) return;
     await active.disconnect();
     resetSessionState();
     _authedAddress = null;
@@ -335,15 +363,90 @@ class WalletService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Remove all wallet identities from this device while preserving unrelated
+  /// app preferences and any backup files the user exported elsewhere.
+  Future<bool> removeAllWalletsFromDevice() async {
+    _resetError = null;
+    try {
+      final client = await _libwallet.ensureClient();
+
+      // A removed account must not remain authorized in a dApp session.
+      try {
+        final sessions = await client.walletConnect.sessions();
+        for (final session in sessions) {
+          try {
+            await client.walletConnect.disconnect(session.topic);
+          } catch (e) {
+            debugPrint(
+              '[wallet-reset] could not disconnect ${session.topic}: $e',
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('[wallet-reset] WalletConnect cleanup failed: $e');
+      } finally {
+        await _wc?.stop();
+        _wc = null;
+      }
+
+      final removed = await _libwallet.removeAllWallets();
+      if (!removed) {
+        _resetError = _libwallet.error;
+        return false;
+      }
+
+      // External MWA authorization is also an account shown by the app, so a
+      // complete reset disconnects it even when an in-app wallet was active.
+      await _mwa.disconnect();
+      await _accountsService.clearLocalWalletState();
+      await _auth.logout();
+      _authedAddress = null;
+      _lastAddress = null;
+      _txCacheByAddress.clear();
+      resetSessionState();
+      _dataReady = true;
+      _restored = true;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('wallet_backend');
+      _kind = WalletKind.inapp;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _resetError = e.toString();
+      debugPrint('[wallet-reset] failed: $e');
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Rebuild [accounts] from libwallet (`accounts.list()` across all wallets) +
   /// the connected MWA account, and reconcile [currentAccount] with the active
   /// backend. Additive in Phase 4b-1: the active backend is still driven by
   /// [_kind]; this only mirrors it as a [UnifiedAccount]. Best-effort.
   Future<void> refreshAccounts() =>
-      _accountsService.refresh(
-        preferMwa: _kind == WalletKind.mwa,
-        preferCatCard: _kind == WalletKind.catcard,
-      );
+      _accountsService.refresh(preferMwa: _kind == WalletKind.mwa);
+
+  /// Activate the newly created/imported wallet, never an unrelated current one.
+  Future<bool> activateWalletGroup(LogicalWallet group) async {
+    await refreshAccounts();
+    final candidates = accounts
+        .where(
+          (account) =>
+              account.isInApp &&
+              account.address.isNotEmpty &&
+              group.containsWallet(account.walletId ?? ''),
+        )
+        .toList();
+    final target =
+        candidates
+            .where((a) => a.isSolana && a.isMainWalletContext)
+            .firstOrNull ??
+        candidates.where((a) => a.isSolana).firstOrNull ??
+        candidates.where((a) => !a.isVirtual).firstOrNull ??
+        candidates.firstOrNull;
+    return target != null && await setCurrentAccount(target);
+  }
 
   /// Create a new account on [walletId] (D10 add-account), refresh the unified
   /// list, and switch to it. [type] must be curve-compatible (constrained in
@@ -353,14 +456,14 @@ class WalletService extends ChangeNotifier {
     required String name,
     required String type,
     String? preferredChain,
-    String? avatarAsset,
+    List<SigningKey>? keys,
   }) async {
     final acct = await _accountsService.createAccount(
       walletId: walletId,
       name: name,
       type: type,
       preferredChain: preferredChain,
-      avatarAsset: avatarAsset,
+      keys: keys,
     );
     if (acct == null) return false;
     await refreshAccounts();
@@ -383,7 +486,6 @@ class WalletService extends ChangeNotifier {
     String? networkId,
   }) async {
     if (acct.isMwa) await _setKind(WalletKind.mwa);
-    if (acct.isCatCard) await _setKind(WalletKind.catcard);
     final ok = await _accountsService.setCurrent(acct, networkId: networkId);
     if (!ok) return false;
     if (acct.isInApp) {
@@ -413,7 +515,10 @@ class WalletService extends ChangeNotifier {
   }
 
   void updateBalances({BigInt? sol, BigInt? chiefPussy}) {
-    if (sol != null) _solBalanceFallback = sol;
+    if (sol != null) {
+      _solBalanceFallback = sol;
+      _hasSolRpcBalance = true;
+    }
     if (chiefPussy != null) _chiefPussyFallback = chiefPussy;
     notifyListeners();
   }
@@ -425,9 +530,17 @@ class WalletService extends ChangeNotifier {
   @visibleForTesting
   void resetSessionState() {
     _solBalanceFallback = BigInt.zero;
+    _hasSolRpcBalance = false;
+    _ethBalanceWei = null;
+    _ethBalanceContext = null;
+    _ethPriceUsd = null;
+    _ethPriceContext = null;
+    _bitcoinFamilyPriceUsd = null;
+    _bitcoinFamilyPriceContext = null;
     _chiefPussyFallback = BigInt.zero;
     _solFiatFallback = 0;
     _chiefPussyFiatFallback = 0;
+    _assets = const [];
   }
 
   // Fallback per-asset fiat values for MWA mode (see the balance fallbacks
@@ -461,14 +574,15 @@ class WalletService extends ChangeNotifier {
   /// fetch lands.
   List<Transaction>? cachedTxsFor(String? address) {
     if (address == null || address.isEmpty) return null;
-    return _txCacheByAddress[address];
+    return _txCacheByAddress['$kind:${libwallet.currentNetwork?.id}:$address'];
   }
 
   /// Replace the cached transactions for [address] with the result of
   /// a fresh fetch.
   void cacheTxsFor(String address, List<Transaction> txs) {
     if (address.isEmpty) return;
-    _txCacheByAddress[address] = List.unmodifiable(txs);
+    _txCacheByAddress['$kind:${libwallet.currentNetwork?.id}:$address'] =
+        List.unmodifiable(txs);
   }
 
   /// Call from any flow that knows a tx just committed (swap, send, …) to
@@ -656,22 +770,68 @@ class WalletService extends ChangeNotifier {
   /// Guards [refreshBalances] so overlapping/rapid calls share one in-flight
   /// scan instead of each kicking a fresh on-chain fetch.
   Future<void>? _refreshInFlight;
+  String? _refreshInFlightContext;
 
   Future<void> refreshBalances() {
+    final contextKey = _balanceContextKey();
+    final inFlight = _refreshInFlight;
+    if (inFlight != null && _refreshInFlightContext == contextKey) {
+      return inFlight;
+    }
     // libwallet's Asset:list (getAssets) makes libwallet snapshot balances and
     // emit a balanceChanges event, which re-enters _onBalanceTick ->
     // refreshBalances. Without coalescing, a single trigger amplifies into a
     // storm of redundant scans (observed: ~5 scans from one dashboard open).
     // Sharing the in-flight future collapses the echo storm into one scan;
     // libwallet stops emitting once the value stabilizes, ending the cascade.
-    return _refreshInFlight ??= _refreshBalancesOnce().whenComplete(() {
-      _refreshInFlight = null;
+    final future = _refreshBalancesOnce(contextKey).whenComplete(() {
+      if (_refreshInFlightContext == contextKey) {
+        _refreshInFlight = null;
+        _refreshInFlightContext = null;
+      }
     });
+    _refreshInFlight = future;
+    _refreshInFlightContext = contextKey;
+    return future;
   }
 
-  Future<void> _refreshBalancesOnce() async {
+  String _balanceContextKey() {
+    final net = _libwallet.currentNetwork;
+    return [
+      _kind.name,
+      _libwallet.walletId ?? '',
+      _libwallet.accountId ?? '',
+      net?.id ?? '',
+      publicKey ?? '',
+    ].join('|');
+  }
+
+  Future<void> _refreshBalancesOnce(String contextKey) async {
     final addr = publicKey;
     if (addr == null) return;
+    if (_ethereumMainnetActive) {
+      try {
+        final wei = await _ethereumRpc.getBalanceWei(addr);
+        if (contextKey != _balanceContextKey()) return;
+        _ethBalanceWei = wei;
+        _ethBalanceContext = contextKey;
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Ethereum native balance refresh failed: $e');
+      }
+      try {
+        final price = await _ethPriceService.getPriceUsd();
+        if (contextKey != _balanceContextKey()) return;
+        _ethPriceUsd = price;
+        _ethPriceContext = contextKey;
+        notifyListeners();
+      } catch (e) {
+        if (contextKey != _balanceContextKey()) return;
+        _ethPriceUsd = null;
+        _ethPriceContext = null;
+        debugPrint('Ethereum USD price refresh failed: $e');
+      }
+    }
     // Prefer libwallet's whitelist when an in-app wallet is loaded — it
     // already filters to curated + user-tracked tokens and carries fiat
     // amounts via the `convert: 'USD'` param. Falls back to a direct
@@ -679,6 +839,7 @@ class WalletService extends ChangeNotifier {
     if (_kind == WalletKind.inapp && _libwallet.hasWallet) {
       try {
         var assets = await _libwallet.getAssets();
+        if (contextKey != _balanceContextKey()) return;
         // libwallet 0.4.28 auto-discovers Solana fungibles on first
         // Asset:list, but users who set up before 0.4.28 had the
         // discovery gate flipped without success. If ChiefPussy isn't
@@ -686,9 +847,10 @@ class WalletService extends ChangeNotifier {
         final hasCp = assets.any(
           (a) => a.symbol == 'ChiefPussy' || a.key.contains(chiefPussyMint),
         );
-        if (!hasCp) {
+        if (_solanaNetworkActive && !hasCp) {
           if (await _libwallet.ensureChiefPussyTracked()) {
             assets = await _libwallet.getAssets();
+            if (contextKey != _balanceContextKey()) return;
           }
         }
         // [assets] is the single source — SOL / ChiefPussy balances + fiat are
@@ -696,10 +858,50 @@ class WalletService extends ChangeNotifier {
         _assets = assets;
         _dataReady = true;
         notifyListeners();
+        final bitcoinSymbol = _bitcoinFamilySymbol;
+        final network = _libwallet.currentNetwork;
+        if (bitcoinSymbol != null && network != null) {
+          Asset? native;
+          for (final asset in assets) {
+            if (asset.isNative && assetBelongsToNetwork(asset, network)) {
+              native = asset;
+              break;
+            }
+          }
+          final hasLibwalletPrice =
+              (native?.fiatAmount?.toDouble() ?? 0) > 0 ||
+              (native?.fiatQuote?.price ?? 0) > 0;
+          if (native != null &&
+              native.amount.value > BigInt.zero &&
+              !hasLibwalletPrice) {
+            try {
+              final service = _bitcoinPriceServices.putIfAbsent(
+                bitcoinSymbol,
+                () => CoinbaseSpotPriceService(symbol: bitcoinSymbol),
+              );
+              final price = await service.getPriceUsd();
+              if (contextKey != _balanceContextKey()) return;
+              _bitcoinFamilyPriceUsd = price;
+              _bitcoinFamilyPriceContext = contextKey;
+              notifyListeners();
+            } catch (e) {
+              if (contextKey != _balanceContextKey()) return;
+              _bitcoinFamilyPriceUsd = null;
+              _bitcoinFamilyPriceContext = null;
+              debugPrint('$bitcoinSymbol USD price refresh failed: $e');
+            }
+          }
+        }
         return;
       } catch (e) {
-        debugPrint('libwallet refreshBalances failed, falling back to RPC: $e');
+        debugPrint('libwallet refreshBalances failed: $e');
       }
+    }
+    if (!_solanaNetworkActive) {
+      if (contextKey != _balanceContextKey()) return;
+      _dataReady = true;
+      notifyListeners();
+      return;
     }
     final rpc = RpcService();
     try {
@@ -713,6 +915,7 @@ class WalletService extends ChangeNotifier {
           cp += account.amount;
         }
       }
+      if (contextKey != _balanceContextKey()) return;
       _chiefPussyFallback = cp;
       _solFiatFallback = 0;
       _chiefPussyFiatFallback = 0;
@@ -765,7 +968,6 @@ class WalletService extends ChangeNotifier {
       kind: _kind,
       mwaConnected: _mwa.isConnected,
       inAppHasWallet: _libwallet.publicKey != null,
-      catCardConnected: _catcard.isConnected,
     );
     if (resolved == _kind) return;
     _kind = resolved;
@@ -845,6 +1047,11 @@ class WalletService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _ethereumRpc.dispose();
+    _ethPriceService.dispose();
+    for (final service in _bitcoinPriceServices.values) {
+      service.dispose();
+    }
     _accountsService.removeListener(notifyListeners);
     _accountsService.dispose();
     _mwa.removeListener(_onBackendChanged);

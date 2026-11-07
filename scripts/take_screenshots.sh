@@ -82,8 +82,8 @@ echo -e "${YELLOW}Building and launching screenshot app...${NC}"
 flutter run --target=lib/screenshot_main.dart -d "$UDID" --no-hot 2>&1 &
 FLUTTER_PID=$!
 
-wait_and_capture 1 "$SCREENSHOTS_DIR/${PREFIX}01_home.png"
-wait_and_capture 2 "$SCREENSHOTS_DIR/${PREFIX}02_wallet.png"
+wait_and_capture 1 "$SCREENSHOTS_DIR/${PREFIX}01_wallet.png"
+wait_and_capture 2 "$SCREENSHOTS_DIR/${PREFIX}02_wallet_setup.png"
 wait_and_capture 3 "$SCREENSHOTS_DIR/${PREFIX}03_staking_pools.png"
 wait_and_capture 4 "$SCREENSHOTS_DIR/${PREFIX}04_staking_detail.png"
 wait_and_capture 5 "$SCREENSHOTS_DIR/${PREFIX}05_incinerator.png"

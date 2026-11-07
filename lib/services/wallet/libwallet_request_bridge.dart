@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:libwallet/libwallet.dart';
@@ -22,35 +23,55 @@ class LibwalletRequestBridge {
   /// waiting on libwallet's background poller. See BALANCE_REFRESH_SPEC.md
   /// (Gap 2). Wire to `WalletService.notifyTxCommitted`.
   final void Function()? onTxCommitted;
+  final bool Function(PendingRequest)? requestIsCurrent;
+  final Map<String, String> _contexts = {};
+  final Map<String, PendingRequest> _requests = {};
+  String get _context =>
+      '${backend.accountId}:${backend.publicKey}:${backend.currentNetwork?.id}';
+  bool _isCurrent(PendingRequest request) =>
+      _contexts[request.id] == _context &&
+      (requestIsCurrent?.call(request) ?? true);
 
   LibwalletRequestBridge({
     required this.client,
     required this.backend,
     required this.contextProvider,
     this.onTxCommitted,
+    this.requestIsCurrent,
   });
 
   Future<void> handle(PendingRequest req) async {
-    final ctx = contextProvider();
-    if (!ctx.mounted) {
-      await _reject(req.id);
-      return;
-    }
-    switch (req) {
-      case ConnectRequest():
-        await _handleConnect(ctx, req);
-      case TransactionSignRequest():
-        await _handleTransactionSign(ctx, req);
-      case MessageSignRequest():
-        await _handleMessageSign(ctx, req);
-      case AddNetworkRequest():
-        await _handleAddNetwork(ctx, req);
-      case ChainSwitchRequest():
-        await _handleChainSwitch(ctx, req);
-      case WatchAssetRequest():
-        await _handleWatchAsset(ctx, req);
-      case UnknownPendingRequest():
+    if (_contexts.containsKey(req.id)) return;
+    _contexts[req.id] = _context;
+    _requests[req.id] = req;
+    try {
+      final ctx = contextProvider();
+      if (!ctx.mounted || !_isCurrent(req)) {
         await _reject(req.id);
+        return;
+      }
+      switch (req) {
+        case ConnectRequest():
+          await _handleConnect(ctx, req);
+        case TransactionSignRequest():
+          await _handleTransactionSign(ctx, req);
+        case MessageSignRequest():
+          await _handleMessageSign(ctx, req);
+        case AddNetworkRequest():
+          await _handleAddNetwork(ctx, req);
+        case ChainSwitchRequest():
+          await _handleChainSwitch(ctx, req);
+        case WatchAssetRequest():
+          await _handleWatchAsset(ctx, req);
+        case UnknownPendingRequest():
+          await _reject(req.id);
+      }
+    } catch (error) {
+      debugPrint('Web3 request rejected: $error');
+      await _reject(req.id);
+    } finally {
+      _contexts.remove(req.id);
+      _requests.remove(req.id);
     }
   }
 
@@ -59,7 +80,7 @@ class LibwalletRequestBridge {
     WatchAssetRequest req,
   ) async {
     final ok = await showWatchAssetSheet(ctx, req: req);
-    if (!ok) {
+    if (!ok || !_isCurrent(req)) {
       await _reject(req.id);
       return;
     }
@@ -78,7 +99,7 @@ class LibwalletRequestBridge {
       host: req.host.isEmpty ? '(unknown)' : req.host,
       accountAddress: addr,
     );
-    if (!ok) {
+    if (!ok || !_isCurrent(req)) {
       await _reject(req.id);
       return;
     }
@@ -98,19 +119,25 @@ class LibwalletRequestBridge {
       await _reject(req.id);
       return;
     }
-    final host = req.host.isEmpty ? '(unknown)' : req.host;
-    // Use the raw base64/hex as payload preview
-    final payloadBytes = base64.decode(req.raw.isNotEmpty ? req.raw : '');
-    final ok = await showSignSheet(
+    if (req.account != null && req.account != backend.accountId) {
+      await _reject(req.id);
+      return;
+    }
+    if (req.from.isNotEmpty &&
+        (req.chain == 'evm'
+            ? req.from.toLowerCase() != addr.toLowerCase()
+            : req.from != addr)) {
+      await _reject(req.id);
+      return;
+    }
+    final payloadBytes = decodeTransactionPayload(req.chain, req.raw);
+    final ok = await showTransactionSignSheet(
       ctx,
-      host: host,
-      verb: req.decodedMethod.isNotEmpty
-          ? req.decodedMethod.replaceAll('_', ' ')
-          : 'Sign transaction',
+      req: req,
       payload: payloadBytes,
       accountAddress: req.from.isNotEmpty ? req.from : addr,
     );
-    if (!ok) {
+    if (!ok || !_isCurrent(req)) {
       await _reject(req.id);
       return;
     }
@@ -145,7 +172,7 @@ class LibwalletRequestBridge {
       return;
     }
     final ok = await showMessageSignSheet(ctx, req: req, accountAddress: addr);
-    if (!ok) {
+    if (!ok || !_isCurrent(req)) {
       await _reject(req.id);
       return;
     }
@@ -168,7 +195,7 @@ class LibwalletRequestBridge {
     AddNetworkRequest req,
   ) async {
     final ok = await showAddNetworkSheet(ctx, req: req);
-    if (!ok) {
+    if (!ok || !_isCurrent(req)) {
       await _reject(req.id);
       return;
     }
@@ -185,7 +212,7 @@ class LibwalletRequestBridge {
     ChainSwitchRequest req,
   ) async {
     final result = await showChainSwitchSheet(ctx, req: req);
-    if (result == null) {
+    if (result == null || !_isCurrent(req)) {
       await _reject(req.id);
       return;
     }
@@ -215,7 +242,8 @@ class LibwalletRequestBridge {
       return null;
     }
     final collected = await collectSigningKeys(ctx);
-    if (collected == null) {
+    final request = _requests[reqId];
+    if (collected == null || request == null || !_isCurrent(request)) {
       await _reject(reqId);
       return null;
     }
@@ -227,4 +255,22 @@ class LibwalletRequestBridge {
       await client.requests.reject(reqId);
     } catch (_) {}
   }
+}
+
+Uint8List decodeTransactionPayload(String chain, String raw) {
+  if (raw.length > 512 * 1024) {
+    throw const FormatException('Transaction too large');
+  }
+  if (chain == 'solana') return base64Decode(raw);
+  if (chain != 'evm' && chain != 'bitcoin') {
+    throw const FormatException('Unsupported transaction chain');
+  }
+  final hex = raw.startsWith('0x') ? raw.substring(2) : raw;
+  if (hex.length.isOdd || !RegExp(r'^[0-9a-fA-F]*$').hasMatch(hex)) {
+    throw const FormatException('Invalid transaction encoding');
+  }
+  return Uint8List.fromList([
+    for (var i = 0; i < hex.length; i += 2)
+      int.parse(hex.substring(i, i + 2), radix: 16),
+  ]);
 }

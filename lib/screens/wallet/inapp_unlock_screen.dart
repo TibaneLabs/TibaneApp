@@ -10,6 +10,7 @@ import '../../widgets/keyboard_safe_form.dart';
 import '../../widgets/tibane_card.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
+import '../../widgets/wallet_error_display.dart';
 
 /// 2FA device-share recovery screen (Atonline-parity §4.8). Signing is lockless
 /// (per-transaction via the sign sheet), so there is no "unlock" — this screen
@@ -29,7 +30,7 @@ class InAppUnlockScreen extends StatefulWidget {
   State<InAppUnlockScreen> createState() => _InAppUnlockScreenState();
 }
 
-enum _Mode { probing, recovery }
+enum _Mode { probing, recovery, ready, error }
 
 class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
   final _pwCtrl = TextEditingController();
@@ -37,6 +38,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
   _Mode _mode = _Mode.probing;
   bool _busy = false;
   String? _error;
+  Object? _errorDetail;
   String? _notice; // e.g. "2FA key repaired — now verify to set up this device"
   RemoteKeySession? _recoverySession;
 
@@ -47,8 +49,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
   /// with another.
   bool _repairMode = false;
 
-  /// True while showing the two-option chooser (Set up device / Repair 2FA);
-  /// false once the user picks one and is in that sub-flow.
+  /// True while showing activation guidance and optional troubleshooting.
   bool _choosing = true;
 
   @override
@@ -59,15 +60,26 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
 
   Future<void> _probe() async {
     final backend = context.read<WalletService>().libwallet;
-    final targetIsActive =
-        widget.walletId == null || widget.walletId == backend.walletId;
-    // Load the target (possibly non-active) wallet's metadata into the active
-    // slot first, so the 2FA reshare targets it.
-    if (widget.walletId != null && !targetIsActive) {
-      await backend.loadWalletForRecovery(widget.walletId!);
+    try {
+      final targetId = widget.walletId ?? backend.walletId;
+      if (targetId == null) throw StateError('No in-app wallet');
+      if (targetId != backend.walletId &&
+          !await backend.loadWalletForRecovery(targetId)) {
+        throw StateError(backend.error ?? 'Could not load wallet');
+      }
+      final passwordOnly = await backend.walletCanSignWithoutDeviceShare(
+        targetId,
+      );
       if (!mounted) return;
+      setState(() => _mode = passwordOnly ? _Mode.ready : _Mode.recovery);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _mode = _Mode.error;
+        _error = walletErrorMessageForContext(context, error);
+        _errorDetail = error;
+      });
     }
-    setState(() => _mode = _Mode.recovery);
   }
 
   @override
@@ -78,6 +90,8 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
   }
 
   Future<void> _sendRecoveryCode() async {
+    if (_busy) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
     final l10n = context.l10n;
     // Repair doesn't need the password (it pushes the backup share copy);
     // recovery does (it re-encrypts the fresh device key under it).
@@ -88,17 +102,24 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _errorDetail = null;
     });
     final wallet = context.read<WalletService>();
-    final session = await wallet.libwallet.startRemoteKeyReshare();
+    final session = await wallet.libwallet.startRemoteKeyReshare(
+      password: _repairMode ? null : _pwCtrl.text,
+    );
     if (!mounted) return;
     if (session == null) {
-      logError('[InAppUnlock._sendRecoveryCode] send code failed: ${wallet.libwallet.error}');
+      logError(
+        '[InAppUnlock._sendRecoveryCode] send code failed: ${wallet.libwallet.error}',
+      );
       setState(() {
         _busy = false;
-        _error = WalletError.from(
+        _error = walletErrorMessageForContext(
+          context,
           wallet.libwallet.error ?? 'Could not send verification code',
-        ).message;
+        );
+        _errorDetail = wallet.libwallet.error;
       });
       return;
     }
@@ -109,6 +130,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
   }
 
   Future<void> _verifyAndRecover() async {
+    if (_busy) return;
     final l10n = context.l10n;
     final session = _recoverySession;
     if (session == null) return;
@@ -119,6 +141,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _errorDetail = null;
     });
     final wallet = context.read<WalletService>();
     final ok = await wallet.libwallet.recoverDeviceShareVia2fa(
@@ -132,17 +155,24 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } else {
-      logError('[InAppUnlock._verifyAndRecover] 2FA recovery failed: ${wallet.libwallet.error}');
+      logError(
+        '[InAppUnlock._verifyAndRecover] 2FA recovery failed: ${wallet.libwallet.error}',
+      );
       setState(() {
         _busy = false;
-        _error = WalletError.from(
+        _error = walletErrorMessageForContext(
+          context,
           wallet.libwallet.error ?? '2FA recovery failed',
-        ).message;
+        );
+        _errorDetail = wallet.libwallet.error;
+        _recoverySession = null;
+        _codeCtrl.clear();
       });
     }
   }
 
   Future<void> _verifyAndRepair() async {
+    if (_busy) return;
     final l10n = context.l10n;
     final session = _recoverySession;
     if (session == null) return;
@@ -153,6 +183,7 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _errorDetail = null;
     });
     final wallet = context.read<WalletService>();
     final ok = await wallet.libwallet.repairRemoteKeyVia2fa(
@@ -174,12 +205,18 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
         _notice = l10nInner.inappUnlockRepairFixed;
       });
     } else {
-      logError('[InAppUnlock._verifyAndRepair] repair failed: ${wallet.libwallet.error}');
+      logError(
+        '[InAppUnlock._verifyAndRepair] repair failed: ${wallet.libwallet.error}',
+      );
       setState(() {
         _busy = false;
-        _error = WalletError.from(
+        _error = walletErrorMessageForContext(
+          context,
           wallet.libwallet.error ?? 'Repair failed',
-        ).message;
+        );
+        _errorDetail = wallet.libwallet.error;
+        _recoverySession = null;
+        _codeCtrl.clear();
       });
     }
   }
@@ -189,73 +226,139 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
     final l10n = context.l10n;
     return Scaffold(
       backgroundColor: TibaneColors.black,
-      appBar: AppBar(title: Text(l10n.inappUnlockTitle)),
+      appBar: AppBar(
+        title: Text(
+          _mode == _Mode.ready
+              ? l10n.inappUnlockReadyTitle
+              : l10n.inappUnlockTitle,
+        ),
+      ),
       body: SafeArea(
         child: switch (_mode) {
           _Mode.probing => const Center(
             child: CircularProgressIndicator(color: TibaneColors.orange),
           ),
-          _Mode.recovery => KeyboardSafeForm(child: _buildRecoveryBody()),
+          _Mode.recovery =>
+            _choosing
+                ? SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: _buildChooser(),
+                  )
+                : KeyboardSafeForm(child: _buildFlow()),
+          _Mode.ready => Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  l10n.inappUnlockPasswordOnlyReady,
+                  style: const TextStyle(
+                    color: TibaneColors.textMuted,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: Text(l10n.actionDone),
+                ),
+              ],
+            ),
+          ),
+          _Mode.error => Padding(
+            padding: const EdgeInsets.all(24),
+            child: walletErrorCard(
+              _errorDetail ?? _error!,
+              onRetry: () {
+                setState(() => _mode = _Mode.probing);
+                _probe();
+              },
+            ),
+          ),
         },
       ),
     );
   }
 
-  Widget _buildRecoveryBody() => _choosing ? _buildChooser() : _buildFlow();
-
-  /// Two visually distinct options so neither path is hidden: set up the device
-  /// key (normal), or repair the 2FA key first (restored-from-backup + stuck).
+  /// Activation is the normal path; repair is secondary troubleshooting.
   Widget _buildChooser() {
     final l10n = context.l10n;
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            l10n.inappUnlockChooserHeading,
-            style: const TextStyle(
-              color: TibaneColors.text,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          l10n.inappUnlockChooserHeading,
+          style: const TextStyle(
+            color: TibaneColors.text,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(height: 8),
-          Text(
-            l10n.inappUnlockChooserBody,
-            style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
-          ),
-          if (_notice != null) ...[
-            const SizedBox(height: 12),
-            Text(_notice!, style: const TextStyle(color: TibaneColors.cyan)),
-          ],
-          const SizedBox(height: 20),
-          _OptionCard(
-            icon: Icons.phonelink_lock_outlined,
-            title: l10n.inappUnlockSetupTitle,
-            body: l10n.inappUnlockSetupBody,
-            onTap: _busy
-                ? null
-                : () => setState(() {
-                      _choosing = false;
-                      _repairMode = false;
-                      _error = null;
-                    }),
-          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          l10n.inappUnlockChooserBody,
+          style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
+        ),
+        if (_notice != null) ...[
           const SizedBox(height: 12),
-          _OptionCard(
-            icon: Icons.healing_outlined,
-            title: l10n.actionRepair2fa,
-            body: l10n.inappUnlockRepairBody,
-            onTap: _busy
-                ? null
-                : () => setState(() {
-                      _choosing = false;
-                      _repairMode = true;
-                      _error = null;
-                    }),
-          ),
+          Text(_notice!, style: const TextStyle(color: TibaneColors.cyan)),
         ],
-      ),
+        const SizedBox(height: 20),
+        _OptionCard(
+          icon: Icons.phonelink_lock_outlined,
+          recommended: true,
+          title: l10n.inappUnlockSetupTitle,
+          body: l10n.inappUnlockSetupBody,
+          onTap: _busy
+              ? null
+              : () => setState(() {
+                  _choosing = false;
+                  _repairMode = false;
+                  _error = null;
+                }),
+        ),
+        const SizedBox(height: 16),
+        ExpansionTile(
+          key: const Key('recovery-troubleshooting'),
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(bottom: 12),
+          shape: const Border(),
+          collapsedShape: const Border(),
+          leading: const Icon(
+            Icons.help_outline,
+            color: TibaneColors.textMuted,
+          ),
+          title: Text(
+            l10n.inappUnlockTroubleshootingTitle,
+            style: const TextStyle(fontSize: 14, color: TibaneColors.textMuted),
+          ),
+          children: [
+            Text(
+              l10n.inappUnlockRepairBody,
+              style: const TextStyle(
+                color: TibaneColors.textMuted,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                icon: const Icon(Icons.healing_outlined, size: 20),
+                label: Text(l10n.inappUnlockRepairAction),
+                onPressed: _busy
+                    ? null
+                    : () => setState(() {
+                        _choosing = false;
+                        _repairMode = true;
+                        _error = null;
+                        _errorDetail = null;
+                      }),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -274,11 +377,11 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
               onPressed: _busy
                   ? null
                   : () => setState(() {
-                        _choosing = true;
-                        _recoverySession = null;
-                        _codeCtrl.clear();
-                        _error = null;
-                      }),
+                      _choosing = true;
+                      _recoverySession = null;
+                      _codeCtrl.clear();
+                      _error = null;
+                    }),
               icon: const Icon(Icons.arrow_back, size: 16),
               label: Text(l10n.actionBack),
               style: TextButton.styleFrom(
@@ -287,7 +390,9 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
             ),
           ),
         Text(
-          repair ? l10n.inappUnlockFlowRepairHeader : l10n.inappUnlockSetupTitle,
+          repair
+              ? l10n.inappUnlockFlowRepairHeader
+              : l10n.inappUnlockSetupTitle,
           style: const TextStyle(
             color: TibaneColors.text,
             fontSize: 16,
@@ -298,11 +403,11 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
         Text(
           repair
               ? (codeSent
-                  ? l10n.inappUnlockFlowRepairDescCode
-                  : l10n.inappUnlockFlowRepairDescSend)
+                    ? l10n.inappUnlockFlowRepairDescCode
+                    : l10n.inappUnlockFlowRepairDescSend)
               : (codeSent
-                  ? l10n.inappUnlockFlowSetupDescCode
-                  : l10n.inappUnlockFlowSetupDescSend),
+                    ? l10n.inappUnlockFlowSetupDescCode
+                    : l10n.inappUnlockFlowSetupDescSend),
           style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         // Single-device wallet: the committee has one device-key slot, so
@@ -314,7 +419,11 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.info_outline, color: TibaneColors.amber, size: 16),
+              const Icon(
+                Icons.info_outline,
+                color: TibaneColors.amber,
+                size: 16,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -342,7 +451,9 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
             obscureText: true,
             enabled: !_busy && !codeSent,
             autofocus: !codeSent,
-            decoration: InputDecoration(labelText: l10n.inappUnlockPasswordLabel),
+            decoration: InputDecoration(
+              labelText: l10n.inappUnlockPasswordLabel,
+            ),
           ),
         if (codeSent) ...[
           if (!repair) const SizedBox(height: 12),
@@ -360,6 +471,17 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
         if (_error != null) ...[
           const SizedBox(height: 12),
           Text(_error!, style: const TextStyle(color: TibaneColors.error)),
+          if (_errorDetail != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () => showWalletErrorDetails(
+                  context,
+                  WalletError.from(_errorDetail!),
+                ),
+                child: Text(l10n.walletErrorDetails),
+              ),
+            ),
         ],
         // Minimum gap that survives the Spacer collapsing when the keyboard
         // shrinks the viewport (KeyboardSafeForm switches to intrinsic height +
@@ -372,10 +494,10 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
             onPressed: _busy
                 ? null
                 : () => setState(() {
-                      _recoverySession = null;
-                      _codeCtrl.clear();
-                      _error = null;
-                    }),
+                    _recoverySession = null;
+                    _codeCtrl.clear();
+                    _error = null;
+                  }),
             child: Text(
               l10n.inappUnlockResendCode,
               style: const TextStyle(color: TibaneColors.orange),
@@ -385,8 +507,8 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
           onPressed: _busy
               ? null
               : (codeSent
-                  ? (repair ? _verifyAndRepair : _verifyAndRecover)
-                  : _sendRecoveryCode),
+                    ? (repair ? _verifyAndRepair : _verifyAndRecover)
+                    : _sendRecoveryCode),
           style: FilledButton.styleFrom(
             backgroundColor: TibaneColors.orange,
             foregroundColor: TibaneColors.black,
@@ -395,11 +517,15 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
           child: Text(
             _busy
                 ? (codeSent
-                    ? (repair ? l10n.inappUnlockRepairing : l10n.commonVerifying)
-                    : l10n.commonSending)
+                      ? (repair
+                            ? l10n.inappUnlockRepairing
+                            : l10n.commonVerifying)
+                      : l10n.commonSending)
                 : (codeSent
-                    ? (repair ? l10n.actionRepair2fa : l10n.inappUnlockVerifySetup)
-                    : l10n.inappUnlockSendCode),
+                      ? (repair
+                            ? l10n.inappUnlockRepairAction
+                            : l10n.inappUnlockVerifySetup)
+                      : l10n.inappUnlockSendCode),
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
@@ -408,19 +534,20 @@ class _InAppUnlockScreenState extends State<InAppUnlockScreen> {
   }
 }
 
-/// A tappable option card for the recovery chooser — icon + title + description
-/// + chevron, so each path (set up / repair) is an obvious, distinct choice.
+/// Recommended activation action with a plain-language description.
 class _OptionCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String body;
   final VoidCallback? onTap;
+  final bool recommended;
 
   const _OptionCard({
     required this.icon,
     required this.title,
     required this.body,
     required this.onTap,
+    this.recommended = false,
   });
 
   @override
@@ -436,6 +563,17 @@ class _OptionCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (recommended) ...[
+                  Text(
+                    context.l10n.inappUnlockRecommended,
+                    style: const TextStyle(
+                      color: TibaneColors.orange,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
                 Text(
                   title,
                   style: const TextStyle(
@@ -458,8 +596,11 @@ class _OptionCard extends StatelessWidget {
           ),
           const Padding(
             padding: EdgeInsets.only(left: 8, top: 2),
-            child: Icon(Icons.chevron_right,
-                color: TibaneColors.textDim, size: 20),
+            child: Icon(
+              Icons.chevron_right,
+              color: TibaneColors.textDim,
+              size: 20,
+            ),
           ),
         ],
       ),

@@ -60,22 +60,20 @@ void _promptSetUp(BuildContext context, String walletId, String message) {
 /// when [useSignSheet] is true.
 Future<List<SigningKey>?> collectSigningKeys(BuildContext context) async {
   final lw = context.read<WalletService>().libwallet;
+  final sourceContext = lw.signingContext;
   final wallet = await lw.currentWallet();
   if (!context.mounted) return null;
+  if (sourceContext != lw.signingContext) return null;
   final l10n = context.l10n;
   if (wallet == null) {
     _toast(context, l10n.authSignNoWallet);
     return null;
   }
   if (!canAssembleThreshold(wallet)) {
-    _promptSetUp(
-      context,
-      wallet.id,
-      l10n.authSignNotSetUp,
-    );
+    _promptSetUp(context, wallet.id, l10n.authSignNotSetUp);
     return null;
   }
-  return showSignSheet(
+  final keys = await showSignSheet(
     context,
     wallet: wallet,
     readStoreKey: (storeKey, password) =>
@@ -84,6 +82,13 @@ Future<List<SigningKey>?> collectSigningKeys(BuildContext context) async {
     subtitlePurpose: l10n.authSignPurpose,
     actionLabel: l10n.actionSign,
   );
+  if (!context.mounted || keys == null) return null;
+  if (sourceContext != lw.signingContext) {
+    _toast(context, context.l10n.walletOperationChanged);
+    return null;
+  }
+  lw.registerSigningAuthorization(keys, sourceContext);
+  return keys;
 }
 
 /// Collect the raw credentials for a key-management op (change password, rotate
@@ -101,6 +106,7 @@ Future<({String password, String? storeKeyPriv})?> collectManagementKeys(
   required String purpose,
 }) async {
   final lw = context.read<WalletService>().libwallet;
+  final sourceContext = lw.signingContext;
   final wallet = await lw.currentWallet();
   if (!context.mounted) return null;
   if (wallet == null) {
@@ -108,11 +114,7 @@ Future<({String password, String? storeKeyPriv})?> collectManagementKeys(
     return null;
   }
   if (!canAssembleThreshold(wallet)) {
-    _promptSetUp(
-      context,
-      wallet.id,
-      context.l10n.authSignNotSetUpManage,
-    );
+    _promptSetUp(context, wallet.id, context.l10n.authSignNotSetUpManage);
     return null;
   }
   final keys = await showSignSheet(
@@ -124,7 +126,7 @@ Future<({String password, String? storeKeyPriv})?> collectManagementKeys(
     subtitlePurpose: purpose,
     actionLabel: 'Authorize',
   );
-  if (keys == null) return null;
+  if (keys == null || sourceContext != lw.signingContext) return null;
   final creds = managementCredsFrom(keys);
   if (creds.password == null) return null;
   return (password: creds.password!, storeKeyPriv: creds.storeKeyPriv);

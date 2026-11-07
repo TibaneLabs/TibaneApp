@@ -32,6 +32,12 @@ class SecurityPrivacyScreen extends StatelessWidget {
     final wallet = context.watch<WalletService>();
     final inapp = wallet.kind == WalletKind.inapp;
     final hasInappWallet = inapp && wallet.libwallet.hasWallet;
+    final accountWallet =
+        wallet.accountsService.walletsById[wallet.libwallet.walletId];
+    final isMpc = accountWallet != null && accountWallet.keys.length > 1;
+    final hasStore = accountWallet?.keys.any((k) => k.isStoreKey) ?? false;
+    final hasRemote = accountWallet?.keys.any((k) => k.isRemoteKey) ?? false;
+    final hasPassword = accountWallet?.keys.any((k) => k.isPassword) ?? false;
 
     return Scaffold(
       backgroundColor: TibaneColors.black,
@@ -41,35 +47,39 @@ class SecurityPrivacyScreen extends StatelessWidget {
           padding: const EdgeInsets.all(20),
           child: Column(
             children: [
-              if (hasInappWallet) ...[
-                SettingsTile(
-                  icon: Icons.password_outlined,
-                  title: l10n.securityChangePasswordTitle,
-                  subtitle: l10n.securityChangePasswordSubtitle,
-                  onTap: () => _changePassword(context, wallet),
-                ),
+              if (hasInappWallet && isMpc) ...[
+                if (hasPassword)
+                  SettingsTile(
+                    icon: Icons.password_outlined,
+                    title: l10n.securityChangePasswordTitle,
+                    subtitle: l10n.securityChangePasswordSubtitle,
+                    onTap: () => _changePassword(context, wallet),
+                  ),
                 const SizedBox(height: 6),
-                SettingsTile(
-                  icon: Icons.refresh,
-                  title: l10n.securityResetDeviceKeyTitle,
-                  subtitle: l10n.securityResetDeviceKeySubtitle,
-                  onTap: () => _rotateDeviceShare(context, wallet),
-                ),
+                if (hasStore)
+                  SettingsTile(
+                    icon: Icons.refresh,
+                    title: l10n.securityResetDeviceKeyTitle,
+                    subtitle: l10n.securityResetDeviceKeySubtitle,
+                    onTap: () => _rotateDeviceShare(context, wallet),
+                  ),
                 const SizedBox(height: 6),
-                SettingsTile(
-                  icon: Icons.sms_outlined,
-                  title: l10n.securityReset2faTitle,
-                  subtitle: l10n.securityReset2faSubtitle,
-                  onTap: () => _rotateRemoteKey(context, wallet),
-                ),
+                if (hasStore && hasRemote)
+                  SettingsTile(
+                    icon: Icons.sms_outlined,
+                    title: l10n.securityReset2faTitle,
+                    subtitle: l10n.securityReset2faSubtitle,
+                    onTap: () => _rotateRemoteKey(context, wallet),
+                  ),
                 const SizedBox(height: 6),
-                SettingsTile(
-                  icon: Icons.healing_outlined,
-                  title: l10n.securitySetUpSigningTitle,
-                  subtitle: l10n.securitySetUpSigningSubtitle,
-                  onTap: () => _recoverDeviceShare(context, wallet),
-                ),
-              ] else ...[
+                if (hasStore)
+                  SettingsTile(
+                    icon: Icons.healing_outlined,
+                    title: l10n.securitySetUpSigningTitle,
+                    subtitle: l10n.securitySetUpSigningSubtitle,
+                    onTap: () => _recoverDeviceShare(context, wallet),
+                  ),
+              ] else if (!hasInappWallet) ...[
                 TibaneCard(
                   padding: const EdgeInsets.all(16),
                   child: Text(
@@ -108,35 +118,37 @@ class SecurityPrivacyScreen extends StatelessWidget {
     String message,
     Future<T> Function() op,
   ) async {
-    unawaited(showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          backgroundColor: TibaneColors.card,
-          content: Row(
-            children: [
-              const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: TibaneColors.orange,
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            backgroundColor: TibaneColors.card,
+            content: Row(
+              children: [
+                const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: TibaneColors.orange,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 18),
-              Expanded(
-                child: Text(
-                  message,
-                  style: const TextStyle(color: TibaneColors.textMuted),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
-    ));
+    );
     try {
       return await op();
     } finally {
@@ -150,9 +162,11 @@ class SecurityPrivacyScreen extends StatelessWidget {
     BuildContext context,
     WalletService wallet,
   ) async {
+    final pending = await wallet.libwallet.hasPendingPasswordRotation();
+    if (!context.mounted) return;
     final result = await showDialog<_PasswordChange>(
       context: context,
-      builder: (_) => const _ChangePasswordDialog(),
+      builder: (_) => _ChangePasswordDialog(incomplete: pending),
     );
     if (result == null) return;
     if (!context.mounted) return;
@@ -163,11 +177,16 @@ class SecurityPrivacyScreen extends StatelessWidget {
     final session = await _withProgress(
       context,
       l10n.securitySendingCode,
-      () => wallet.libwallet.startRemoteKeyReshare(),
+      () => wallet.libwallet.startPasswordChangeVerification(
+        oldPassword: result.oldPassword,
+        newPassword: result.newPassword,
+      ),
     );
     if (!context.mounted) return;
     if (session == null) {
-      logError('[SecurityPrivacy._changePassword] reshare start failed: ${wallet.libwallet.error}');
+      logError(
+        '[SecurityPrivacy._changePassword] reshare start failed: ${wallet.libwallet.error}',
+      );
       showWalletError(context, wallet.libwallet.error ?? 'Could not send code');
       return;
     }
@@ -193,8 +212,13 @@ class SecurityPrivacyScreen extends StatelessWidget {
         SnackBar(content: Text(l10n.securityPasswordChanged)),
       );
     } else {
-      logError('[SecurityPrivacy._changePassword] failed: ${wallet.libwallet.error}');
-      showWalletError(context, wallet.libwallet.error ?? 'Change password failed');
+      logError(
+        '[SecurityPrivacy._changePassword] failed: ${wallet.libwallet.error}',
+      );
+      showWalletError(
+        context,
+        wallet.libwallet.error ?? 'Change password failed',
+      );
     }
   }
 
@@ -232,9 +256,14 @@ class SecurityPrivacyScreen extends StatelessWidget {
     final messenger = context.messenger;
     final session = await wallet.libwallet.startRemoteKeyReshare();
     if (session == null) {
-      logError('[SecurityPrivacy._rotateRemoteKey] reshare start failed: ${wallet.libwallet.error}');
+      logError(
+        '[SecurityPrivacy._rotateRemoteKey] reshare start failed: ${wallet.libwallet.error}',
+      );
       if (!context.mounted) return;
-      showWalletError(context, wallet.libwallet.error ?? 'Reshare start failed');
+      showWalletError(
+        context,
+        wallet.libwallet.error ?? 'Reshare start failed',
+      );
       return;
     }
     if (!context.mounted) return;
@@ -253,7 +282,9 @@ class SecurityPrivacyScreen extends StatelessWidget {
         SnackBar(content: Text(l10n.security2faShareRotated)),
       );
     } else {
-      logError('[SecurityPrivacy._rotateRemoteKey] reshare failed: ${wallet.libwallet.error}');
+      logError(
+        '[SecurityPrivacy._rotateRemoteKey] reshare failed: ${wallet.libwallet.error}',
+      );
       showWalletError(context, wallet.libwallet.error ?? 'Reshare failed');
     }
   }
@@ -268,9 +299,7 @@ class SecurityPrivacyScreen extends StatelessWidget {
     final walletId = wallet.libwallet.walletId;
     if (walletId == null) return;
     await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => InAppUnlockScreen(walletId: walletId),
-      ),
+      MaterialPageRoute(builder: (_) => InAppUnlockScreen(walletId: walletId)),
     );
   }
 
@@ -322,7 +351,9 @@ class SecurityPrivacyScreen extends StatelessWidget {
     );
     if (!context.mounted) return;
     if (session == null) {
-      logError('[SecurityPrivacy._rotateDeviceShare] reshare start failed: ${wallet.libwallet.error}');
+      logError(
+        '[SecurityPrivacy._rotateDeviceShare] reshare start failed: ${wallet.libwallet.error}',
+      );
       showWalletError(context, wallet.libwallet.error ?? 'Could not send code');
       return;
     }
@@ -348,7 +379,9 @@ class SecurityPrivacyScreen extends StatelessWidget {
         SnackBar(content: Text(l10n.securityDeviceShareRotated)),
       );
     } else {
-      logError('[SecurityPrivacy._rotateDeviceShare] rotate failed: ${wallet.libwallet.error}');
+      logError(
+        '[SecurityPrivacy._rotateDeviceShare] rotate failed: ${wallet.libwallet.error}',
+      );
       showWalletError(context, wallet.libwallet.error ?? 'Rotate failed');
     }
   }
@@ -362,7 +395,8 @@ class _PasswordChange {
 }
 
 class _ChangePasswordDialog extends StatefulWidget {
-  const _ChangePasswordDialog();
+  const _ChangePasswordDialog({this.incomplete = false});
+  final bool incomplete;
 
   @override
   State<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();
@@ -388,17 +422,23 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
     final newPw = _newCtrl.text;
     final confirm = _confirmCtrl.text;
     if (oldPw.isEmpty) {
-      logError('[SecurityPrivacy._ChangePasswordDialog] validation error: current password empty');
+      logError(
+        '[SecurityPrivacy._ChangePasswordDialog] validation error: current password empty',
+      );
       setState(() => _error = l10n.securityPwEnterCurrent);
       return;
     }
     if (newPw.length < 8) {
-      logError('[SecurityPrivacy._ChangePasswordDialog] validation error: new password too short');
+      logError(
+        '[SecurityPrivacy._ChangePasswordDialog] validation error: new password too short',
+      );
       setState(() => _error = l10n.securityPwTooShort);
       return;
     }
     if (newPw != confirm) {
-      logError('[SecurityPrivacy._ChangePasswordDialog] validation error: new passwords do not match');
+      logError(
+        '[SecurityPrivacy._ChangePasswordDialog] validation error: new passwords do not match',
+      );
       setState(() => _error = l10n.securityPwNoMatch);
       return;
     }
@@ -414,6 +454,11 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (widget.incomplete)
+            Text(
+              l10n.walletPasswordUpdateIncomplete,
+              style: const TextStyle(color: TibaneColors.orange),
+            ),
           TextField(
             controller: _oldCtrl,
             obscureText: true,
@@ -429,9 +474,7 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
           TextField(
             controller: _confirmCtrl,
             obscureText: true,
-            decoration: InputDecoration(
-              labelText: l10n.securityPwConfirmLabel,
-            ),
+            decoration: InputDecoration(labelText: l10n.securityPwConfirmLabel),
           ),
           if (_error != null) ...[
             const SizedBox(height: 10),

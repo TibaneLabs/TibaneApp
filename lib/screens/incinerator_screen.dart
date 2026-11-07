@@ -150,7 +150,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
     } catch (e) {
       logError('[Incinerator._loadTokens] error: $e');
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loadingTokens = false;
       });
     }
@@ -333,7 +333,9 @@ class _IncineratorScreenState extends State<IncineratorScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              l10n.commonBalanceLabel(formatTokenAmount(account.amount, account.decimals)),
+              l10n.commonBalanceLabel(
+                formatTokenAmount(account.amount, account.decimals),
+              ),
               style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
             ),
             const SizedBox(height: 12),
@@ -377,12 +379,10 @@ class _IncineratorScreenState extends State<IncineratorScreen>
     );
     controller.dispose();
     if (confirmed == null || confirmed.isEmpty) return;
-    final v = parseAmount(confirmed);
-    if (v == null || v <= 0) return;
-    final amount = BigInt.from(
-      v * BigInt.from(10).pow(account.decimals).toDouble(),
-    );
-    if (amount <= BigInt.zero) return;
+    final amount = parseTokenAmount(confirmed, account.decimals);
+    if (amount == null || amount <= BigInt.zero || amount > account.amount) {
+      return;
+    }
 
     if (!mounted) return;
     final wallet = context.read<WalletService>();
@@ -408,16 +408,19 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         instructions: [ix],
       );
       if (!mounted) return;
-      final sigs = await authorizeAndSignAndSend(
-        context,
-        [Uint8List.fromList(tx)],
-      );
+      final sigs = await authorizeAndSignAndSend(context, [
+        Uint8List.fromList(tx),
+      ]);
       if (!mounted) return;
       if (sigs == null) return; // cancelled / not authorized
       final sig = sigs.first;
       if (sig != null) {
         context.showSnackBar(
-          SnackBar(content: Text(context.l10n.incineratorBurnedSig(sig.substring(0, 8)))),
+          SnackBar(
+            content: Text(
+              context.l10n.incineratorBurnedSig(sig.substring(0, 8)),
+            ),
+          ),
         );
         await _rpc.confirmTransaction(sig);
         if (!mounted) return;
@@ -483,7 +486,11 @@ class _IncineratorScreenState extends State<IncineratorScreen>
           feePayer: wallet.publicKey!,
           instructions: instructions,
         );
-        final sig = await signAndSendOne(wallet, Uint8List.fromList(tx), auth.keys);
+        final sig = await signAndSendOne(
+          wallet,
+          Uint8List.fromList(tx),
+          auth.keys,
+        );
         if (sig != null) {
           successCount += batch.length;
           lastSig = sig;
@@ -509,7 +516,11 @@ class _IncineratorScreenState extends State<IncineratorScreen>
           feePayer: wallet.publicKey!,
           instructions: instructions,
         );
-        final sig = await signAndSendOne(wallet, Uint8List.fromList(tx), auth.keys);
+        final sig = await signAndSendOne(
+          wallet,
+          Uint8List.fromList(tx),
+          auth.keys,
+        );
         if (sig != null) {
           successCount += batch.length;
           lastSig = sig;
@@ -529,7 +540,11 @@ class _IncineratorScreenState extends State<IncineratorScreen>
           feePayer: wallet.publicKey!,
           instructions: [ix],
         );
-        final sig = await signAndSendOne(wallet, Uint8List.fromList(tx), auth.keys);
+        final sig = await signAndSendOne(
+          wallet,
+          Uint8List.fromList(tx),
+          auth.keys,
+        );
         if (sig != null) {
           successCount++;
           lastSig = sig;
@@ -558,7 +573,11 @@ class _IncineratorScreenState extends State<IncineratorScreen>
           feePayer: wallet.publicKey!,
           instructions: instructions,
         );
-        final sig = await signAndSendOne(wallet, Uint8List.fromList(tx), auth.keys);
+        final sig = await signAndSendOne(
+          wallet,
+          Uint8List.fromList(tx),
+          auth.keys,
+        );
         if (sig != null) {
           successCount += batch.length;
           lastSig = sig;
@@ -569,7 +588,11 @@ class _IncineratorScreenState extends State<IncineratorScreen>
 
       if (!mounted) return;
       if (successCount > 0) {
-        context.showSnackBar(SnackBar(content: Text(context.l10n.incineratorBurnedItems(successCount))));
+        context.showSnackBar(
+          SnackBar(
+            content: Text(context.l10n.incineratorBurnedItems(successCount)),
+          ),
+        );
         _clearSelection();
       } else if (wallet.error != null) {
         logError('[Incinerator._directBurn] wallet error: ${wallet.error}');
@@ -773,7 +796,9 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       if (signatures.isNotEmpty) {
         context.showSnackBar(
           SnackBar(
-            content: Text(context.l10n.incineratorBurnedBatches(signatures.length)),
+            content: Text(
+              context.l10n.incineratorBurnedBatches(signatures.length),
+            ),
           ),
         );
         _clearSelection();
@@ -872,7 +897,11 @@ class _IncineratorScreenState extends State<IncineratorScreen>
                     ? l10n.incineratorTabTokensLoading
                     : l10n.incineratorTabTokens(_tokenAccounts.length),
               ),
-              Tab(text: _loadingNfts ? l10n.incineratorTabNftsLoading : l10n.incineratorTabNfts(_nfts.length)),
+              Tab(
+                text: _loadingNfts
+                    ? l10n.incineratorTabNftsLoading
+                    : l10n.incineratorTabNfts(_nfts.length),
+              ),
               Tab(
                 text: _loadingDomains
                     ? l10n.incineratorTabDomainsLoading
@@ -981,7 +1010,9 @@ class _NotConnectedView extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               context.l10n.incineratorConnectWallet,
-              style: context.textTheme.bodyLarge?.copyWith(color: TibaneColors.textMuted),
+              style: context.textTheme.bodyLarge?.copyWith(
+                color: TibaneColors.textMuted,
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -1017,7 +1048,10 @@ class _ErrorView extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            OutlinedButton(onPressed: onRetry, child: Text(context.l10n.actionRetry)),
+            OutlinedButton(
+              onPressed: onRetry,
+              child: Text(context.l10n.actionRetry),
+            ),
           ],
         ),
       ),
@@ -1286,7 +1320,9 @@ class _NftsList extends StatelessWidget {
             ),
             const Spacer(),
             Text(
-              l10n.incineratorCompressedCount(nfts.where((n) => n.compressed).length),
+              l10n.incineratorCompressedCount(
+                nfts.where((n) => n.compressed).length,
+              ),
               style: monoStyle(fontSize: 12, color: TibaneColors.textDim),
             ),
           ],
@@ -1687,7 +1723,9 @@ class _BottomBar extends StatelessWidget {
             ],
             // Burn button
             GradientButton(
-              label: sponsoredMode ? l10n.incineratorSponsoredBurn : l10n.incineratorBurnButton,
+              label: sponsoredMode
+                  ? l10n.incineratorSponsoredBurn
+                  : l10n.incineratorBurnButton,
               icon: Icons.local_fire_department,
               loading: burning,
               expanded: true,

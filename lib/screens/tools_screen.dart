@@ -1,25 +1,48 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../l10n/l10n.dart';
+import '../services/uk_compliance_service.dart';
 import '../theme/tibane_theme.dart';
 import '../widgets/tibane_card.dart';
 import 'incinerator_screen.dart';
+import 'staking/staking_pools_screen.dart';
+import 'token_favorites_screen.dart';
 import 'wallet/solana_context.dart';
 
-/// Catalog of Tibane tools, reached from the Home "Tools" action card. Lists
-/// every tool that isn't already a top-level Home action (Search, Stake).
+/// Settings entry point for staking, account cleanup and token search.
 class ToolsScreen extends StatelessWidget {
   const ToolsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    // Incinerator is Solana-only, but it remains reachable from any selected
-    // account. On tap we switch to the wallet's Solana context first.
+    final isUk = context.watch<UkComplianceService>().isUk;
     final tools = <Widget>[
+      if (!isUk)
+        FeatureCard(
+          key: const Key('tools-stake'),
+          icon: Icons.layers_outlined,
+          title: l10n.homeStakeCardTitle,
+          description: l10n.homeStakeCardDesc,
+          onTap: () async {
+            if (!await ensureSolanaWalletContext(context)) return;
+            if (!context.mounted) return;
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => Scaffold(
+                  backgroundColor: TibaneColors.black,
+                  appBar: AppBar(title: Text(l10n.homeStakingPoolsTitle)),
+                  body: const SafeArea(child: StakingPoolsScreen()),
+                ),
+              ),
+            );
+          },
+        ),
       FeatureCard(
+        key: const Key('tools-incinerator'),
         icon: Icons.local_fire_department,
-        title: 'Incinerator',
+        title: l10n.incineratorTitle,
         description: l10n.homeIncineratorDescription,
         onTap: () async {
           if (!await ensureSolanaWalletContext(context)) return;
@@ -28,12 +51,21 @@ class ToolsScreen extends StatelessWidget {
             MaterialPageRoute(
               builder: (_) => Scaffold(
                 backgroundColor: TibaneColors.black,
-                appBar: AppBar(title: const Text('Incinerator')),
+                appBar: AppBar(title: Text(l10n.incineratorTitle)),
                 body: const IncineratorScreen(),
               ),
             ),
           );
         },
+      ),
+      FeatureCard(
+        key: const Key('tools-search'),
+        icon: Icons.search,
+        title: l10n.homeTokenInfoTitle,
+        description: l10n.homeTokenInfoDescription,
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const TokenFavoritesScreen())),
       ),
     ];
 

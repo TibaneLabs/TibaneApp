@@ -40,6 +40,7 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.0
+  sqflite_common_ffi: ^2.3.6
 
 flutter_launcher_icons:
   android: true
@@ -57,5 +58,4 @@ flutter:
 
   assets:
     - assets/
-    - assets/account_pfps/
     - assets/icons/

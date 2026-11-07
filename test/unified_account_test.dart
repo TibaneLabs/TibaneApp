@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libwallet/libwallet.dart'
-    show Account, Network, NetworkType, Wallet;
+    show Account, Network, NetworkType, Wallet, WalletKey;
 import 'package:tibaneapp/services/wallet/unified_account.dart';
 
 /// Unit tests for the account-centric model (Atonline-parity Phase 4b-1). The
@@ -15,6 +15,7 @@ Account _acct({
   int index = 0,
   String type = 'solana',
   String? address,
+  DateTime? created,
 }) => Account(
   id: id,
   wallet: wallet,
@@ -29,7 +30,7 @@ Account _acct({
   uri: '',
   pubkey: '',
   chaincode: '',
-  created: DateTime(2020),
+  created: created ?? DateTime(2020),
   updated: DateTime(2020),
 );
 
@@ -37,6 +38,7 @@ Wallet _wallet({
   required String id,
   String name = 'Wallet 1',
   String curve = 'ed25519',
+  List<WalletKey> keys = const [],
 }) => Wallet(
   id: id,
   name: name,
@@ -47,7 +49,7 @@ Wallet _wallet({
   chaincode: '',
   created: DateTime(2020),
   modified: DateTime(2020),
-  keys: const [],
+  keys: keys,
 );
 
 Network _network({
@@ -71,6 +73,38 @@ Network _network({
 
 void main() {
   group('buildUnifiedAccounts', () {
+    test(
+      'a standalone imported Ethereum key does not expose a legacy BTC backing row',
+      () {
+        final wallet = _wallet(
+          id: 'imported',
+          curve: 'secp256k1',
+          keys: [
+            const WalletKey(
+              id: 'key',
+              wallet: 'imported',
+              type: 'StoreKey',
+              key: 'public',
+              gen: 1,
+            ),
+          ],
+        );
+        final accounts = buildUnifiedAccounts(
+          inappAccounts: [
+            _acct(id: 'eth', wallet: wallet.id, type: 'ethereum'),
+            _acct(
+              id: 'technical',
+              wallet: wallet.id,
+              type: 'bitcoin',
+              address: '1UnknownTechnicalAddress',
+            ),
+          ],
+          walletsById: {wallet.id: wallet},
+        );
+        expect(accounts.map((account) => account.chain), ['ethereum']);
+        expect(accounts.single.isMainWalletContext, false);
+      },
+    );
     test('in-app account: label "walletName - name", ids + chain mapped', () {
       final out = buildUnifiedAccounts(
         inappAccounts: [
@@ -90,6 +124,35 @@ void main() {
       expect(a.accountId, 'acc1');
       expect(a.curve, 'ed25519');
       expect(a.id, 'acc1');
+      expect(a.createdAt, DateTime(2020));
+    });
+
+    test('preserves creation time for added and virtual network accounts', () {
+      final nativeCreated = DateTime.utc(2026, 11, 1);
+      final addedCreated = DateTime.utc(2026, 11, 2);
+      final out = buildUnifiedAccounts(
+        inappAccounts: [
+          _acct(
+            id: 'native',
+            wallet: 'eth',
+            type: 'ethereum',
+            created: nativeCreated,
+          ),
+          _acct(
+            id: 'added',
+            wallet: 'eth',
+            type: 'ethereum',
+            index: 1,
+            created: addedCreated,
+          ),
+        ],
+        walletsById: {'eth': _wallet(id: 'eth', curve: 'secp256k1')},
+      );
+      expect(out.firstWhere((a) => a.id == 'added').createdAt, addedCreated);
+      expect(out.where((a) => a.isMainWalletContext), hasLength(5));
+      for (final account in out.where((a) => a.isMainWalletContext)) {
+        expect(account.createdAt, nativeCreated);
+      }
     });
 
     test('missing wallet in map is treated as an orphan and hidden', () {
@@ -207,6 +270,59 @@ void main() {
       },
     );
 
+    test('Bitcoin backing owns contexts without duplicating Ethereum', () {
+      final out = buildUnifiedAccounts(
+        inappAccounts: [
+          _acct(id: 'eth1', wallet: 'w2', type: 'ethereum'),
+          _acct(
+            id: 'btc1',
+            wallet: 'w2',
+            type: 'bitcoin',
+            address: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080',
+          ),
+        ],
+        walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+      );
+
+      expect(out.map((account) => account.id), [
+        'eth1',
+        'bitcoin:btc1',
+        'bitcoin-cash:btc1',
+        'dogecoin:btc1',
+        'litecoin:btc1',
+      ]);
+      expect(
+        out
+            .where((account) => isBitcoinFamilyChain(account.chain))
+            .every((account) => account.accountId == 'btc1'),
+        isTrue,
+      );
+    });
+
+    test(
+      'attached index-zero wallet stays additional without BTC contexts',
+      () {
+        final out = buildUnifiedAccounts(
+          inappAccounts: [
+            _acct(
+              id: 'imported',
+              wallet: 'attached-evm',
+              name: 'Imported',
+              type: 'ethereum',
+            ),
+          ],
+          walletsById: {
+            'attached-evm': _wallet(id: 'attached-evm', curve: 'secp256k1'),
+          },
+          additionalWalletIds: const {'attached-evm'},
+        );
+
+        expect(out, hasLength(1));
+        expect(out.single.chain, 'ethereum');
+        expect(out.single.isMainWalletContext, isFalse);
+      },
+    );
+
     test('virtual Bitcoin context can use a pre-resolved Bitcoin address', () {
       final out = buildUnifiedAccounts(
         inappAccounts: [
@@ -290,36 +406,15 @@ void main() {
       expect(bitcoin.address, 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh');
     });
 
-    test('avatar assets are mapped by displayed account id', () {
-      final out = buildUnifiedAccounts(
-        inappAccounts: [
-          _acct(id: 'sol1', wallet: 'w1', type: 'solana'),
-          _acct(id: 'eth1', wallet: 'w2', type: 'ethereum'),
-        ],
-        walletsById: {
-          'w1': _wallet(id: 'w1', curve: 'ed25519'),
-          'w2': _wallet(id: 'w2', curve: 'secp256k1'),
-        },
-        accountAvatarAssetsById: const {
-          'sol1': 'assets/account_pfps/account_pfp_01.png',
-          'eth1': 'assets/account_pfps/account_pfp_02.png',
-          'bitcoin:eth1': 'assets/account_pfps/account_pfp_03.png',
-          'bitcoin-cash:eth1': 'assets/account_pfps/account_pfp_04.png',
-          'dogecoin:eth1': 'assets/account_pfps/account_pfp_05.png',
-          'litecoin:eth1': 'assets/account_pfps/account_pfp_06.png',
-        },
+    test('account addresses use a consistent five-by-five abbreviation', () {
+      expect(
+        abbreviateAccountAddress('72NBJSDxA330wR66qssMDAj1'),
+        '72NBJ...MDAj1',
       );
-      expect(out.map((a) => a.avatarAsset).toList(), const [
-        'assets/account_pfps/account_pfp_01.png',
-        'assets/account_pfps/account_pfp_02.png',
-        'assets/account_pfps/account_pfp_03.png',
-        'assets/account_pfps/account_pfp_04.png',
-        'assets/account_pfps/account_pfp_05.png',
-        'assets/account_pfps/account_pfp_06.png',
-      ]);
+      expect(abbreviateAccountAddress('short'), 'short');
     });
 
-    test('bitcoin account under secp256k1 wallet is hidden', () {
+    test('bitcoin backing row is hidden behind network contexts', () {
       final out = buildUnifiedAccounts(
         inappAccounts: [
           _acct(
@@ -332,7 +427,13 @@ void main() {
         ],
         walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
       );
-      expect(out, isEmpty);
+      expect(out.map((account) => account.chain), [
+        'bitcoin',
+        'bitcoin-cash',
+        'dogecoin',
+        'litecoin',
+      ]);
+      expect(out.every((account) => account.accountId == 'btc1'), isTrue);
     });
   });
 
@@ -478,6 +579,20 @@ void main() {
         isUsableAccount(
           _acct(id: 'a', wallet: 'w', type: 'solana', address: 'SoLaddr'),
           _wallet(id: 'w', curve: 'ed25519'),
+        ),
+        isTrue,
+      );
+    });
+    test('accepts a technical bitcoin account under secp256k1', () {
+      expect(
+        isUsableAccount(
+          _acct(
+            id: 'btc',
+            wallet: 'w',
+            type: 'bitcoin',
+            address: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080',
+          ),
+          _wallet(id: 'w', curve: 'secp256k1'),
         ),
         isTrue,
       );
@@ -843,20 +958,35 @@ void main() {
       );
       expect(accountMatchesNetwork(btc, NetworkType.evm), isFalse);
     });
-    test('networksForAccount resolves a bitcoin account to its own coin only', () {
-      final btc = buildUnifiedAccounts(
-        inappAccounts: [_acct(id: 'b', wallet: 'w2', type: 'ethereum')],
-        walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
-      ).firstWhere((a) => a.chain == 'bitcoin');
-      final networks = [
-        _network(id: 'btc-net', type: NetworkType.bitcoin, chainId: 'bitcoin'),
-        _network(id: 'ltc-net', type: NetworkType.bitcoin, chainId: 'litecoin'),
-        _network(id: 'doge-net', type: NetworkType.bitcoin, chainId: 'dogecoin'),
-      ];
-      // Not just any NetworkType.bitcoin network — only the account's own coin
-      // (guards the F6 regression where a BTC→LTC switch was a no-op).
-      expect(networksForAccount(btc, networks).map((n) => n.id), ['btc-net']);
-    });
+    test(
+      'networksForAccount resolves a bitcoin account to its own coin only',
+      () {
+        final btc = buildUnifiedAccounts(
+          inappAccounts: [_acct(id: 'b', wallet: 'w2', type: 'ethereum')],
+          walletsById: {'w2': _wallet(id: 'w2', curve: 'secp256k1')},
+        ).firstWhere((a) => a.chain == 'bitcoin');
+        final networks = [
+          _network(
+            id: 'btc-net',
+            type: NetworkType.bitcoin,
+            chainId: 'bitcoin',
+          ),
+          _network(
+            id: 'ltc-net',
+            type: NetworkType.bitcoin,
+            chainId: 'litecoin',
+          ),
+          _network(
+            id: 'doge-net',
+            type: NetworkType.bitcoin,
+            chainId: 'dogecoin',
+          ),
+        ];
+        // Not just any NetworkType.bitcoin network — only the account's own coin
+        // (guards the F6 regression where a BTC→LTC switch was a no-op).
+        expect(networksForAccount(btc, networks).map((n) => n.id), ['btc-net']);
+      },
+    );
   });
 
   group('solanaOnlyFeaturesEnabled (chain gating)', () {

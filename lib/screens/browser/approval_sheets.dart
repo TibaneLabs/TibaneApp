@@ -10,10 +10,72 @@ import 'package:libwallet/libwallet.dart'
         MessageSignRequest,
         Network,
         WatchAssetRequest;
+import 'package:libwallet/libwallet.dart' show TransactionSignRequest;
 
 import '../../l10n/l10n.dart';
 import '../../theme/tibane_theme.dart';
 import '../../utils/context_extensions.dart';
+import '../../utils/amount.dart';
+
+Future<bool> showTransactionSignSheet(
+  BuildContext context, {
+  required TransactionSignRequest req,
+  required Uint8List payload,
+  required String accountAddress,
+}) async {
+  final l10n = context.l10n;
+  final blocking =
+      req.willRevert || req.warnings.any((warning) => warning.isBlocking);
+  return await _show(
+        context,
+        title: req.decodedMethod.isEmpty
+            ? l10n.activityDetailsTitle
+            : req.decodedMethod.replaceAll('_', ' '),
+        host: req.host,
+        approveLabel: l10n.actionApprove,
+        canApprove: !blocking,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _KeyValue(l10n.browserApprovalAccount, accountAddress),
+            if (req.networkName.isNotEmpty)
+              _KeyValue(l10n.labelNetwork, req.networkName),
+            for (final effect in req.effects) ...[
+              const Divider(),
+              Text(effect.type.replaceAll('_', ' ')),
+              if (effect.from.isNotEmpty)
+                _KeyValue(l10n.labelFrom, effect.from),
+              if (effect.to.isNotEmpty) _KeyValue(l10n.labelTo, effect.to),
+              if (effect.token.isNotEmpty)
+                _KeyValue(l10n.browserApprovalTokenId, effect.token),
+              if (effect.amount.isNotEmpty)
+                _KeyValue(l10n.browserBaseUnits, effect.amount),
+            ],
+            if (req.feeAmount.isNotEmpty &&
+                BigInt.tryParse(req.feeAmount) != null)
+              _KeyValue(
+                l10n.activityFee,
+                '${formatExactTokenAmount(BigInt.parse(req.feeAmount), req.feeDecimals)} ${req.feeSymbol}',
+              ),
+            if (req.effects.isEmpty)
+              _WarningRow(text: l10n.browserUnknownEffects),
+            for (final warning in req.warnings)
+              _WarningRow(text: warning.message),
+            if (req.willRevert)
+              _WarningRow(
+                text: req.revertReason.isEmpty
+                    ? l10n.activityFailed
+                    : req.revertReason,
+              ),
+            ExpansionTile(
+              title: Text(l10n.browserApprovalPayload),
+              children: [SelectableText(_previewPayload(payload))],
+            ),
+          ],
+        ),
+      ) ??
+      false;
+}
 
 Future<bool> showConnectSheet(
   BuildContext context, {
@@ -52,7 +114,10 @@ Future<bool> showSignSheet(
             const SizedBox(height: 12),
             Text(
               l10n.browserApprovalPayload,
-              style: const TextStyle(color: TibaneColors.textMuted, fontSize: 12),
+              style: const TextStyle(
+                color: TibaneColors.textMuted,
+                fontSize: 12,
+              ),
             ),
             const SizedBox(height: 6),
             Container(
@@ -115,11 +180,17 @@ String _verbForMethod(AppLocalizations l10n, String method) {
     case 'mpurse_signMessage':
       return l10n.browserApprovalSignMessage;
     default:
-      return method.isEmpty ? l10n.browserApprovalSignMessage : method.replaceAll('_', ' ');
+      return method.isEmpty
+          ? l10n.browserApprovalSignMessage
+          : method.replaceAll('_', ' ');
   }
 }
 
-Widget _typedDataBody(AppLocalizations l10n, MessageSignRequest req, String accountAddress) {
+Widget _typedDataBody(
+  AppLocalizations l10n,
+  MessageSignRequest req,
+  String accountAddress,
+) {
   final domain = req.structuredDomain ?? const <String, dynamic>{};
   final primary = req.structuredPrimaryType;
   final contractLabel = req.verifyingContractLabel;
@@ -158,7 +229,11 @@ Widget _typedDataBody(AppLocalizations l10n, MessageSignRequest req, String acco
   );
 }
 
-Widget _siweBody(AppLocalizations l10n, MessageSignRequest req, String accountAddress) {
+Widget _siweBody(
+  AppLocalizations l10n,
+  MessageSignRequest req,
+  String accountAddress,
+) {
   final f = req.siweFields;
   return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -186,7 +261,11 @@ Widget _siweBody(AppLocalizations l10n, MessageSignRequest req, String accountAd
   );
 }
 
-Widget _plainMessageBody(AppLocalizations l10n, MessageSignRequest req, String accountAddress) {
+Widget _plainMessageBody(
+  AppLocalizations l10n,
+  MessageSignRequest req,
+  String accountAddress,
+) {
   final preview = req.messageText.isNotEmpty
       ? req.messageText
       : _previewPayload(req.messageBytes);
@@ -239,6 +318,7 @@ Future<bool?> _show(
   required String host,
   required String approveLabel,
   required Widget body,
+  bool canApprove = true,
 }) {
   return showModalBottomSheet<bool>(
     context: context,
@@ -247,67 +327,79 @@ Future<bool?> _show(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (ctx) => Padding(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: 20 + ctx.keyboardInset,
+    builder: (ctx) => ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(ctx).height * .88,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: TibaneColors.textDim,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: 20 + ctx.keyboardInset,
           ),
-          const SizedBox(height: 16),
-          Text(title, style: ctx.textTheme.titleLarge),
-          const SizedBox(height: 4),
-          Text(
-            host,
-            style: const TextStyle(color: TibaneColors.textMuted, fontSize: 13),
-          ),
-          const SizedBox(height: 16),
-          body,
-          const SizedBox(height: 20),
-          Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: TibaneColors.textMuted,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: TibaneColors.textDim,
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  child: Text(ctx.l10n.actionReject),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: TibaneColors.orange,
-                    foregroundColor: TibaneColors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  child: Text(
-                    approveLabel,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
+              const SizedBox(height: 16),
+              Text(title, style: ctx.textTheme.titleLarge),
+              const SizedBox(height: 4),
+              Text(
+                host,
+                style: const TextStyle(
+                  color: TibaneColors.textMuted,
+                  fontSize: 13,
                 ),
+              ),
+              const SizedBox(height: 16),
+              body,
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: TibaneColors.textMuted,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: Text(ctx.l10n.actionReject),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: canApprove
+                          ? () => Navigator.pop(ctx, true)
+                          : null,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: TibaneColors.orange,
+                        foregroundColor: TibaneColors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: Text(
+                        approveLabel,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
+        ),
       ),
     ),
   );
@@ -437,20 +529,19 @@ Future<bool> showAddNetworkSheet(
       ],
       if (req.alreadyExists) ...[
         const SizedBox(height: 14),
-        _WarningRow(
-          text: l10n.browserApprovalNetworkAlreadyExists,
-        ),
+        _WarningRow(text: l10n.browserApprovalNetworkAlreadyExists),
       ],
       if (!req.isKnown) ...[
         const SizedBox(height: 14),
-        _WarningRow(
-          text: l10n.browserApprovalNetworkUnknown(n.chainId),
-        ),
+        _WarningRow(text: l10n.browserApprovalNetworkUnknown(n.chainId)),
       ],
       if (req.nameMismatch) ...[
         const SizedBox(height: 14),
         _WarningRow(
-          text: l10n.browserApprovalNetworkNameMismatch(n.chainId, req.knownName),
+          text: l10n.browserApprovalNetworkNameMismatch(
+            n.chainId,
+            req.knownName,
+          ),
         ),
       ],
     ],
@@ -528,21 +619,19 @@ Future<bool> showWatchAssetSheet(
       ],
       if (req.addressLooksInvalid) ...[
         const SizedBox(height: 14),
-        _WarningRow(
-          text: l10n.browserApprovalAddressInvalid,
-        ),
+        _WarningRow(text: l10n.browserApprovalAddressInvalid),
       ],
       if (req.isAlreadyTracked) ...[
         const SizedBox(height: 14),
-        _WarningRow(
-          text: l10n.browserApprovalAlreadyTracked,
-        ),
+        _WarningRow(text: l10n.browserApprovalAlreadyTracked),
       ],
     ],
   );
   return await _show(
         context,
-        title: isNft ? l10n.browserApprovalAddNftTitle : l10n.browserApprovalAddTokenTitle,
+        title: isNft
+            ? l10n.browserApprovalAddNftTitle
+            : l10n.browserApprovalAddTokenTitle,
         host: req.host.isEmpty ? '(unknown)' : req.host,
         approveLabel: l10n.actionAdd,
         body: body,
@@ -649,7 +738,9 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
           ),
           const SizedBox(height: 16),
           Text(
-            req.isNewNetwork ? context.l10n.browserApprovalAddAndSwitchTitle : context.l10n.browserApprovalSwitchNetworkTitle,
+            req.isNewNetwork
+                ? context.l10n.browserApprovalAddAndSwitchTitle
+                : context.l10n.browserApprovalSwitchNetworkTitle,
             style: context.textTheme.titleLarge,
           ),
           const SizedBox(height: 4),
@@ -659,7 +750,10 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
           ),
           const SizedBox(height: 16),
           if (req.currentNetwork != null)
-            _KeyValue(context.l10n.browserApprovalCurrent, req.currentNetwork!.name),
+            _KeyValue(
+              context.l10n.browserApprovalCurrent,
+              req.currentNetwork!.name,
+            ),
           const SizedBox(height: 12),
           if (pickerMode) ...[
             _SectionLabel(context.l10n.browserApprovalPickNetwork),
@@ -696,14 +790,18 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
               ),
             ),
           ] else ...[
-            _KeyValue(context.l10n.browserApprovalSwitchTo, req.targetNetwork!.name),
+            _KeyValue(
+              context.l10n.browserApprovalSwitchTo,
+              req.targetNetwork!.name,
+            ),
             const SizedBox(height: 8),
-            _KeyValue(context.l10n.browserApprovalChainId, req.targetNetwork!.chainId),
+            _KeyValue(
+              context.l10n.browserApprovalChainId,
+              req.targetNetwork!.chainId,
+            ),
             if (req.isNewNetwork) ...[
               const SizedBox(height: 14),
-              _WarningRow(
-                text: context.l10n.browserApprovalNetworkNotInWallet,
-              ),
+              _WarningRow(text: context.l10n.browserApprovalNetworkNotInWallet),
             ],
           ],
           if (req.candidateAccounts.length > 1) ...[
@@ -744,7 +842,10 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
             ),
           ] else if (_pickedAccount != null) ...[
             const SizedBox(height: 8),
-            _KeyValue(context.l10n.browserApprovalAccount, _pickedAccount!.address),
+            _KeyValue(
+              context.l10n.browserApprovalAccount,
+              _pickedAccount!.address,
+            ),
           ],
           const SizedBox(height: 20),
           Row(
@@ -777,7 +878,9 @@ class _ChainSwitchSheetState extends State<_ChainSwitchSheet> {
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   child: Text(
-                    req.isNewNetwork ? context.l10n.browserApprovalAddAndSwitch : context.l10n.browserApprovalSwitch,
+                    req.isNewNetwork
+                        ? context.l10n.browserApprovalAddAndSwitch
+                        : context.l10n.browserApprovalSwitch,
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),

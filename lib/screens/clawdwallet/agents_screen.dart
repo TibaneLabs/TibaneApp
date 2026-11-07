@@ -81,7 +81,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
       });
     }
   }

@@ -59,7 +59,7 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
       logError('[StakingPools._loadPools] load error: $e');
       if (!mounted) return;
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loading = false;
       });
     }

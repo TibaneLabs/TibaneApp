@@ -87,7 +87,7 @@ class _FeeSharingScreenState extends State<FeeSharingScreen> {
     } catch (e) {
       logError('[FeeSharing._loadConfig] load error: $e');
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loading = false;
       });
     }

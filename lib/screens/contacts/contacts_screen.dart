@@ -55,7 +55,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
       logError('[Contacts._load] load error: $e');
       if (!mounted) return;
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loading = false;
       });
     }
@@ -355,7 +355,7 @@ class _ContactEditScreenState extends State<_ContactEditScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
       });
     }
   }

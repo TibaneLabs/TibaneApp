@@ -1,8 +1,9 @@
 import 'package:libwallet/libwallet.dart'
     show Account, Network, NetworkType, Wallet;
+import 'wallet_export_format.dart' show isNormalMnemonicWallet;
 
 /// Which backend owns / signs for an account.
-enum AccountBackend { inapp, mwa, catcard }
+enum AccountBackend { inapp, mwa }
 
 /// One app-level account spanning both backends (in-app MPC + external MWA/Seed
 /// Vault) and every chain — the unit the account switcher and `WalletService`'s
@@ -28,13 +29,13 @@ class UnifiedAccount {
   final String walletName;
   final String accountName;
   final int? accountIndex;
+  final DateTime? createdAt;
 
   /// in-app only — libwallet ids needed to sign and to fetch assets.
   final String? walletId;
   final String? accountId;
   final String? curve;
   final String? idOverride;
-  final String? avatarAsset;
 
   /// Optional concrete network identity. Bitcoin-family contexts all use the
   /// same secp256k1 account id, so the chain string alone is not enough to
@@ -53,11 +54,11 @@ class UnifiedAccount {
     this.walletName = '',
     this.accountName = '',
     this.accountIndex,
+    this.createdAt,
     this.walletId,
     this.accountId,
     this.curve,
     this.idOverride,
-    this.avatarAsset,
     this.networkId,
     this.networkChainId,
     this.networkName,
@@ -67,23 +68,13 @@ class UnifiedAccount {
 
   bool get isInApp => backend == AccountBackend.inapp;
   bool get isMwa => backend == AccountBackend.mwa;
-  bool get isCatCard => backend == AccountBackend.catcard;
-
-  /// Signed outside the app: Seed Vault / MWA, or a CatCard over USB.
-  bool get isExternal => isMwa || isCatCard;
   bool get isSolana => chain == 'solana';
 
   bool get isVirtual => idOverride != null;
 
   /// Stable identity: in-app → `accountId`; virtual in-app contexts can
   /// override this; MWA → `"mwa:<address>"`.
-  String get id =>
-      idOverride ??
-      (isInApp
-          ? accountId!
-          : isCatCard
-          ? 'catcard:$address'
-          : 'mwa:$address');
+  String get id => idOverride ?? (isInApp ? accountId! : 'mwa:$address');
 
   @override
   String toString() => 'UnifiedAccount($id, $backend, $chain, "$label")';
@@ -91,9 +82,6 @@ class UnifiedAccount {
 
 /// Label shown for the external Seed Vault account.
 const String mwaAccountLabel = 'External (Seed Vault)';
-
-/// Label shown for the CatCard hardware-wallet account.
-const String catCardAccountLabel = 'CatCard (USB)';
 
 class BitcoinNetworkContext {
   final String chain;
@@ -147,6 +135,12 @@ const List<BitcoinNetworkContext> kDefaultBitcoinFamilyContexts = [
 
 bool isBitcoinFamilyChain(String? chain) =>
     chain != null && kBitcoinFamilyChainOrder.contains(chain);
+
+/// Compact address used by account-list surfaces. Keeping this formatter in
+/// one place prevents different chains or screens from drifting apart.
+String abbreviateAccountAddress(String address) => address.length > 13
+    ? '${address.substring(0, 5)}...${address.substring(address.length - 5)}'
+    : address;
 
 String bitcoinContextId(String chain, String accountId) => '$chain:$accountId';
 
@@ -217,6 +211,7 @@ bool isUsableAccount(Account account, Wallet? wallet) {
     return false;
   }
   final curve = wallet.curve;
+  if (account.type == 'bitcoin' && curve == 'secp256k1') return true;
   if (!allowedAccountTypesForCurve(curve).contains(account.type)) {
     return false;
   }
@@ -237,7 +232,6 @@ List<UnifiedAccount> buildUnifiedAccounts({
   required List<Account> inappAccounts,
   required Map<String, Wallet> walletsById,
   String? mwaAddress,
-  String? catCardAddress,
   String? currentAccountId,
   NetworkType? currentNetworkType,
   String? currentNetworkChainId,
@@ -245,19 +239,29 @@ List<UnifiedAccount> buildUnifiedAccounts({
   Map<String, String> bitcoinAddressesByAccountId = const {},
   Map<String, String> bitcoinAddressesByContextId = const {},
   Map<String, String> preferredChainsByAccountId = const {},
-  Map<String, String> accountAvatarAssetsById = const {},
+  Set<String> additionalWalletIds = const {},
   List<BitcoinNetworkContext> bitcoinNetworkContexts =
       kDefaultBitcoinFamilyContexts,
 }) {
   final out = <UnifiedAccount>[];
   final bitcoinContexts = <UnifiedAccount>[];
+  final walletsWithBitcoinBacking = {
+    for (final account in inappAccounts)
+      if (account.type == 'bitcoin' &&
+          account.index == 0 &&
+          isUsableAccount(account, walletsById[account.wallet]) &&
+          (walletsById[account.wallet]!.keys.length != 1 ||
+              isNormalMnemonicWallet(walletsById[account.wallet]!)) &&
+          !additionalWalletIds.contains(account.wallet))
+        account.wallet,
+  };
   for (final a in inappAccounts) {
     final w = walletsById[a.wallet];
     // Skip phantom accounts (curve/type mismatch, non-0x EVM address, or
     // "N/A" — see [isUsableAccount]); they can't be displayed or transacted on.
-    if (!isUsableAccount(a, w)) continue;
+    if (!isUsableAccount(a, w) || w == null) continue;
     final preferredChain = preferredChainsByAccountId[a.id];
-    final walletName = w?.name ?? '';
+    final walletName = w.name;
     final accountName = _displayAccountName(a.name, a.type, a.index);
     final label = _accountLabel(
       walletName: walletName,
@@ -265,13 +269,21 @@ List<UnifiedAccount> buildUnifiedAccounts({
       accountIndex: a.index,
       fallbackChain: a.type,
     );
-    final isMainAccount = a.index == 0;
+    // Index zero is native only for the wallet's original key. A technical
+    // wallet attached as an additional account also starts at index zero, but
+    // must not be rendered as another main context or fan out into BTC-family
+    // contexts.
+    final isMainAccount =
+        a.index == 0 &&
+        !additionalWalletIds.contains(a.wallet) &&
+        (w.keys.length != 1 || isNormalMnemonicWallet(w));
     final hideRealForBitcoinContext =
         !isMainAccount &&
         a.type == 'ethereum' &&
-        w?.curve == 'secp256k1' &&
+        w.curve == 'secp256k1' &&
         isBitcoinFamilyChain(preferredChain);
-    if (!hideRealForBitcoinContext) {
+    final isBitcoinBacking = a.type == 'bitcoin';
+    if (!isBitcoinBacking && !hideRealForBitcoinContext) {
       out.add(
         UnifiedAccount(
           backend: AccountBackend.inapp,
@@ -281,15 +293,21 @@ List<UnifiedAccount> buildUnifiedAccounts({
           walletName: walletName,
           accountName: accountName,
           accountIndex: a.index,
+          createdAt: a.created,
           walletId: a.wallet,
           accountId: a.id,
-          curve: w?.curve,
-          avatarAsset: accountAvatarAssetsById[a.id],
+          curve: w.curve,
           isMainWalletContext: isMainAccount,
         ),
       );
     }
-    if (a.type == 'ethereum' && w?.curve == 'secp256k1' && isMainAccount) {
+    final ownsBitcoinContexts =
+        isMainAccount &&
+        w.curve == 'secp256k1' &&
+        (a.type == 'bitcoin' ||
+            (a.type == 'ethereum' &&
+                !walletsWithBitcoinBacking.contains(a.wallet)));
+    if (ownsBitcoinContexts) {
       for (final context in bitcoinNetworkContexts) {
         final id = bitcoinContextId(context.chain, a.id);
         final activeBitcoinFamilyAddress =
@@ -322,11 +340,11 @@ List<UnifiedAccount> buildUnifiedAccounts({
             walletName: walletName,
             accountName: chainLabel(context.chain),
             accountIndex: a.index,
+            createdAt: a.created,
             walletId: a.wallet,
             accountId: a.id,
-            curve: w?.curve,
+            curve: w.curve,
             idOverride: id,
-            avatarAsset: accountAvatarAssetsById[id],
             networkId: context.networkId,
             networkChainId: context.chainId,
             networkName: context.label,
@@ -346,17 +364,6 @@ List<UnifiedAccount> buildUnifiedAccounts({
         address: mwaAddress,
         label: mwaAccountLabel,
         accountName: mwaAccountLabel,
-      ),
-    );
-  }
-  if (catCardAddress != null && catCardAddress.isNotEmpty) {
-    out.add(
-      UnifiedAccount(
-        backend: AccountBackend.catcard,
-        chain: 'solana',
-        address: catCardAddress,
-        label: catCardAccountLabel,
-        accountName: catCardAccountLabel,
       ),
     );
   }
@@ -437,7 +444,6 @@ UnifiedAccount? resolveCurrentAccount({
   required List<UnifiedAccount> accounts,
   required String? savedId,
   required bool preferMwa,
-  bool preferCatCard = false,
   required String? activeInAppAccountId,
   NetworkType? activeNetworkType,
   String? activeNetworkChainId,
@@ -450,10 +456,6 @@ UnifiedAccount? resolveCurrentAccount({
   if (preferMwa) {
     for (final a in accounts) {
       if (a.isMwa) return a;
-    }
-  } else if (preferCatCard) {
-    for (final a in accounts) {
-      if (a.isCatCard) return a;
     }
   } else {
     if (activeNetworkType != null) {

@@ -3,10 +3,13 @@ import 'package:libwallet/libwallet.dart' show SigningKey, Wallet, WalletKey;
 
 import '../../../l10n/l10n.dart';
 import '../../../services/wallet/signing.dart';
+import '../../../services/wallet/wallet_export_format.dart'
+    show isNormalMnemonicWallet;
 import '../../../theme/tibane_theme.dart';
 import '../../../utils/wallet_error.dart';
 import '../../../widgets/gradient_button.dart';
 import '../../../utils/context_extensions.dart';
+import 'wallet_password_dialog.dart';
 
 /// Per-transaction sign sheet (Atonline-parity Phase 1, §4.3).
 ///
@@ -24,15 +27,24 @@ import '../../../utils/context_extensions.dart';
 /// Returns the collected `List<SigningKey>` on confirm, or `null` on cancel /
 /// dismiss. [readStoreKey] receives the StoreKey [WalletKey] and the password
 /// already typed in this sheet (if any, for the blob fallback step).
+/// Ordinary mnemonic wallets request only their password, without a share sheet.
 Future<List<SigningKey>?> showSignSheet(
   BuildContext context, {
   required Wallet wallet,
   required Future<String?> Function(WalletKey storeKey, String? password)
-      readStoreKey,
+  readStoreKey,
   String title = 'Authorize transaction',
-  String? subtitlePurpose, // e.g. 'sign this transaction' (default) / 'change your password'
+  String?
+  subtitlePurpose, // e.g. 'sign this transaction' (default) / 'change your password'
   String actionLabel = 'Sign',
-}) {
+}) async {
+  if (isNormalMnemonicWallet(wallet)) {
+    final password = await showWalletPasswordDialog(context);
+    if (!context.mounted || password == null || password.isEmpty) return null;
+    return [
+      SigningKey(id: wallet.keys.single.id, key: password, type: 'Password'),
+    ];
+  }
   return showModalBottomSheet<List<SigningKey>>(
     context: context,
     backgroundColor: TibaneColors.card,
@@ -61,7 +73,7 @@ class _SignSheet extends StatefulWidget {
 
   final Wallet wallet;
   final Future<String?> Function(WalletKey storeKey, String? password)
-      readStoreKey;
+  readStoreKey;
   final String title;
   final String subtitlePurpose;
   final String actionLabel;
@@ -81,8 +93,7 @@ class _SignSheetState extends State<_SignSheet> {
   int get _required => requiredSigningShares(_wallet.threshold);
   bool get _ready => signSheetReady(_collected.length, _wallet.threshold);
 
-  bool _isUnlocked(WalletKey key) =>
-      _collected.any((k) => k.id == key.id);
+  bool _isUnlocked(WalletKey key) => _collected.any((k) => k.id == key.id);
 
   Future<void> _unlock(WalletKey key) async {
     if (_busy || _isUnlocked(key) || key.isRemoteKey) return;
@@ -93,8 +104,8 @@ class _SignSheetState extends State<_SignSheet> {
       // Password shares only prompt once.
       var pwd = _password;
       if (pwd == null) {
-        pwd = await _askPassword();
-        if (pwd == null || pwd.isEmpty) return;
+        pwd = await showWalletPasswordDialog(context);
+        if (!mounted || pwd == null || pwd.isEmpty) return;
       }
       final entered = pwd;
       setState(() {
@@ -107,14 +118,14 @@ class _SignSheetState extends State<_SignSheet> {
     if (key.isStoreKey) {
       setState(() => _busy = true);
       try {
-        final priv = _storeKeyPriv ??
-            await widget.readStoreKey(key, _password);
+        final priv = _storeKeyPriv ?? await widget.readStoreKey(key, _password);
         if (!mounted) return;
         if (priv == null || priv.isEmpty) {
-          debugPrint('[signSheet] StoreKey ${key.id} unreadable on this device '
-              '(biometric/keystore/blob all empty)');
-          setState(() => _error =
-              context.l10n.signSheetDeviceKeyError);
+          debugPrint(
+            '[signSheet] StoreKey ${key.id} unreadable on this device '
+            '(biometric/keystore/blob all empty)',
+          );
+          setState(() => _error = context.l10n.signSheetDeviceKeyError);
           return;
         }
         setState(() {
@@ -123,43 +134,11 @@ class _SignSheetState extends State<_SignSheet> {
         });
       } catch (e) {
         debugPrint('[signSheet] device key unlock failed: $e');
-        setState(() => _error = WalletError.from(e).message);
+        setState(() => _error = walletErrorMessageForContext(context, e));
       } finally {
         if (mounted) setState(() => _busy = false);
       }
     }
-  }
-
-  Future<String?> _askPassword() {
-    final ctrl = TextEditingController();
-    final l10n = context.l10n;
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        final dl10n = ctx.l10n;
-        return AlertDialog(
-          backgroundColor: TibaneColors.card,
-          title: Text(l10n.signSheetPasswordTitle),
-          content: TextField(
-            controller: ctrl,
-            obscureText: true,
-            autofocus: true,
-            decoration: InputDecoration(labelText: dl10n.labelPassword),
-            onSubmitted: (v) => Navigator.pop(ctx, v),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(dl10n.actionCancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text),
-              child: Text(dl10n.actionOk),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   @override
@@ -183,13 +162,13 @@ class _SignSheetState extends State<_SignSheet> {
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              widget.title,
-              style: context.textTheme.titleLarge,
-            ),
+            Text(widget.title, style: context.textTheme.titleLarge),
             const SizedBox(height: 6),
             Text(
-              l10n.signSheetUnlockHint(_required.toString(), widget.subtitlePurpose),
+              l10n.signSheetUnlockHint(
+                _required.toString(),
+                widget.subtitlePurpose,
+              ),
               style: const TextStyle(color: TibaneColors.textMuted),
             ),
             const SizedBox(height: 16),
@@ -204,27 +183,27 @@ class _SignSheetState extends State<_SignSheet> {
             ],
             const SizedBox(height: 12),
             Text(
-              l10n.signSheetKeysUnlocked(_collected.length.toString(), _required.toString()),
+              l10n.signSheetKeysUnlocked(
+                _collected.length.toString(),
+                _required.toString(),
+              ),
               style: const TextStyle(color: TibaneColors.textDim, fontSize: 12),
             ),
             const SizedBox(height: 12),
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed:
-                        _busy ? null : () => Navigator.pop(context),
-                    child: Text(l10n.actionCancel),
-                  ),
+                GradientButton(
+                  label: widget.actionLabel,
+                  expanded: true,
+                  onPressed: _ready && !_busy
+                      ? () => Navigator.pop(context, _collected)
+                      : null,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: GradientButton(
-                    label: widget.actionLabel,
-                    onPressed: _ready && !_busy
-                        ? () => Navigator.pop(context, _collected)
-                        : null,
-                  ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: _busy ? null : () => Navigator.pop(context),
+                  child: Text(l10n.actionCancel),
                 ),
               ],
             ),
@@ -241,8 +220,8 @@ class _SignSheetState extends State<_SignSheet> {
     final subtitle = remote
         ? l10n.signSheetKeyRemote
         : key.isStoreKey
-            ? l10n.signSheetKeyDevice
-            : l10n.labelPassword;
+        ? l10n.signSheetKeyDevice
+        : l10n.labelPassword;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -252,34 +231,38 @@ class _SignSheetState extends State<_SignSheet> {
           color: unlocked ? TibaneColors.cyan : TibaneColors.border,
         ),
       ),
-      child: ListTile(
-        onTap: (unlocked || remote || _busy) ? null : () => _unlock(key),
-        leading: loading
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Icon(
-                unlocked
-                    ? Icons.lock_open
-                    : remote
-                        ? Icons.lock_outline
-                        : Icons.lock,
-                color: unlocked
-                    ? TibaneColors.cyan
-                    : remote
-                        ? TibaneColors.textDim
-                        : TibaneColors.textMuted,
-              ),
-        title: Text(l10n.signSheetKeyTitle((index + 1).toString(), key.type)),
-        subtitle: Text(
-          subtitle,
-          style: const TextStyle(color: TibaneColors.textDim, fontSize: 12),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: ListTile(
+          onTap: (unlocked || remote || _busy) ? null : () => _unlock(key),
+          leading: loading
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(
+                  unlocked
+                      ? Icons.lock_open
+                      : remote
+                      ? Icons.lock_outline
+                      : Icons.lock,
+                  color: unlocked
+                      ? TibaneColors.cyan
+                      : remote
+                      ? TibaneColors.textDim
+                      : TibaneColors.textMuted,
+                ),
+          title: Text(l10n.signSheetKeyTitle((index + 1).toString(), key.type)),
+          subtitle: Text(
+            subtitle,
+            style: const TextStyle(color: TibaneColors.textDim, fontSize: 12),
+          ),
+          trailing: unlocked
+              ? const Icon(Icons.check, color: TibaneColors.cyan, size: 18)
+              : null,
         ),
-        trailing: unlocked
-            ? const Icon(Icons.check, color: TibaneColors.cyan, size: 18)
-            : null,
       ),
     );
   }

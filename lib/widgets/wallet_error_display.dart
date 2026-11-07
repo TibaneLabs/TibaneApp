@@ -30,7 +30,9 @@ void showWalletError(BuildContext context, Object error) {
   final l10n = context.l10n;
   messenger.showSnackBar(
     SnackBar(
-      content: Text(we.message),
+      duration: const Duration(seconds: 3),
+      persist: false,
+      content: Text(we.localizedMessage(l10n)),
       backgroundColor: TibaneColors.error,
       action: _hasDetail(we)
           ? SnackBarAction(
@@ -90,6 +92,7 @@ class _WalletErrorCardState extends State<WalletErrorCard> {
   @override
   Widget build(BuildContext context) {
     if (_we.silent) return const SizedBox.shrink();
+    final l10n = context.l10n;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -104,12 +107,15 @@ class _WalletErrorCardState extends State<WalletErrorCard> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.error_outline,
-                  color: TibaneColors.error, size: 20),
+              const Icon(
+                Icons.error_outline,
+                color: TibaneColors.error,
+                size: 20,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  _we.message,
+                  _we.localizedMessage(l10n),
                   style: const TextStyle(color: TibaneColors.text),
                 ),
               ),
@@ -123,7 +129,6 @@ class _WalletErrorCardState extends State<WalletErrorCard> {
                   if (_hasDetail(_we))
                     Builder(
                       builder: (context) {
-                        final l10n = context.l10n;
                         return _LinkButton(
                           label: _showRaw
                               ? l10n.walletErrorHideDetails
@@ -166,14 +171,22 @@ Future<void> showWalletErrorDetails(BuildContext context, WalletError we) {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(we.message,
-                  style: const TextStyle(
-                      color: TibaneColors.text,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                we.localizedMessage(l10n),
+                style: const TextStyle(
+                  color: TibaneColors.text,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const SizedBox(height: 12),
-              Text(l10n.walletErrorTechnicalDetails,
-                  style: const TextStyle(color: TibaneColors.textMuted, fontSize: 12)),
+              Text(
+                l10n.walletErrorTechnicalDetails,
+                style: const TextStyle(
+                  color: TibaneColors.textMuted,
+                  fontSize: 12,
+                ),
+              ),
               const SizedBox(height: 6),
               _RawDetail(raw: we.raw, copyable: true),
             ],
@@ -214,10 +227,7 @@ class _RawDetail extends StatelessWidget {
         children: [
           SelectableText(
             raw,
-            style: const TextStyle(
-                color: TibaneColors.textMuted,
-                fontSize: 12,
-                fontFamily: 'monospace'),
+            style: monoStyle(color: TibaneColors.textMuted, fontSize: 12),
           ),
           if (copyable)
             Align(
@@ -230,7 +240,9 @@ class _RawDetail extends StatelessWidget {
                       await Clipboard.setData(ClipboardData(text: raw));
                       if (!context.mounted) return;
                       context.showSnackBar(
-                        SnackBar(content: Text(l10n.walletErrorCopiedToClipboard)),
+                        SnackBar(
+                          content: Text(l10n.walletErrorCopiedToClipboard),
+                        ),
                       );
                     },
                     icon: const Icon(Icons.copy, size: 16),
@@ -259,9 +271,10 @@ class _LinkButton extends StatelessWidget {
       child: Text(
         label,
         style: const TextStyle(
-            color: TibaneColors.orange,
-            fontSize: 13,
-            fontWeight: FontWeight.w600),
+          color: TibaneColors.orange,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

@@ -57,24 +57,30 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     final loaded = await backend.loadWalletForRecovery(widget.walletId);
     if (!mounted) return;
     if (!loaded) {
-      logError('[ResetPassword._sendCode] load wallet failed: ${backend.error}');
+      logError(
+        '[ResetPassword._sendCode] load wallet failed: ${backend.error}',
+      );
       setState(() {
         _busy = false;
-        _error = WalletError.from(
+        _error = walletErrorMessageForContext(
+          context,
           backend.error ?? 'Could not load wallet',
-        ).message;
+        );
       });
       return;
     }
     final session = await backend.startRemoteKeyReshare();
     if (!mounted) return;
     if (session == null) {
-      logError('[ResetPassword._sendCode] start reshare failed: ${backend.error}');
+      logError(
+        '[ResetPassword._sendCode] start reshare failed: ${backend.error}',
+      );
       setState(() {
         _busy = false;
-        _error = WalletError.from(
+        _error = walletErrorMessageForContext(
+          context,
           backend.error ?? 'Could not send verification code',
-        ).message;
+        );
       });
       return;
     }
@@ -117,17 +123,18 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       await wallet.useLibwallet();
       if (!mounted) return;
       final l10nInner = context.l10n;
-      context.showSnackBar(
-        SnackBar(content: Text(l10nInner.resetPwSuccess)),
-      );
+      context.showSnackBar(SnackBar(content: Text(l10nInner.resetPwSuccess)));
       Navigator.of(context).pop(true);
     } else {
-      logError('[ResetPassword._reset] reset failed: ${wallet.libwallet.error}');
+      logError(
+        '[ResetPassword._reset] reset failed: ${wallet.libwallet.error}',
+      );
       setState(() {
         _busy = false;
-        _error = WalletError.from(
+        _error = walletErrorMessageForContext(
+          context,
           wallet.libwallet.error ?? 'Password reset failed',
-        ).message;
+        );
       });
     }
   }
@@ -143,7 +150,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: _phase == _Phase.intro ? _introBody(l10n) : _codeBody(l10n),
+            children: _phase == _Phase.intro
+                ? _introBody(l10n)
+                : _codeBody(l10n),
           ),
         ),
       ),
@@ -211,9 +220,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         controller: _pwCtrl,
         enabled: !_busy,
         obscureText: true,
-        decoration: InputDecoration(
-          labelText: l10n.resetPwNewPasswordLabel,
-        ),
+        decoration: InputDecoration(labelText: l10n.resetPwNewPasswordLabel),
       ),
       const SizedBox(height: 12),
       TextField(

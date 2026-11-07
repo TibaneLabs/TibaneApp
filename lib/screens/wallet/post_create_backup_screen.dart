@@ -17,9 +17,12 @@ class PostCreateBackupScreen extends StatelessWidget {
   final VoidCallback onDone;
 
   Future<void> _openManualBackup(BuildContext context) async {
-    await Navigator.of(
-      context,
-    ).push<void>(MaterialPageRoute(builder: (_) => const InAppExportScreen()));
+    final completed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => const InAppExportScreen(showNext: true),
+      ),
+    );
+    if (completed == true && context.mounted) onDone();
   }
 
   @override

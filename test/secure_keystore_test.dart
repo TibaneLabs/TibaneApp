@@ -20,6 +20,17 @@ void main() {
   });
 
   group('per-wallet device share', () {
+    test('passwordless storage fails closed without a platform keystore', () {
+      final ks = SecureKeystore();
+      expect(
+        () => ks.writeDeviceShareWithoutPassword(
+          walletId: 'wlt-local',
+          value: 'private-device-share',
+        ),
+        throwsStateError,
+      );
+    });
+
     test('round-trips a device share keyed by walletId', () async {
       final ks = SecureKeystore();
       await ks.writeDeviceShare(
@@ -86,50 +97,64 @@ void main() {
     // Phase 2a: biometric wallets skip the no-auth OS-keystore copy but still
     // write the password-encrypted recovery blob (D8), so the share remains
     // readable with the password.
-    test('osKeystoreCopy:false still writes a readable password blob',
-        () async {
-      final ks = SecureKeystore();
-      await ks.writeDeviceShare(
-        walletId: 'wlt-bio',
-        value: 'bioShare',
-        password: 'pw',
-        osKeystoreCopy: false,
-      );
-      expect(await ks.hasDeviceShare('wlt-bio'), isTrue);
-      expect(
-        await ks.readDeviceShare(walletId: 'wlt-bio', password: 'pw'),
-        'bioShare',
-      );
-    });
+    test(
+      'osKeystoreCopy:false still writes a readable password blob',
+      () async {
+        final ks = SecureKeystore();
+        await ks.writeDeviceShare(
+          walletId: 'wlt-bio',
+          value: 'bioShare',
+          password: 'pw',
+          osKeystoreCopy: false,
+        );
+        expect(await ks.hasDeviceShare('wlt-bio'), isTrue);
+        expect(
+          await ks.readDeviceShare(walletId: 'wlt-bio', password: 'pw'),
+          'bioShare',
+        );
+      },
+    );
   });
 
   group('migration v1 (single-slot) -> v2 (per-wallet)', () {
-    test('moves the legacy blob to the active wallet, then deletes legacy',
-        () async {
-      final ks = SecureKeystore();
-      final prefs = await SharedPreferences.getInstance();
+    test(
+      'moves the legacy blob to the active wallet, then deletes legacy',
+      () async {
+        final ks = SecureKeystore();
+        final prefs = await SharedPreferences.getInstance();
 
-      // Produce a real encrypted blob, then arrange it as the legacy
-      // single-slot entry for the active wallet.
-      await ks.writeDeviceShare(walletId: 'tmp', value: 'legacy', password: 'pw');
-      final blob = prefs.getString('libw_device_share_blob_v1_tmp')!;
-      await prefs.remove('libw_device_share_blob_v1_tmp');
-      await prefs.setString('libw_device_share_blob_v1', blob);
-      await prefs.setString('libw_wallet_id', 'wlt-A');
+        // Produce a real encrypted blob, then arrange it as the legacy
+        // single-slot entry for the active wallet.
+        await ks.writeDeviceShare(
+          walletId: 'tmp',
+          value: 'legacy',
+          password: 'pw',
+        );
+        final blob = prefs.getString('libw_device_share_blob_v1_tmp')!;
+        await prefs.remove('libw_device_share_blob_v1_tmp');
+        await prefs.setString('libw_device_share_blob_v1', blob);
+        await prefs.setString('libw_wallet_id', 'wlt-A');
 
-      await ks.migrateToPerWalletV2('wlt-A');
+        await ks.migrateToPerWalletV2('wlt-A');
 
-      expect(prefs.getString('libw_device_share_blob_v1'), isNull,
-          reason: 'legacy entry deleted after verified copy');
-      expect(prefs.getString('libw_device_share_blob_v1_wlt-A'), blob,
-          reason: 'copied to the active wallet key');
-      expect(prefs.getBool('libw_schema_v2'), isTrue);
-      expect(
-        await ks.readDeviceShare(walletId: 'wlt-A', password: 'pw'),
-        'legacy',
-        reason: 'migrated share still decrypts',
-      );
-    });
+        expect(
+          prefs.getString('libw_device_share_blob_v1'),
+          isNull,
+          reason: 'legacy entry deleted after verified copy',
+        );
+        expect(
+          prefs.getString('libw_device_share_blob_v1_wlt-A'),
+          blob,
+          reason: 'copied to the active wallet key',
+        );
+        expect(prefs.getBool('libw_schema_v2'), isTrue);
+        expect(
+          await ks.readDeviceShare(walletId: 'wlt-A', password: 'pw'),
+          'legacy',
+          reason: 'migrated share still decrypts',
+        );
+      },
+    );
 
     test('is idempotent and never re-touches legacy once v2 is set', () async {
       final prefs = await SharedPreferences.getInstance();
@@ -155,21 +180,27 @@ void main() {
       expect(prefs.getBool('libw_schema_v2'), isTrue);
     });
 
-    test('readDeviceShare falls back to the legacy blob before migration',
-        () async {
-      final ks = SecureKeystore();
-      final prefs = await SharedPreferences.getInstance();
-      // Real blob for the active wallet, parked under the legacy key, no v2.
-      await ks.writeDeviceShare(walletId: 'tmp', value: 'pre', password: 'pw');
-      final blob = prefs.getString('libw_device_share_blob_v1_tmp')!;
-      await prefs.remove('libw_device_share_blob_v1_tmp');
-      await prefs.setString('libw_device_share_blob_v1', blob);
+    test(
+      'readDeviceShare falls back to the legacy blob before migration',
+      () async {
+        final ks = SecureKeystore();
+        final prefs = await SharedPreferences.getInstance();
+        // Real blob for the active wallet, parked under the legacy key, no v2.
+        await ks.writeDeviceShare(
+          walletId: 'tmp',
+          value: 'pre',
+          password: 'pw',
+        );
+        final blob = prefs.getString('libw_device_share_blob_v1_tmp')!;
+        await prefs.remove('libw_device_share_blob_v1_tmp');
+        await prefs.setString('libw_device_share_blob_v1', blob);
 
-      // No per-wallet entry for wlt-A yet, but the legacy fallback resolves it.
-      expect(
-        await ks.readDeviceShare(walletId: 'wlt-A', password: 'pw'),
-        'pre',
-      );
-    });
+        // No per-wallet entry for wlt-A yet, but the legacy fallback resolves it.
+        expect(
+          await ks.readDeviceShare(walletId: 'wlt-A', password: 'pw'),
+          'pre',
+        );
+      },
+    );
   });
 }

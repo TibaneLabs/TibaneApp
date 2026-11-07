@@ -1,15 +1,15 @@
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:libwallet/libwallet.dart' show Account, AddressFormat, Wallet;
+import 'package:libwallet/libwallet.dart'
+    show Account, AddressFormat, Wallet, SigningKey;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../catcard/catcard_wallet_backend.dart';
 import 'libwallet_backend.dart';
 import 'mwa_wallet_backend.dart';
-import 'account_avatar_assets.dart';
 import 'unified_account.dart';
+import 'wallet_group_store.dart';
+import 'wallet_export_format.dart' show isNormalMnemonicWallet;
 
 /// The single source of truth for the account list (Atonline-parity: the
 /// `AccountCubit` + `CurrentAccountCubit` role, as a `ChangeNotifier`).
@@ -28,31 +28,31 @@ import 'unified_account.dart';
 /// [WalletService], which drives [refresh]/[setCurrent] at the right moments
 /// and reconciles kind + balances afterwards.
 class AccountsService extends ChangeNotifier {
-  AccountsService(this._libwallet, this._mwa, {CatCardWalletBackend? catcard})
-    : _catcard = catcard;
+  AccountsService(this._libwallet, this._mwa);
 
   final LibwalletBackend _libwallet;
   final MwaWalletBackend _mwa;
-  final CatCardWalletBackend? _catcard;
 
   static const _prefsCurrentAccountId = 'current_account_id';
   static const _prefsAccountPreferredChains = 'account_preferred_chains';
-  static const _prefsAccountAvatarAssets = 'account_avatar_assets_v1';
+  static const _prefsAttachedWalletParents = 'attached_wallet_parents_v1';
   // Wallet ids whose default accounts have been ensured. Additive-only; gates
   // the [refresh] default-account backfill so it runs at most once per wallet.
-  static const _prefsDefaultsEnsured = 'wallet_defaults_ensured_v1';
+  static const _prefsDefaultsEnsured = 'wallet_defaults_ensured_v2';
 
   // Raw libwallet accounts AFTER filtering out phantoms — the authoritative
   // list the management screens render. Built once per [refresh].
   List<Account> _rawAccounts = const [];
   Map<String, Wallet> _walletsById = const {};
+  Map<String, String> _attachedWalletParents = const {};
+  Map<String, String> _walletGroups = const {};
+  Map<String, String> get walletGroups => Map.unmodifiable(_walletGroups);
 
   // Derived unified list (in-app accounts across all wallets + the connected
   // MWA account) and the current selection.
   List<UnifiedAccount> _accounts = const [];
   UnifiedAccount? _current;
   final Map<String, String> _bitcoinAddressCache = {};
-  final math.Random _avatarRandom = math.Random();
 
   /// Filtered raw accounts (no phantoms). Use for wallet-management surfaces
   /// that need libwallet [Account] fields (path/index/etc.).
@@ -60,6 +60,10 @@ class AccountsService extends ChangeNotifier {
 
   /// Wallets keyed by id, as of the last [refresh].
   Map<String, Wallet> get walletsById => _walletsById;
+
+  /// Technical MPC wallets that should appear as additional accounts inside a
+  /// user-selected logical wallet: child wallet id -> parent wallet id.
+  Map<String, String> get attachedWalletParents => _attachedWalletParents;
 
   /// The unified account list (in-app + MWA). Empty until the first [refresh].
   List<UnifiedAccount> get accounts => _accounts;
@@ -76,14 +80,27 @@ class AccountsService extends ChangeNotifier {
   /// wallets) + the connected MWA account, dropping phantom accounts, and
   /// resolve [current]. [preferMwa] mirrors WalletService's active backend so
   /// the resolved current matches the signer. Best-effort.
-  Future<void> refresh({
-    required bool preferMwa,
-    bool preferCatCard = false,
-  }) async {
+  Future<void> refresh({required bool preferMwa}) async {
     try {
       final client = await _libwallet.ensureClient();
       final prefs = await SharedPreferences.getInstance();
+      _walletGroups = await WalletGroupStore.read();
       final wallets = {for (final w in await client.wallets.list()) w.id: w};
+      final storedParents = _decodeStringMap(
+        prefs.getString(_prefsAttachedWalletParents),
+      );
+      final attachedParents = <String, String>{
+        for (final entry in storedParents.entries)
+          if (wallets.containsKey(entry.key) &&
+              wallets.containsKey(entry.value))
+            entry.key: entry.value,
+      };
+      if (!mapEquals(storedParents, attachedParents)) {
+        await prefs.setString(
+          _prefsAttachedWalletParents,
+          jsonEncode(attachedParents),
+        );
+      }
       // Bootstrap default accounts at most once per wallet. Gating on a
       // persisted set (plus verify-before-create in the backend) stops a
       // transiently-partial accounts.list() from minting duplicate default
@@ -97,6 +114,7 @@ class AccountsService extends ChangeNotifier {
         accounts: await client.accounts.list(),
         walletsById: wallets,
         alreadyEnsured: alreadyEnsured,
+        accountOnlyWalletIds: attachedParents.keys.toSet(),
       );
       final rawList = ensure.accounts;
       final ensuredNow = alreadyEnsured.union(ensure.ensuredWalletIds);
@@ -140,37 +158,17 @@ class AccountsService extends ChangeNotifier {
       }
       _rawAccounts = filtered;
       _walletsById = wallets;
+      _attachedWalletParents = attachedParents;
       final bitcoinFamily = await _resolveBitcoinFamily(filtered, wallets);
 
       final preferredChains = _decodePreferredChains(
         prefs.getString(_prefsAccountPreferredChains),
       );
       final mwaAddr = _mwa.isConnected ? _mwa.publicKey : null;
-      final catAddr = (_catcard?.isConnected ?? false)
-          ? _catcard!.publicKey
-          : null;
-      final baseAccounts = buildUnifiedAccounts(
-        inappAccounts: filtered,
-        walletsById: wallets,
-        mwaAddress: mwaAddr,
-        catCardAddress: catAddr,
-        currentAccountId: _libwallet.accountId,
-        currentNetworkType: _libwallet.currentNetwork?.type,
-        currentNetworkChainId: _libwallet.currentNetwork?.chainId,
-        currentAddress: _libwallet.publicKey,
-        bitcoinAddressesByContextId: bitcoinFamily.addressesByContextId,
-        bitcoinNetworkContexts: bitcoinFamily.contexts,
-        preferredChainsByAccountId: preferredChains,
-      );
-      final avatarAssets = await _ensureAccountAvatarAssets(
-        prefs,
-        baseAccounts,
-      );
       _accounts = buildUnifiedAccounts(
         inappAccounts: filtered,
         walletsById: wallets,
         mwaAddress: mwaAddr,
-        catCardAddress: catAddr,
         currentAccountId: _libwallet.accountId,
         currentNetworkType: _libwallet.currentNetwork?.type,
         currentNetworkChainId: _libwallet.currentNetwork?.chainId,
@@ -178,13 +176,12 @@ class AccountsService extends ChangeNotifier {
         bitcoinAddressesByContextId: bitcoinFamily.addressesByContextId,
         bitcoinNetworkContexts: bitcoinFamily.contexts,
         preferredChainsByAccountId: preferredChains,
-        accountAvatarAssetsById: avatarAssets,
+        additionalWalletIds: attachedParents.keys.toSet(),
       );
       _current = _resolveCurrent(
         _accounts,
         prefs.getString(_prefsCurrentAccountId),
         preferMwa: preferMwa,
-        preferCatCard: preferCatCard,
       );
       notifyListeners();
     } catch (e) {
@@ -198,12 +195,10 @@ class AccountsService extends ChangeNotifier {
     List<UnifiedAccount> accounts,
     String? savedId, {
     required bool preferMwa,
-    bool preferCatCard = false,
   }) => resolveCurrentAccount(
     accounts: accounts,
     savedId: savedId,
     preferMwa: preferMwa,
-    preferCatCard: preferCatCard,
     activeInAppAccountId: _libwallet.accountId,
     activeNetworkType: _libwallet.currentNetwork?.type,
     activeNetworkChainId: _libwallet.currentNetwork?.chainId,
@@ -215,7 +210,10 @@ class AccountsService extends ChangeNotifier {
   ) async {
     final candidates = accounts.where((account) {
       final wallet = walletsById[account.wallet];
-      return account.type == 'ethereum' && wallet?.curve == 'secp256k1';
+      return account.type == 'bitcoin' &&
+          wallet?.curve == 'secp256k1' &&
+          (wallet!.keys.length != 1 || isNormalMnemonicWallet(wallet)) &&
+          !_attachedWalletParents.containsKey(account.wallet);
     }).toList();
     if (candidates.isEmpty) return const _BitcoinFamilyResolution();
 
@@ -231,10 +229,10 @@ class AccountsService extends ChangeNotifier {
 
     final client = await _libwallet.ensureClient();
     final addresses = <String, String>{};
-    for (final account in candidates) {
-      for (final context in contexts) {
-        final networkId = context.networkId;
-        if (networkId == null || networkId.isEmpty) continue;
+    for (final context in contexts) {
+      final networkId = context.networkId;
+      if (networkId == null || networkId.isEmpty) continue;
+      for (final account in candidates) {
         final displayId = bitcoinContextId(context.chain, account.id);
         final cacheKey = '$networkId:${account.id}';
         final cached = _bitcoinAddressCache[cacheKey];
@@ -244,8 +242,8 @@ class AccountsService extends ChangeNotifier {
         }
         // Retry once: a single transient addressFormats failure would
         // otherwise leave this coin's context address-less until a later
-        // refresh (F7). The account is still shown (progressive load); this
-        // just improves the odds of resolving its address on this pass.
+        // refresh. libwallet 0.5.1 resolves the explicit network without
+        // mutating whichever account/network the user currently has selected.
         String? address;
         for (var attempt = 0; attempt < 2; attempt++) {
           try {
@@ -291,11 +289,7 @@ class AccountsService extends ChangeNotifier {
       if (targetNetworkId != null) {
         await _libwallet.setCurrentNetwork(targetNetworkId);
       } else if (cur == null ||
-          !accountMatchesNetwork(
-            acct,
-            cur.type,
-            networkChainId: cur.chainId,
-          )) {
+          !accountMatchesNetwork(acct, cur.type, networkChainId: cur.chainId)) {
         // Compare on the account's specific chain, not just NetworkType: two
         // bitcoin-family coins share NetworkType.bitcoin, so a type-only check
         // would treat a BTC→LTC switch as a no-op and leave the wrong network
@@ -348,75 +342,71 @@ class AccountsService extends ChangeNotifier {
     required String name,
     required String type,
     String? preferredChain,
-    String? avatarAsset,
+    List<SigningKey>? keys,
   }) async {
     final account = await _libwallet.createAccount(
       walletId: walletId,
       name: name,
       type: type,
+      keys: keys,
     );
     if (account != null && preferredChain != null) {
       await _setPreferredChain(account.id, preferredChain);
     }
-    if (account != null && avatarAsset != null) {
-      final displayId = isBitcoinFamilyChain(preferredChain)
-          ? bitcoinContextId(preferredChain!, account.id)
-          : account.id;
-      await _setAccountAvatarAsset(displayId, avatarAsset);
-    }
     return account;
   }
 
-  Future<String> suggestAvatarAsset({Set<String> usedAssets = const {}}) async {
+  /// Attach a newly-created/imported technical wallet to the logical wallet
+  /// selected by the user.
+  Future<void> attachWalletAccount({
+    required String childWalletId,
+    required String parentWalletId,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
-    final assignments = _decodeStringMap(
-      prefs.getString(_prefsAccountAvatarAssets),
+    final parents = Map<String, String>.of(
+      _decodeStringMap(prefs.getString(_prefsAttachedWalletParents)),
     );
-    return pickAccountAvatarAsset(
-      usedAssets: {...assignments.values, ...usedAssets},
-      random: _avatarRandom,
-    );
+    parents[childWalletId] = parentWalletId;
+    await prefs.setString(_prefsAttachedWalletParents, jsonEncode(parents));
+    _attachedWalletParents = parents;
   }
 
-  String? avatarAssetForRawAccount(String lwAccountId) {
-    String? virtualFallback;
-    for (final account in _accounts) {
-      if (account.accountId != lwAccountId) continue;
-      if (!account.isVirtual) {
-        return account.avatarAsset;
-      }
-      virtualFallback ??= account.avatarAsset;
-    }
-    return virtualFallback;
-  }
-
-  Future<Map<String, String>> _ensureAccountAvatarAssets(
-    SharedPreferences prefs,
-    List<UnifiedAccount> accounts,
-  ) async {
-    final raw = _decodeStringMap(prefs.getString(_prefsAccountAvatarAssets));
-    final next = ensureAccountAvatarAssignments(
-      accountIds: accounts.where((a) => a.isInApp).map((a) => a.id),
-      existingAssignments: raw,
-      random: _avatarRandom,
-    );
-    if (!mapEquals(raw, next)) {
-      await prefs.setString(_prefsAccountAvatarAssets, jsonEncode(next));
-    }
-    return next;
-  }
-
-  Future<void> _setAccountAvatarAsset(
-    String unifiedAccountId,
-    String asset,
-  ) async {
-    if (!kAccountAvatarAssets.contains(asset)) return;
+  Future<void> detachWalletAccount(String childWalletId) async {
     final prefs = await SharedPreferences.getInstance();
-    final assignments = Map<String, String>.of(
-      _decodeStringMap(prefs.getString(_prefsAccountAvatarAssets)),
-    );
-    assignments[unifiedAccountId] = asset;
-    await prefs.setString(_prefsAccountAvatarAssets, jsonEncode(assignments));
+    final parents = Map<String, String>.of(
+      _decodeStringMap(prefs.getString(_prefsAttachedWalletParents)),
+    )..remove(childWalletId);
+    await prefs.setString(_prefsAttachedWalletParents, jsonEncode(parents));
+    _attachedWalletParents = parents;
+  }
+
+  /// Clear every wallet/account pointer owned by this service after a
+  /// user-confirmed device reset. General app preferences are intentionally
+  /// left alone.
+  Future<void> clearLocalWalletState() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in const [
+      _prefsCurrentAccountId,
+      _prefsAccountPreferredChains,
+      _prefsAttachedWalletParents,
+      _prefsDefaultsEnsured,
+      WalletGroupStore.preferenceKey,
+    ]) {
+      await prefs.remove(key);
+    }
+    for (final key in prefs.getKeys().where(
+      (k) => k.startsWith('libw_password_rotation_pending_'),
+    )) {
+      await prefs.remove(key);
+    }
+    _rawAccounts = const [];
+    _walletsById = const {};
+    _attachedWalletParents = const {};
+    _walletGroups = const {};
+    _accounts = const [];
+    _current = null;
+    _bitcoinAddressCache.clear();
+    notifyListeners();
   }
 
   Future<void> _setPreferredChain(String accountId, String chain) async {

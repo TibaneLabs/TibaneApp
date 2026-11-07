@@ -55,7 +55,7 @@ class _NftsScreenState extends State<NftsScreen> {
       logError('[Nfts._load] load NFTs error: $e');
       if (!mounted) return;
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loading = false;
       });
     }

@@ -5,9 +5,12 @@ import 'package:libwallet/libwallet.dart'
     show Asset, NetworkType, Transaction, TxHistoryUpdatedEvent;
 
 import '../constants/solana_constants.dart';
+import '../models/transaction_activity.dart';
 import '../utils/coalescer.dart';
 import 'jupiter_service.dart';
+import 'transaction_activity_service.dart';
 import 'wallet_service.dart';
+import 'wallet/libwallet_backend.dart' show TransactionHistoryPage;
 
 /// Post-tx "settle" polling: after a tx, reload every [kSettleInterval] until a
 /// balance moves, up to [kSettleMaxAttempts] (~its product), covering the gap
@@ -25,18 +28,79 @@ const int kSettleMaxAttempts = 12;
 /// list. Native / tracked-token balances still live on [WalletService]
 /// (`assets`), which this store reads through; later phases fold those in too.
 class BalancesStore extends ChangeNotifier {
-  BalancesStore(this._wallet, {JupiterService? jupiter})
-    : _jupiter = jupiter ?? JupiterService();
+  BalancesStore(
+    this._wallet, {
+    JupiterService? jupiter,
+    TransactionActivityService? activityService,
+  }) : _jupiter = jupiter ?? JupiterService(),
+       _activityService = activityService ?? TransactionActivityService();
 
   final WalletService _wallet;
   final JupiterService _jupiter;
+  final TransactionActivityService _activityService;
+  final _activity = <String, TransactionActivity>{};
+  String get _historyScope =>
+      '${_wallet.kind}:${_wallet.publicKey}:${_wallet.libwallet.currentNetwork?.id}';
+  String? _lastScope;
+  String? _historyBefore;
+  bool _historyHasMore = false;
+  bool _loadingMoreHistory = false;
+  bool get historyHasMore => _historyHasMore;
+  bool get loadingMoreHistory => _loadingMoreHistory;
+
+  TransactionActivity? activityFor(Transaction tx) =>
+      _activity['$_historyScope:${tx.hash}'];
+
+  Future<TransactionActivity?> loadActivity(Transaction tx) async {
+    final owner = _wallet.publicKey;
+    final scope = _historyScope;
+    final hash = tx.hash;
+    if (owner == null ||
+        hash == null ||
+        hash.isEmpty ||
+        !tx.asset.startsWith('solana.')) {
+      return null;
+    }
+    final key = '$scope:$hash';
+    final cached = _activity[key];
+    if (cached != null) return cached;
+    try {
+      final result = await _activityService.loadSolana(hash, owner);
+      if (_disposed || scope != _historyScope) return null;
+      if (result != null) {
+        _activity[key] = result;
+        notifyListeners();
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[activity] transaction details unavailable: $e');
+      return null;
+    }
+  }
+
+  Future<void> _enrichActivity(
+    List<Transaction> transactions,
+    String? owner,
+  ) async {
+    // Bound history RPC work and keep the existing balance/price refresh fast.
+    final recent = transactions.take(20).toList();
+    for (var offset = 0; offset < recent.length; offset += 4) {
+      if (_disposed || owner != _wallet.publicKey) return;
+      await Future.wait(recent.skip(offset).take(4).map(loadActivity));
+    }
+  }
 
   List<TokenHolding> _holdings = const [];
+  TokenHolding? _nativeSolHolding;
   List<Transaction> _transactions = const [];
   bool _loadingTxs = true;
 
-  /// Solana SPL holdings (Jupiter-discovered; excludes wSOL). Empty off-Solana.
+  /// Solana SPL holdings (Jupiter-discovered; native SOL is kept separately).
+  /// Empty off-Solana.
   List<TokenHolding> get holdings => _holdings;
+
+  /// Full native SOL position from the same RPC scan as SPL holdings.
+  TokenHolding? get nativeSolHolding => _nativeSolHolding;
 
   /// Recent transactions for the active address.
   List<Transaction> get transactions => _transactions;
@@ -65,6 +129,7 @@ class BalancesStore extends ChangeNotifier {
 
   /// Wire up listeners and do the first load. Call once, right after creation.
   void init() {
+    _lastScope = _historyScope;
     _lastAddress = _wallet.publicKey;
     // Prime the tx list from the per-address cache for an instant first paint.
     final cached = _wallet.cachedTxsFor(_lastAddress);
@@ -87,9 +152,15 @@ class BalancesStore extends ChangeNotifier {
 
   void _onWalletChanged() {
     final addr = _wallet.publicKey;
-    if (addr == _lastAddress) return; // only react to address/account switches
+    if (_lastScope == _historyScope) return;
+    _lastScope = _historyScope;
+    _historyBefore = null;
+    _historyHasMore = false;
+    _loadingMoreHistory = false;
     _lastAddress = addr;
     _holdings = const [];
+    _activity.clear();
+    _nativeSolHolding = null;
     final cached = _wallet.cachedTxsFor(addr);
     _transactions = cached ?? const [];
     _loadingTxs = cached == null;
@@ -154,40 +225,122 @@ class BalancesStore extends ChangeNotifier {
   Future<void> refresh() async {
     unawaited(_wallet.refreshBalances());
     unawaited(_wallet.discoverHoldings());
-    unawaited(_wallet.libwallet.kickHistoryBackfill());
+    await refreshHistory();
+  }
+
+  /// Sweep before reading the local table, including when no update event fires.
+  Future<void> refreshHistory() async {
+    if (_disposed) return;
+    _kickedHistoryBackfill = true;
+    if (_transactions.isEmpty) {
+      _loadingTxs = true;
+      notifyListeners();
+    }
+    await _wallet.libwallet.kickHistoryBackfill();
+    if (_disposed) return;
     await _reload();
   }
 
   Future<void> _reload() => _reloader.run();
 
+  Future<void> loadMoreHistory() async {
+    if (_loadingMoreHistory || !_historyHasMore || _historyBefore == null) {
+      return;
+    }
+    final scope = _historyScope;
+    _loadingMoreHistory = true;
+    notifyListeners();
+    try {
+      final page = await _wallet.libwallet.getTransactionPage(
+        forAddress: _wallet.publicKey,
+        before: _historyBefore,
+      );
+      if (_disposed || scope != _historyScope) return;
+      _transactions = _mergeHistory(_transactions, page.items);
+      _historyBefore = page.before;
+      _historyHasMore = page.hasMore;
+      unawaited(_enrichActivity(page.items, _wallet.publicKey));
+    } finally {
+      if (!_disposed && scope == _historyScope) {
+        _loadingMoreHistory = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  List<Transaction> _mergeHistory(
+    List<Transaction> first,
+    List<Transaction> second,
+  ) {
+    final rows = {
+      for (final tx in [...second, ...first])
+        '${tx.network}:${tx.id.isEmpty ? tx.hash : tx.id}': tx,
+    };
+    return rows.values.toList()..sort(
+      (a, b) =>
+          (b.created ?? DateTime(1970)).compareTo(a.created ?? DateTime(1970)),
+    );
+  }
+
   Future<void> _reloadOnce() async {
     final lw = _wallet.libwallet;
     final addr = _wallet.publicKey;
+    final scope = _historyScope;
     // Jupiter is a Solana RPC — calling it with an EVM address fails, so skip
     // it off-Solana; EVM token balances come from WalletService.assets.
     final isSolana =
+        _wallet.kind == WalletKind.mwa ||
         (lw.currentNetwork?.type ?? NetworkType.solana) == NetworkType.solana;
     try {
-      final results = await Future.wait([
-        lw.getTransactions(limit: 50, forAddress: addr),
-        if (addr != null && isSolana)
-          _jupiter.fetchHoldings(addr, excludeMint: wsolMint)
-        else
-          Future.value(const <TokenHolding>[]),
+      final results = await Future.wait<Object?>([
+        () async {
+          try {
+            return await lw.getTransactionPage(limit: 50, forAddress: addr);
+          } catch (e) {
+            debugPrint('[balances] transaction reload failed: $e');
+            return null;
+          }
+        }(),
+        () async {
+          if (addr == null || !isSolana) return const <TokenHolding>[];
+          try {
+            return await _jupiter.fetchHoldings(addr, reserveSolForFees: false);
+          } catch (e) {
+            debugPrint('[balances] holdings reload failed: $e');
+            return null;
+          }
+        }(),
       ]);
-      if (_disposed) return;
-      final txs = results[0] as List<Transaction>;
-      final holdings = results[1] as List<TokenHolding>;
-      if (addr != null) _wallet.cacheTxsFor(addr, txs);
-      _transactions = txs;
-      _holdings = holdings;
+      if (_disposed || scope != _historyScope) return;
+      final page = results[0] as TransactionHistoryPage?;
+      final txs = page?.items;
+      final allHoldings = results[1] as List<TokenHolding>?;
+      if (txs != null) {
+        if (_historyBefore == null) {
+          _historyBefore = page!.before;
+          _historyHasMore = page.hasMore;
+        }
+        _transactions = _mergeHistory(txs, _transactions);
+        if (addr != null) _wallet.cacheTxsFor(addr, _transactions);
+        unawaited(_enrichActivity(txs, addr));
+      }
+      if (allHoldings != null) {
+        final nativeSol = isSolana
+            ? allHoldings.where((h) => h.mint == wsolMint).firstOrNull
+            : null;
+        _holdings = allHoldings.where((h) => h.mint != wsolMint).toList();
+        _nativeSolHolding = nativeSol;
+        if (nativeSol != null) {
+          _wallet.updateBalances(sol: nativeSol.balance);
+        }
+      }
       _loadingTxs = false;
       notifyListeners();
       // Kick libwallet's tx-history backfill once per address so incoming
       // transfers that were never indexed still surface. Idempotent / cheap.
       if (!_kickedHistoryBackfill) {
         _kickedHistoryBackfill = true;
-        unawaited(lw.kickHistoryBackfill());
+        unawaited(refreshHistory());
       }
     } catch (e) {
       debugPrint('[balances] reload failed: $e');
@@ -206,6 +359,7 @@ class BalancesStore extends ChangeNotifier {
     _wallet.swapCommittedTick.removeListener(_onReloadTrigger);
     _wallet.libwallet.balanceTick.removeListener(_onReloadTrigger);
     _jupiter.dispose();
+    _activityService.dispose();
     super.dispose();
   }
 }

@@ -104,7 +104,7 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
       logError('[StakingDetail._loadUserStake] load error: $e');
       if (!mounted) return;
       setState(() {
-        _error = WalletError.from(e).message;
+        _error = walletErrorMessageForContext(context, e);
         _loadingStake = false;
       });
     }
@@ -412,17 +412,18 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
         instructions: instructions,
       );
       if (!mounted) return;
-      final sigs = await authorizeAndSignAndSend(
-        context,
-        [Uint8List.fromList(tx)],
-      );
+      final sigs = await authorizeAndSignAndSend(context, [
+        Uint8List.fromList(tx),
+      ]);
       if (!mounted) return;
       if (sigs == null) return; // cancelled / not authorized
       final sig = sigs.first;
       if (sig != null) {
         context.showSnackBar(
           SnackBar(
-            content: Text('$action confirmed: ${sig.substring(0, 8)}...'),
+            content: Text(
+              '${context.l10n.transactionSubmittedTitle}: ${sig.substring(0, 8)}...',
+            ),
           ),
         );
       }
@@ -473,10 +474,9 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
         instructions: [ix],
       );
       if (!mounted) return;
-      final sigs = await authorizeAndSignAndSend(
-        context,
-        [Uint8List.fromList(tx)],
-      );
+      final sigs = await authorizeAndSignAndSend(context, [
+        Uint8List.fromList(tx),
+      ]);
       if (!mounted) return;
       if (sigs == null) return; // cancelled / not authorized
       final sig = sigs.first;
@@ -517,11 +517,8 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
         case 'stake':
           final amountText = _stakeController.text.trim();
           if (amountText.isEmpty) return;
-          final amountDouble = parseAmount(amountText);
-          if (amountDouble == null || amountDouble <= 0) return;
-          final amount = BigInt.from(
-            amountDouble * BigInt.from(10).pow(pool.tokenDecimals).toDouble(),
-          );
+          final amount = parseTokenAmount(amountText, pool.tokenDecimals);
+          if (amount == null || amount <= BigInt.zero) return;
           if (amount < pool.minStakeAmount) {
             if (mounted) {
               final l10n = context.l10n;
@@ -529,7 +526,10 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
                 SnackBar(
                   content: Text(
                     l10n.stakingBelowMinimum(
-                      formatTokenAmount(pool.minStakeAmount, pool.tokenDecimals),
+                      formatTokenAmount(
+                        pool.minStakeAmount,
+                        pool.tokenDecimals,
+                      ),
                       pool.tokenSymbol ?? '',
                     ),
                   ),
@@ -613,24 +613,27 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
       );
 
       if (!mounted) return;
-      final sigs = await authorizeAndSignAndSend(
-        context,
-        [Uint8List.fromList(tx)],
-      );
+      final sigs = await authorizeAndSignAndSend(context, [
+        Uint8List.fromList(tx),
+      ]);
       if (!mounted) return;
       if (sigs == null) return; // cancelled / not authorized
       final sig = sigs.first;
       if (sig != null) {
         context.showSnackBar(
           SnackBar(
-            content: Text('$action confirmed: ${sig.substring(0, 8)}...'),
+            content: Text(
+              '${context.l10n.transactionSubmittedTitle}: ${sig.substring(0, 8)}...',
+            ),
           ),
         );
         _stakeController.clear();
         _beneficiaryController.clear();
         _unstakeController.clear();
       } else if (wallet.error != null) {
-        logError('[StakingDetail._handleAction] $action wallet error: ${wallet.error}');
+        logError(
+          '[StakingDetail._handleAction] $action wallet error: ${wallet.error}',
+        );
         showWalletError(context, wallet.error ?? 'Something went wrong');
         wallet.clearError();
       }
@@ -764,7 +767,9 @@ class _UserStakeSection extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               context.l10n.stakingNoStakeInPool,
-              style: context.textTheme.bodyMedium?.copyWith(color: TibaneColors.textMuted),
+              style: context.textTheme.bodyMedium?.copyWith(
+                color: TibaneColors.textMuted,
+              ),
             ),
           ],
         ),
@@ -901,7 +906,12 @@ class _UserStakeSection extends StatelessWidget {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  l10n.stakingUnstakeRequest(formatTokenAmount(userStake!.unstakeRequestAmount, pool.tokenDecimals)),
+                                  l10n.stakingUnstakeRequest(
+                                    formatTokenAmount(
+                                      userStake!.unstakeRequestAmount,
+                                      pool.tokenDecimals,
+                                    ),
+                                  ),
                                   style: TextStyle(
                                     color: badgeColor,
                                     fontSize: 13,
@@ -985,9 +995,8 @@ class _ActionsSection extends StatelessWidget {
   BigInt? _parseUnstakeAmount() {
     final text = unstakeController.text.trim();
     if (text.isEmpty) return null;
-    final v = parseAmount(text);
-    if (v == null || v <= 0) return null;
-    return BigInt.from(v * BigInt.from(10).pow(pool.tokenDecimals).toDouble());
+    final amount = parseTokenAmount(text, pool.tokenDecimals);
+    return amount != null && amount > BigInt.zero ? amount : null;
   }
 
   /// Modal confirmation for the two destructive, single-tap unstake
@@ -1090,7 +1099,10 @@ class _ActionsSection extends StatelessWidget {
                                     final ok = await _confirmDestructive(
                                       context,
                                       title: l10n.stakingCompleteUnstakeTitle,
-                                      body: l10n.stakingCompleteUnstakeBody(amountStr, symbol),
+                                      body: l10n.stakingCompleteUnstakeBody(
+                                        amountStr,
+                                        symbol,
+                                      ),
                                       confirmLabel: l10n.stakingCompleteUnstake,
                                     );
                                     if (ok) onAction('completeUnstake');
@@ -1165,7 +1177,9 @@ class _ActionsSection extends StatelessWidget {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                l10n.stakingLockedFor(_formatDuration(lockRemaining)),
+                                l10n.stakingLockedFor(
+                                  _formatDuration(lockRemaining),
+                                ),
                                 style: const TextStyle(
                                   color: Colors.red,
                                   fontSize: 12,
@@ -1273,7 +1287,9 @@ class _ActionsSection extends StatelessWidget {
                         final amount = _parseUnstakeAmount();
                         return SecondaryButton(
                           label: isLocked
-                              ? l10n.stakingLockedButton(_formatDuration(lockRemaining))
+                              ? l10n.stakingLockedButton(
+                                  _formatDuration(lockRemaining),
+                                )
                               : hasCooldown
                               ? l10n.stakingRequestUnstake
                               : l10n.stakingUnstakeButton,
@@ -1295,7 +1311,10 @@ class _ActionsSection extends StatelessWidget {
                                   final ok = await _confirmDestructive(
                                     context,
                                     title: l10n.stakingUnstakeConfirmTitle,
-                                    body: l10n.stakingUnstakeConfirmBody(amountStr, symbol),
+                                    body: l10n.stakingUnstakeConfirmBody(
+                                      amountStr,
+                                      symbol,
+                                    ),
                                     confirmLabel: l10n.stakingUnstakeButton,
                                   );
                                   if (ok) onAction('unstake', amount: amount);
@@ -1551,7 +1570,9 @@ class _StakeInputSection extends StatelessWidget {
               if (pool.minStakeAmount > BigInt.zero) ...[
                 const SizedBox(height: 8),
                 Text(
-                  l10n.stakingMinStake(formatTokenAmount(pool.minStakeAmount, pool.tokenDecimals)),
+                  l10n.stakingMinStake(
+                    formatTokenAmount(pool.minStakeAmount, pool.tokenDecimals),
+                  ),
                   style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
                 ),
               ],
@@ -1666,7 +1687,9 @@ class _AdminSectionState extends State<_AdminSection> {
               ),
               const SizedBox(height: 8),
               Text(
-                l10n.stakingCurrentRewards(formatSol(widget.pool.rewardBalance)),
+                l10n.stakingCurrentRewards(
+                  formatSol(widget.pool.rewardBalance),
+                ),
                 style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
               ),
               const SizedBox(height: 8),
@@ -1685,15 +1708,14 @@ class _AdminSectionState extends State<_AdminSection> {
                 listenable: _depositController,
                 builder: (context, _) {
                   final l10n = context.l10n;
-                  final v = parseAmount(_depositController.text);
-                  final valid = v != null && v > 0;
+                  final lamports = parseTokenAmount(_depositController.text, 9);
+                  final valid = lamports != null && lamports > BigInt.zero;
                   return SecondaryButton(
                     label: l10n.stakingDeposit,
                     icon: Icons.add_circle,
                     expanded: true,
                     onPressed: valid && !widget.staking
                         ? () {
-                            final lamports = BigInt.from(v * 1e9);
                             widget.onDepositRewards(lamports);
                             _depositController.clear();
                           }
@@ -1775,15 +1797,11 @@ class _AdminSectionState extends State<_AdminSection> {
 
                         final minText = _minStakeController.text.trim();
                         if (minText.isNotEmpty) {
-                          final v = parseAmount(minText);
-                          if (v != null) {
-                            minStake = BigInt.from(
-                              v *
-                                  BigInt.from(
-                                    10,
-                                  ).pow(widget.pool.tokenDecimals).toDouble(),
-                            );
-                          }
+                          minStake = parseTokenAmount(
+                            minText,
+                            widget.pool.tokenDecimals,
+                          );
+                          if (minStake == null) return;
                         }
                         final lockText = _lockDurationController.text.trim();
                         if (lockText.isNotEmpty) {

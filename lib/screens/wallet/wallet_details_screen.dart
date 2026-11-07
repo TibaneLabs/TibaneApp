@@ -17,6 +17,17 @@ import 'share_labels.dart';
 import '../../utils/log.dart';
 import '../../utils/context_extensions.dart';
 
+Future<String?> showRenameWalletDialog(BuildContext context, String name) =>
+    showDialog<String>(
+      context: context,
+      builder: (_) => _RenameWalletDialog(initialName: name),
+    );
+
+Future<bool?> showRemoveWalletDialog(BuildContext context) => showDialog<bool>(
+  context: context,
+  builder: (_) => _RemoveWalletDialog(l10n: context.l10n),
+);
+
 /// Wallet detail view. When [walletId] is null, falls back to the
 /// active in-app wallet (legacy callers); otherwise shows the wallet
 /// fetched by id via libwallet.
@@ -36,8 +47,12 @@ class WalletDetailsScreen extends StatefulWidget {
   static ({bool showUse, bool showNeeds2fa}) walletDetailActions({
     required bool isActive,
     required bool hasShareHere,
+    bool isSingleShareImport = false,
   }) {
-    return (showUse: !isActive, showNeeds2fa: !isActive && !hasShareHere);
+    return (
+      showUse: !isActive,
+      showNeeds2fa: !isActive && !hasShareHere && !isSingleShareImport,
+    );
   }
 
   /// Minimum / maximum length for a wallet name, applied to the trimmed value.
@@ -72,6 +87,8 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
   bool _isActive = false;
   bool _hasShareHere = true;
   bool _removing = false;
+
+  bool get _isSingleShareImport => _wallet?.keys.length == 1;
 
   @override
   void initState() {
@@ -196,6 +213,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     final actions = WalletDetailsScreen.walletDetailActions(
       isActive: _isActive,
       hasShareHere: _hasShareHere,
+      isSingleShareImport: _isSingleShareImport,
     );
     if (!actions.showUse) return const [];
     return [
@@ -340,36 +358,40 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                   _AccountsCard(accounts: _accounts),
                   const SizedBox(height: 20),
                   ..._buildUseSection(),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _transfer,
-                      icon: const Icon(Icons.send_to_mobile, size: 16),
-                      label: Text(l10n.walletDetailsTransferButton),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: TibaneColors.text,
-                        side: const BorderSide(color: TibaneColors.border),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                  if (!_isSingleShareImport) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _transfer,
+                        icon: const Icon(Icons.send_to_mobile, size: 16),
+                        label: Text(l10n.walletDetailsTransferButton),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: TibaneColors.text,
+                          side: const BorderSide(color: TibaneColors.border),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _resetPassword,
-                      icon: const Icon(Icons.lock_reset, size: 16),
-                      label: Text(l10n.walletDetailsResetPasswordButton),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: TibaneColors.text,
-                        side: const BorderSide(color: TibaneColors.border),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _resetPassword,
+                        icon: const Icon(Icons.lock_reset, size: 16),
+                        label: Text(l10n.walletDetailsResetPasswordButton),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: TibaneColors.text,
+                          side: const BorderSide(color: TibaneColors.border),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 12),
+                  ],
                   _ActionsRow(
-                    onBackup: _removing ? null : _backup,
+                    onBackup: _isSingleShareImport || _removing
+                        ? null
+                        : _backup,
                     onRemove: _removing ? null : _remove,
                   ),
                 ],
@@ -391,6 +413,9 @@ class _HeaderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final isSingleShareImport = wallet.keys.length == 1;
+    final isPasswordProtected =
+        wallet.keys.length == 1 && wallet.keys.single.isPassword;
     final threshold = wallet.keys.length >= 2 ? wallet.keys.length - 1 : 1;
     final sigAlgo = wallet.curve == 'ed25519'
         ? 'EdDSA (Solana)'
@@ -422,11 +447,15 @@ class _HeaderCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            l10n.walletDetailsWalletInfo(
-              threshold,
-              wallet.keys.length,
-              sigAlgo,
-            ),
+            isSingleShareImport
+                ? isPasswordProtected
+                      ? l10n.walletDetailsImportedInfo(sigAlgo)
+                      : l10n.walletDetailsImportedDeviceInfo(sigAlgo)
+                : l10n.walletDetailsWalletInfo(
+                    threshold,
+                    wallet.keys.length,
+                    sigAlgo,
+                  ),
             style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
           ),
         ],
@@ -443,6 +472,9 @@ class _SharesCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final isSingleShareImport = wallet.keys.length == 1;
+    final isPasswordProtected =
+        wallet.keys.length == 1 && wallet.keys.single.isPassword;
     final n = (wallet.keys.length - 1).clamp(1, wallet.keys.length);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -453,7 +485,11 @@ class _SharesCard extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          l10n.walletDetailsSharesDescription(n, wallet.keys.length),
+          isSingleShareImport
+              ? isPasswordProtected
+                    ? l10n.walletDetailsImportedProtectionDescription
+                    : l10n.walletDetailsImportedDeviceProtectionDescription
+              : l10n.walletDetailsSharesDescription(n, wallet.keys.length),
           style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
         ),
         const SizedBox(height: 12),
@@ -831,6 +867,21 @@ class _ActionsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    if (onBackup == null) {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: onRemove,
+          icon: const Icon(Icons.delete_outline, size: 16),
+          label: Text(l10n.actionRemove),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: TibaneColors.error,
+            side: const BorderSide(color: TibaneColors.error),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        ),
+      );
+    }
     return Row(
       children: [
         Expanded(

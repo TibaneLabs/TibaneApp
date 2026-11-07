@@ -3,7 +3,7 @@
 /// Drives the *real* app screens with synthetic state. Mock services are
 /// installed at the boundary (`RpcService.testInstance`, `ChiefStakerApi
 /// .testInstance`, a stub `WalletService` + `LibwalletBackend`) and the
-/// rest of the app — `TibaneShell`, `HomeScreen`, `WalletDashboard`,
+/// rest of the app — `TibaneShell`, `WalletWelcomeScreen`, `WalletDashboard`,
 /// `ReceiveScreen`, `StakingPoolsScreen`, `StakingDetailScreen`,
 /// `IncineratorScreen`, `TokenDetailScreen` — runs unchanged.
 ///
@@ -30,6 +30,7 @@ import 'screens/incinerator_screen.dart';
 import 'screens/staking/staking_detail_screen.dart';
 import 'screens/staking/staking_pools_screen.dart';
 import 'screens/token_detail_screen.dart';
+import 'screens/wallet/wallet_welcome_screen.dart';
 import 'services/chiefstaker_api.dart';
 import 'services/favorites_service.dart';
 import 'services/rpc_service.dart';
@@ -196,17 +197,19 @@ class _ShellWithRunnerState extends State<_ShellWithRunner> {
     // First frame mounted — give fonts/theme a moment to settle.
     await _wait(1500);
 
-    // 1) Home
-    _shellKey.currentState?.navigateTo(0);
+    // 1) Wallet dashboard, now the app's initial tab.
+    _shellKey.currentState?.navigateTo(ShellTab.wallet.index);
     await _wait(900);
     await _captureAt(1);
 
-    // 2) Wallet dashboard (tab index 1 since staking left the bottom nav)
-    _shellKey.currentState?.navigateTo(1);
-    await _wait(1500); // dashboard does Future.wait for assets+txs
+    // 2) Wallet creation/import entry point.
+    _push(const WalletWelcomeScreen());
+    await _wait(900);
     await _captureAt(2);
+    _pop();
+    await _wait(400);
 
-    // 3) Staking pools — now reached as a route push from Home, not a tab.
+    // 3) Staking pools, a pushed route rather than a footer tab.
     _push(
       const Scaffold(
         backgroundColor: TibaneColors.black,

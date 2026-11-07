@@ -43,7 +43,9 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     if (current != null) {
       if (!mounted) return;
       setState(() {
-        _networkType = net?.type;
+        _networkType = current.isMwa
+            ? NetworkType.solana
+            : net?.type ?? networkTypeForChain(current.chain);
         _accountId = current.accountId;
         _networkId = current.networkId ?? net?.id;
         _networkName =
@@ -66,7 +68,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
         _networkType = net?.type ?? networkTypeForChain(acct.type);
         _accountId = acct.id;
         _networkId = net?.id;
-        _networkName = net?.name;
+        _networkName = net?.name ?? chainLabel(acct.type);
         _loadingType = false;
       });
     } catch (_) {
@@ -96,18 +98,20 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     }
 
     final wallet = context.watch<WalletService>();
-    final activeNetworkType =
-        wallet.libwallet.currentNetwork?.type ?? _networkType;
+    final activeNetworkType = wallet.currentAccount?.isMwa == true
+        ? NetworkType.solana
+        : wallet.libwallet.currentNetwork?.type ?? _networkType;
     final activeAccountId = wallet.currentAccount?.accountId ?? _accountId;
     final activeNetworkId =
         wallet.currentAccount?.networkId ??
         wallet.libwallet.currentNetwork?.id ??
         _networkId;
-    final activeNetworkName =
-        wallet.currentAccount?.networkName ??
-        wallet.libwallet.currentNetwork?.name ??
-        _networkName ??
-        chainLabel(wallet.currentAccount?.chain ?? 'bitcoin');
+    final activeNetworkName = wallet.currentAccount?.isMwa == true
+        ? chainLabel('solana')
+        : wallet.currentAccount?.networkName ??
+              wallet.libwallet.currentNetwork?.name ??
+              _networkName ??
+              chainLabel(wallet.currentAccount?.chain ?? 'solana');
     if (activeNetworkType == NetworkType.bitcoin && activeAccountId != null) {
       return BtcAddressesScreen(
         accountId: activeAccountId,
@@ -126,11 +130,22 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
       appBar: AppBar(title: Text(l10n.receiveTitle)),
       body: SafeArea(
         child: Center(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                Text(
+                  activeNetworkName,
+                  key: const ValueKey('receive-network-title'),
+                  style: const TextStyle(
+                    color: TibaneColors.orange,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(

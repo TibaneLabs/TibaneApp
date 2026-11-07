@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/l10n.dart';
-import '../screens/wallet/inapp_create_screen.dart';
+import '../screens/wallet/wallet_welcome_screen.dart';
 import '../screens/wallet/widgets/account_switcher_sheet.dart';
 import '../services/wallet/unified_account.dart';
 import '../services/wallet_service.dart';
@@ -56,6 +56,11 @@ class WalletButton extends StatelessWidget {
           return _ConnectedButton(wallet: wallet);
         }
 
+        if (!wallet.libwallet.hasWallet &&
+            !wallet.accounts.any((account) => account.isInApp)) {
+          return const SizedBox.shrink();
+        }
+
         return _ConnectButton(wallet: wallet);
       },
     );
@@ -103,10 +108,15 @@ class _ConnectButton extends StatelessWidget {
   }
 
   void _openInAppFlow(BuildContext context, WalletService wallet) {
+    final target = firstInAppAccount(wallet.accounts);
+    if (target != null) {
+      wallet.setCurrentAccount(target);
+      return;
+    }
     if (!wallet.libwallet.hasWallet) {
       Navigator.of(
         context,
-      ).push(MaterialPageRoute(builder: (_) => const InAppCreateScreen()));
+      ).push(MaterialPageRoute(builder: (_) => const WalletWelcomeScreen()));
       return;
     }
     // Lockless: an in-app wallet already exists on this device — just make it
@@ -114,12 +124,7 @@ class _ConnectButton extends StatelessWidget {
     // switching the active account reconnects it; the button rebuilds to the
     // connected state via notifyListeners. Fire-and-forget (no Navigator, so no
     // context-after-pop concern).
-    final target = firstInAppAccount(wallet.accounts);
-    if (target != null) {
-      wallet.setCurrentAccount(target);
-    } else {
-      wallet.useLibwallet();
-    }
+    wallet.useLibwallet();
   }
 
   /// Connect an external MWA/Seed Vault wallet and surface a clear error when
@@ -193,7 +198,9 @@ class _ConnectButton extends StatelessWidget {
               ],
               _WalletOption(
                 name: l10n.walletButtonInAppWalletName,
-                subtitle: wallet.libwallet.hasWallet
+                subtitle:
+                    wallet.libwallet.hasWallet ||
+                        wallet.accounts.any((account) => account.isInApp)
                     ? l10n.walletButtonInAppWalletUnlock
                     : l10n.walletButtonInAppWalletCreate,
                 icon: Icons.shield_outlined,

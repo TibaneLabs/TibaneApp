@@ -58,7 +58,6 @@ String? explorerNameFor(NetworkType type, String chainId) {
     case NetworkType.bitcoin:
       return null;
     case NetworkType.tron:
-      return 'Tronscan';
     case NetworkType.unknown:
       return null;
   }
@@ -83,14 +82,12 @@ String solscanTokenUrl(String mint, {bool holders = false}) => Uri(
   fragment: holders ? 'holders' : null,
 ).toString();
 
-/// Chain-aware explorer URL for a transaction [hash] on [net] (falls back to
-/// Solscan for Solana when the network has no resolved explorer), or null when
-/// no explorer / no hash is available. Mirrors the swap-sheet composition.
+/// Solana always uses Solscan; other chains use their configured explorer.
 String? explorerTxUrl(Network? net, String? hash) {
   if (hash == null || net == null) return null;
+  if (net.type == NetworkType.solana) return solscanTxUrl(hash);
   final composed = net.transactionUrl(hash);
   if (composed.isNotEmpty) return composed;
-  if (net.type == NetworkType.solana) return solscanTxUrl(hash);
   return null;
 }
 
@@ -164,12 +161,13 @@ Widget txSuccessMark({double size = 96}) {
   );
 }
 
-/// A tappable receipt row (icon + label + value, optional [trailing]). [onTap]
+/// A tappable receipt row (optional icon + label + value + [trailing]). [onTap]
 /// is usually a copy action; null renders a non-interactive card.
 Widget txReceiptCard({
-  required IconData icon,
+  IconData? icon,
   required String label,
   required String value,
+  double labelFontSize = 11,
   VoidCallback? onTap,
   Widget? trailing,
 }) {
@@ -187,17 +185,19 @@ Widget txReceiptCard({
         ),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: TibaneColors.textMuted),
-            const SizedBox(width: 12),
+            if (icon != null) ...[
+              Icon(icon, size: 18, color: TibaneColors.textMuted),
+              const SizedBox(width: 12),
+            ],
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     label,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: TibaneColors.textMuted,
-                      fontSize: 11,
+                      fontSize: labelFontSize,
                     ),
                   ),
                   const SizedBox(height: 3),
