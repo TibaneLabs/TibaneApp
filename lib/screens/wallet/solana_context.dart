@@ -38,7 +38,7 @@ UnifiedAccount? solanaContextForWallet(WalletService wallet) {
   }
 
   for (final account in accounts) {
-    if (account.isMwa && account.isSolana) return account;
+    if (account.isExternal && account.isSolana) return account;
   }
   for (final account in accounts) {
     if (account.isInApp && account.isSolana) return account;

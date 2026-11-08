@@ -310,7 +310,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
 
     // Authorize ONCE for the whole batch (sign sheet or legacy unlock), then
     // sign each tx with the collected keys so the sheet isn't shown per item.
-    final auth = await authorizeBatch(context);
+    final auth = await authorizeBatch(context, transactionReviewed: true);
     if (auth == null) return;
 
     if (_sponsoredMode) {

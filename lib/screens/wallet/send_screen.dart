@@ -223,6 +223,7 @@ class _SendScreenState extends State<SendScreen> {
   final _addrCtrl = TextEditingController();
   final _amountCtrl = TextEditingController();
   bool _sending = false;
+  bool _reviewingSend = false;
   bool _loadingMax = false;
   int _maxRequest = 0;
   String? _error;
@@ -761,6 +762,16 @@ class _SendScreenState extends State<SendScreen> {
   );
 
   Future<void> _send() async {
+    if (_reviewingSend) return;
+    _reviewingSend = true;
+    try {
+      await _reviewAndSend();
+    } finally {
+      _reviewingSend = false;
+    }
+  }
+
+  Future<void> _reviewAndSend() async {
     final wallet = context.read<WalletService>();
     if (_sending || _loadingHoldings) return;
     final sourceContext = _sendContext;
@@ -837,7 +848,7 @@ class _SendScreenState extends State<SendScreen> {
     // Authorize the spend via the per-transaction sign sheet. In-app wallets
     // sign losslessly (no app-level unlock); MWA uses the swap-first layout and
     // never reaches this screen.
-    final keys = await collectSigningKeys(context);
+    final keys = await collectSigningKeys(context, transactionReviewed: true);
     if (keys == null) return; // cancelled / unsignable
     if (!isCurrent()) return;
 

@@ -1,7 +1,7 @@
 name: tibaneapp
 description: "Tibane Labs - Solana tools for the Seeker"
 publish_to: 'none'
-version: 0.1.13+79
+version: 0.1.13+88
 
 environment:
   sdk: ^3.11.1
@@ -26,7 +26,6 @@ dependencies:
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.2.0
   share_plus: ^12.0.0
-  file_picker: ^11.0.2
   app_links: ^7.0.0
   phone_form_field: ^10.0.17
   flutter_secure_storage: ^10.2.0
@@ -34,6 +33,7 @@ dependencies:
   biometric_storage: ^5.1.0-rc.5
   local_auth: ^3.0.1
   intl: ^0.20.2
+  file_selector: ^1.1.0
 
 dev_dependencies:
   flutter_test:

@@ -1,12 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:libwallet/libwallet.dart' show Asset, NetworkType, Transaction;
+import 'package:libwallet/libwallet.dart' show Asset, NetworkType;
 import 'package:provider/provider.dart';
 
 import '../../constants/solana_constants.dart';
-import '../../models/transaction_activity.dart';
 import '../../l10n/l10n.dart';
 import '../../services/balances_store.dart';
 import '../../services/jupiter_service.dart';
@@ -22,11 +19,8 @@ import '../swap_screen.dart';
 import '../token_detail_screen.dart';
 import 'receive_screen.dart';
 import 'send_screen.dart';
-import 'transaction_details_screen.dart';
-import 'widgets/activity_token_amount.dart';
 import 'widgets/wallet_action_button.dart';
 import '../../utils/context_extensions.dart';
-import '../../widgets/wallet_error_display.dart';
 
 class WalletDashboard extends StatefulWidget {
   const WalletDashboard({super.key});
@@ -38,14 +32,12 @@ class WalletDashboard extends StatefulWidget {
 class _WalletDashboardState extends State<WalletDashboard> {
   // Holdings + transactions + their refresh now live in BalancesStore, read via
   // context.watch<BalancesStore>() in build — the dashboard is a pure consumer.
-  int _selectedTab = 0; // 0 = Tokens, 1 = Activity
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final wallet = context.watch<WalletService>();
     final store = context.watch<BalancesStore>();
-    final addr = wallet.publicKey ?? '';
     final displayTokens = _displayTokens(
       wallet,
       store.holdings,
@@ -207,18 +199,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
           ),
           const SizedBox(height: 24),
 
-          // Tabs: Tokens / Activity. Only one list is rendered at a time
-          // so each gets the dashboard's full width.
-          _TabSwitcher(
-            selected: _selectedTab,
-            labels: [l10n.dashboardTabTokens, l10n.dashboardTabActivity],
-            onChanged: (i) {
-              setState(() => _selectedTab = i);
-              if (i == 1) unawaited(store.refreshHistory());
-            },
-          ),
-          const SizedBox(height: 12),
-          if (_selectedTab == 0) ...[
+          ...[
             if (displayTokens.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
@@ -336,61 +317,6 @@ class _WalletDashboardState extends State<WalletDashboard> {
                   ),
                 );
               }),
-          ] else ...[
-            if (wallet.libwallet.currentNetwork?.type == NetworkType.bitcoin &&
-                (wallet.libwallet.currentNetwork?.txHistoryProvider.isEmpty ??
-                    true))
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  l10n.activityHistoryLimited,
-                  style: const TextStyle(color: TibaneColors.textMuted),
-                ),
-              ),
-            if (store.loadingTxs)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(32),
-                  child: CircularProgressIndicator(color: TibaneColors.orange),
-                ),
-              )
-            else if (store.transactions.isEmpty)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Text(
-                    l10n.dashboardNoTransactions,
-                    style: const TextStyle(color: TibaneColors.textMuted),
-                  ),
-                ),
-              )
-            else
-              ...store.transactions.map(
-                (tx) => _TransactionRow(
-                  tx: tx,
-                  myAddr: addr,
-                  tokenInfo: _resolveTokenInfo(tx, wallet, store.holdings),
-                ),
-              ),
-            if (store.historyHasMore)
-              TextButton.icon(
-                icon: store.loadingMoreHistory
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.expand_more),
-                label: Text(l10n.activityLoadMore),
-                onPressed: store.loadingMoreHistory
-                    ? null
-                    : () async {
-                        try {
-                          await store.loadMoreHistory();
-                        } catch (error) {
-                          if (context.mounted) showWalletError(context, error);
-                        }
-                      },
-              ),
           ],
         ],
       ),
@@ -607,61 +533,6 @@ class _WalletDashboardState extends State<WalletDashboard> {
     );
   }
 
-  /// Resolve display info (symbol + icon) for a transaction's asset by
-  /// joining `tx.asset` against the data we've already loaded: the
-  /// libwallet `Asset` list for native + tracked tokens, and Jupiter
-  /// `_holdings` for everything else. Falls back to the active
-  /// network's native ticker when nothing matches (libwallet's tx
-  /// table is shared across networks and the asset key may reference
-  /// a chain we haven't fetched assets for yet).
-  _TxTokenInfo _resolveTokenInfo(
-    Transaction tx,
-    WalletService wallet,
-    List<TokenHolding> holdings,
-  ) {
-    final assetKey = tx.asset;
-    final lastDot = assetKey.lastIndexOf('.');
-    final tail = lastDot >= 0 ? assetKey.substring(lastDot + 1) : assetKey;
-    final isNative = tail == 'NATIVE';
-    // Native Solana → swap in wSOL's mint so TokenIcon's
-    // `mint == wsolMint` branch picks up the bundled sol.png.
-    // Without this the row would land on the letter-S placeholder
-    // since libwallet doesn't carry a logo URL for native assets.
-    final isNativeSol = isNative && assetKey.startsWith('solana.');
-
-    for (final a in wallet.assets) {
-      if (a.key == assetKey) {
-        return _TxTokenInfo(
-          symbol: a.symbol,
-          mint: isNativeSol ? wsolMint : (isNative ? null : a.tokenAddress),
-          imageUrl: null,
-          isNative: isNative,
-        );
-      }
-    }
-    if (!isNative) {
-      for (final h in holdings) {
-        if (h.mint == tail) {
-          return _TxTokenInfo(
-            symbol: h.symbol.isNotEmpty ? h.symbol : h.name,
-            mint: h.mint,
-            imageUrl: h.imageUrl,
-            isNative: false,
-          );
-        }
-      }
-    }
-    final net = wallet.libwallet.currentNetwork;
-    return _TxTokenInfo(
-      symbol: isNative
-          ? (net?.currencySymbol.isNotEmpty == true ? net!.currencySymbol : '')
-          : '',
-      mint: isNativeSol ? wsolMint : (isNative ? null : tail),
-      imageUrl: null,
-      isNative: isNative,
-    );
-  }
-
   /// Open the swap screen pre-filled with the requested input/output mints.
   /// Defaults: input = SOL (wSOL), output = ChiefPussy — the dashboard's
   /// headline "Swap" action wants this; the token rows override input to
@@ -750,285 +621,4 @@ String _signedNumber(double value, {String suffix = ''}) {
   final absolute = value.abs();
   final decimals = absolute >= 10 ? 1 : 2;
   return '$sign${absolute.toStringAsFixed(decimals)}$suffix';
-}
-
-class _TabSwitcher extends StatelessWidget {
-  final int selected;
-  final List<String> labels;
-  final ValueChanged<int> onChanged;
-
-  const _TabSwitcher({
-    required this.selected,
-    required this.labels,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const Key('wallet-activity-tabs'),
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: TibaneColors.card,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: TibaneColors.border),
-      ),
-      child: Row(
-        children: [
-          for (int i = 0; i < labels.length; i++)
-            Expanded(
-              child: Material(
-                color: i == selected ? TibaneColors.orange : Colors.transparent,
-                borderRadius: BorderRadius.circular(8),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => onChanged(i),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: SizedBox(
-                      height:
-                          MediaQuery.textScalerOf(context).scale(13) *
-                          (DefaultTextStyle.of(context).style.height ?? 1),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          labels[i],
-                          maxLines: 1,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13 * 1.2,
-                            height:
-                                (DefaultTextStyle.of(context).style.height ??
-                                    1) /
-                                1.2,
-                            color: i == selected
-                                ? TibaneColors.black
-                                : TibaneColors.textMuted,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Resolved display info for a transaction row's asset — symbol +
-/// optional logo. Built once per render by [_resolveTokenInfo] and
-/// passed into [_TransactionRow] so the row can show the token's
-/// ticker and icon instead of just an up/down arrow.
-class _TxTokenInfo {
-  final String symbol;
-  final String? mint;
-  final String? imageUrl;
-  final bool isNative;
-
-  const _TxTokenInfo({
-    required this.symbol,
-    required this.mint,
-    required this.imageUrl,
-    required this.isNative,
-  });
-}
-
-class _TransactionRow extends StatelessWidget {
-  final Transaction tx;
-  final String myAddr;
-  final _TxTokenInfo tokenInfo;
-
-  const _TransactionRow({
-    required this.tx,
-    required this.myAddr,
-    required this.tokenInfo,
-  });
-
-  bool get _isSend => tx.asset.startsWith('evm.')
-      ? tx.from.toLowerCase() == myAddr.toLowerCase()
-      : tx.from == myAddr;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final activity = context.watch<BalancesStore>().activityFor(tx);
-    final isSolana = tx.asset.startsWith('solana.');
-    final kind =
-        activity?.kind ??
-        (isSolana
-            ? ActivityKind.transaction
-            : _isSend
-            ? ActivityKind.sent
-            : ActivityKind.received);
-    final label = activity?.failed == true
-        ? l10n.activityFailed
-        : switch (kind) {
-            ActivityKind.swap => l10n.swapButton,
-            ActivityKind.sent => l10n.dashboardTxSent,
-            ActivityKind.received => l10n.dashboardTxReceived,
-            ActivityKind.transaction => l10n.labelTransaction,
-          };
-    final counterparty =
-        kind == ActivityKind.swap || kind == ActivityKind.transaction
-        ? tx.hash ?? tx.id
-        : kind == ActivityKind.sent
-        ? activity?.recipient ?? tx.to
-        : activity?.sender ?? tx.from;
-    final amt = tx.amount;
-    final amountStr = amt != null && !amt.isMax
-        ? formatActivityAmount(amt.value.abs(), amt.exp, maxDecimals: 4)
-        : '';
-    final fiatStr = !isSolana && tx.fiatAmount != null
-        ? '\$${tx.fiatAmount!.toDouble().toStringAsFixed(2)}'
-        : null;
-    final created = (activity?.created ?? tx.created)?.toLocal();
-    final timeStr = created != null
-        ? '${created.month}/${created.day} ${created.hour}:${created.minute.toString().padLeft(2, '0')}'
-        : '';
-    final amountColor = _isSend ? TibaneColors.error : TibaneColors.cyan;
-    final amountLine = StringBuffer(_isSend ? '-' : '+')..write(amountStr);
-    if (tokenInfo.symbol.isNotEmpty) {
-      amountLine
-        ..write(' ')
-        ..write(tokenInfo.symbol);
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: TibaneCard(
-        key: Key('activity-transaction-${tx.id}'),
-        padding: const EdgeInsets.all(12),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => TransactionDetailsScreen(
-              transaction: tx,
-              owner: myAddr,
-              network: context.read<WalletService>().libwallet.currentNetwork,
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            if (kind == ActivityKind.swap)
-              Container(
-                key: Key('activity-swap-icon-${tx.id}'),
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: TibaneColors.orange.withValues(alpha: 0.1),
-                ),
-                child: const Icon(
-                  Icons.swap_horiz,
-                  size: 24,
-                  color: TibaneColors.orange,
-                ),
-              )
-            else if (kind == ActivityKind.transaction)
-              Icon(
-                Icons.receipt_long_outlined,
-                size: 32,
-                color: TibaneColors.orange,
-              )
-            else
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  TokenIcon(
-                    imageUrl: tokenInfo.imageUrl,
-                    mint: tokenInfo.mint ?? '',
-                    symbol: tokenInfo.symbol,
-                    size: 32,
-                  ),
-                  Positioned(
-                    right: -2,
-                    bottom: -2,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: TibaneColors.card,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        kind == ActivityKind.sent
-                            ? Icons.arrow_upward
-                            : Icons.arrow_downward,
-                        size: 12,
-                        color: amountColor,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 2,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13 * 1.15,
-                    ),
-                  ),
-                  Text(
-                    shortenAddress(counterparty),
-                    style: monoStyle(
-                      fontSize: 11,
-                      color: TibaneColors.textMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              flex: 3,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (activity != null)
-                    for (final change in [
-                      ...activity.changes.where((c) => c.amount.isNegative),
-                      ...activity.changes.where((c) => !c.amount.isNegative),
-                    ])
-                      ActivityTokenAmount(change: change, compact: true)
-                  else if (!isSolana)
-                    Text(
-                      amountLine.toString(),
-                      style: TextStyle(
-                        color: amountColor,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                  if (fiatStr != null)
-                    Text(
-                      fiatStr,
-                      style: monoStyle(
-                        fontSize: 11,
-                        color: TibaneColors.textMuted,
-                      ),
-                    ),
-                  if (timeStr.isNotEmpty)
-                    Text(
-                      timeStr,
-                      style: monoStyle(
-                        fontSize: 10,
-                        color: TibaneColors.textDim,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

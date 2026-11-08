@@ -9,9 +9,11 @@ import 'package:provider/provider.dart';
 import 'package:tibaneapp/l10n/gen/app_localizations.dart';
 import 'package:tibaneapp/constants/solana_constants.dart';
 import 'package:tibaneapp/models/transaction_activity.dart';
-import 'package:tibaneapp/screens/wallet/wallet_dashboard.dart';
+import 'package:tibaneapp/screens/wallet/activity_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tibaneapp/screens/wallet/transaction_details_screen.dart';
 import 'package:tibaneapp/services/balances_store.dart';
+import 'package:tibaneapp/services/activity_history_cache.dart';
 import 'package:tibaneapp/services/jupiter_service.dart';
 import 'package:tibaneapp/services/uk_compliance_service.dart';
 import 'package:tibaneapp/services/transaction_activity_service.dart';
@@ -27,6 +29,7 @@ class _Transport implements lw.Transport {
   int backfills = 0;
   bool hasHistory = true;
   bool fail = false;
+  int historyCount = 1;
 
   @override
   Future<dynamic> request(
@@ -44,16 +47,25 @@ class _Transport implements lw.Transport {
       return backfills == 0 || !hasHistory
           ? <Object>[]
           : [
-              {
-                'Id': 'fixture-tx',
-                'Type': 'other',
-                'Asset': 'solana.mainnet.NATIVE',
-                'From': _address,
-                'To': '',
-                'Hash': 'fixture-swap-signature',
-                'Created': '2026-10-20T12:00:00Z',
-                'Amount': {'v': '1000000', 'e': 9},
-              },
+              for (var n = 0; n < historyCount; n++)
+                {
+                  'Id': n == 0 ? 'fixture-tx' : 'fixture-tx-$n',
+                  'Type': 'other',
+                  'Asset': 'solana.mainnet.NATIVE',
+                  'From': _address,
+                  'To': '',
+                  'Hash': n == 0
+                      ? 'fixture-swap-signature'
+                      : 'fixture-signature-$n',
+                  'Created': DateTime.utc(
+                    2026,
+                    10,
+                    20,
+                    12,
+                    n,
+                  ).toIso8601String(),
+                  'Amount': {'v': '1000000', 'e': 9},
+                },
             ];
     }
     throw StateError('Unexpected request: $path');
@@ -84,10 +96,11 @@ class _Backend extends LibwalletBackend {
 
 class _Wallet extends WalletService {
   final backend = _Backend();
+  String address = _address;
   @override
   LibwalletBackend get libwallet => backend;
   @override
-  String? get publicKey => _address;
+  String? get publicKey => address;
   @override
   WalletKind get kind => WalletKind.inapp;
   @override
@@ -150,6 +163,80 @@ class _ActivityService extends TransactionActivityService {
 
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test(
+    'switching accounts hides other receipts and restores only its own cache',
+    () async {
+      final wallet = _Wallet();
+      final cache = ActivityHistoryCache();
+      final store = BalancesStore(
+        wallet,
+        jupiter: _Jupiter(),
+        activityService: _ActivityService(swap: true),
+        historyCache: cache,
+      );
+      addTearDown(wallet.dispose);
+      addTearDown(store.dispose);
+      store.init();
+      await store.refreshHistory();
+      expect(store.transactions.single.hash, 'fixture-swap-signature');
+      await store.loadActivity(store.transactions.single);
+
+      wallet.address = '22222222222222222222222222222222';
+      wallet.notifyListeners();
+      await store.refreshHistory();
+      expect(store.transactions, isEmpty);
+
+      wallet.backend.transport.hasHistory = false;
+      wallet.address = _address;
+      wallet.notifyListeners();
+      await store.refreshHistory();
+      expect(store.transactions.single.hash, 'fixture-swap-signature');
+      expect(
+        store.activityFor(store.transactions.single)!.kind,
+        ActivityKind.swap,
+      );
+    },
+  );
+
+  test(
+    'new store restores nine receipts and cached swap details after RPC history disappears',
+    () async {
+      final wallet = _Wallet();
+      wallet.backend.transport.historyCount = 12;
+      final cache = ActivityHistoryCache();
+      final first = BalancesStore(
+        wallet,
+        jupiter: _Jupiter(),
+        activityService: _ActivityService(swap: true),
+        historyCache: cache,
+      );
+      addTearDown(wallet.dispose);
+      await first.refreshHistory();
+      final newest = first.transactions.first;
+      await first.loadActivity(newest);
+      expect(first.transactions, hasLength(9));
+      first.dispose();
+      wallet.backend.transport.hasHistory = false;
+      wallet.backend.transport.fail = true;
+      final second = BalancesStore(
+        wallet,
+        jupiter: _Jupiter(),
+        activityService: _ActivityService(),
+        historyCache: cache,
+      );
+      addTearDown(second.dispose);
+      await second.refreshHistory();
+      expect(second.transactions, hasLength(9));
+      expect(second.transactions.first.hash, newest.hash);
+      expect(
+        second.activityFor(second.transactions.first)!.kind,
+        ActivityKind.swap,
+      );
+      expect(second.historyFailed, isTrue);
+    },
+  );
 
   test(
     'history refresh uses official backfill then reads rows without events',
@@ -215,16 +302,17 @@ void main() {
           theme: TibaneTheme.darkTheme,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
-          home: const Scaffold(body: WalletDashboard()),
+          home: const Scaffold(body: ActivityScreen()),
         ),
       ),
     );
     await tester.pumpAndSettle();
-    expect(wallet.backend.transport.backfills, 0);
-    await tester.tap(find.text('Activity'));
-    await tester.pumpAndSettle();
     expect(wallet.backend.transport.backfills, greaterThan(0));
     expect(find.text('Received'), findsOneWidget);
+    expect(
+      tester.widget<Icon>(find.byIcon(Icons.arrow_downward)).color,
+      TibaneColors.cyan,
+    );
     final row = find.byKey(const Key('activity-transaction-fixture-tx'));
     final content = find.descendant(of: row, matching: find.byType(Row)).first;
     expect(
@@ -266,31 +354,13 @@ void main() {
               theme: TibaneTheme.darkTheme,
               localizationsDelegates: AppLocalizations.localizationsDelegates,
               supportedLocales: AppLocalizations.supportedLocales,
-              home: const Scaffold(body: WalletDashboard()),
+              home: const Scaffold(body: ActivityScreen()),
             ),
           ),
         );
         await tester.pumpAndSettle();
         final l10n = await AppLocalizations.delegate.load(locale);
-        final tabs = find.byKey(const Key('wallet-activity-tabs'));
-        final oldLabelStyle = DefaultTextStyle.of(
-          tester.element(tabs),
-        ).style.copyWith(fontSize: 13, fontWeight: FontWeight.w600);
-        final oldLabel = TextPainter(
-          text: TextSpan(text: l10n.dashboardTabTokens, style: oldLabelStyle),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        expect(tester.getSize(tabs).height, closeTo(oldLabel.height + 30, 0.3));
-        oldLabel.dispose();
-        expect(
-          tester
-              .widget<Text>(find.text(l10n.dashboardTabActivity))
-              .style!
-              .fontSize,
-          closeTo(13 * 1.2, 0.01),
-        );
-        await tester.tap(find.text(l10n.dashboardTabActivity));
-        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('wallet-activity-tabs')), findsNothing);
         final row = find.byKey(const Key('activity-transaction-fixture-tx'));
         await tester.ensureVisible(row);
         await tester.pumpAndSettle();

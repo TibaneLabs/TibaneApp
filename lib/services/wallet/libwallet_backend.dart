@@ -2990,7 +2990,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
   /// Fetch on-chain history into LibWallet's local transaction table.
   /// Re-selecting an unchanged account does not reliably trigger this sweep.
+  bool _historyBackfillFailed = false;
+  bool get historyBackfillFailed => _historyBackfillFailed;
+
   Future<void> kickHistoryBackfill() async {
+    _historyBackfillFailed = false;
     if (accountId == null) {
       debugPrint('[txhist] kickHistoryBackfill: no accountId, skipping');
       return;
@@ -3001,6 +3005,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       debugPrint('[txhist] Transaction:backfill: $result');
     } catch (e) {
       debugPrint('[txhist] kickHistoryBackfill failed: $e');
+      _historyBackfillFailed = true;
     }
   }
 

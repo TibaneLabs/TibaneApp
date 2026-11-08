@@ -1005,6 +1005,8 @@
   "dashboardSend": "Send",
   "dashboardTabTokens": "Tokens",
   "dashboardTabActivity": "Activity",
+  "activityViewAll": "View All",
+  "activityRefreshFailed": "Could not update activity. Try again.",
   "dashboardPnl24hSemantics": "24-hour P&L: {percent}, {amount}",
   "@dashboardPnl24hSemantics": {
     "placeholders": {
@@ -1300,6 +1302,11 @@
   "accountSwitcherNoWalletApp": "No compatible wallet app is installed.",
   "accountSwitcherCopyAddress": "Copy address",
   "accountSwitcherDisconnect": "Disconnect external",
+  "accountSwitcherConnectCatCard": "Connect CatCard (USB)",
+  "catCardPairTitle": "Pair with your CatCard",
+  "catCardPairBody": "Check that the CatCard shows exactly this code. If it differs, something sits between the phone and the device: tap Different code.",
+  "catCardPairSame": "Same code",
+  "catCardPairDifferent": "Different code",
   "accountSwitcherSwitchFailed": "Could not switch account",
   "accountSwitcherAddFailed": "Could not add account",
   "accountSwitcherAccountName": "Account name",

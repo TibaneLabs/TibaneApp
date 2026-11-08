@@ -47,6 +47,8 @@ Future<(_Harness, AppLocalizations)> _open(
   double scale = 1,
   double keyboard = 0,
   Wallet? wallet,
+  bool transactionReviewed = false,
+  Future<String?> Function()? deviceRead,
 }) async {
   tester.view.physicalSize = size * 2;
   tester.view.devicePixelRatio = 2;
@@ -76,10 +78,13 @@ Future<(_Harness, AppLocalizations)> _open(
                 wallet: wallet ?? _wallet(),
                 readStoreKey: (_, _) async {
                   harness.deviceReads++;
-                  return 'fixture-device-key';
+                  return deviceRead == null
+                      ? 'fixture-device-key'
+                      : await deviceRead();
                 },
                 title: 'Fixture operation',
                 actionLabel: 'Confirm fixture',
+                transactionReviewed: transactionReviewed,
               );
               harness.completed = true;
             },
@@ -110,6 +115,74 @@ Future<void> _enterAndConfirm(WidgetTester tester, String value) async {
 
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
+
+  testWidgets(
+    'reviewed private-key import reads the device key without a share modal',
+    (tester) async {
+      final (harness, _) = await _open(
+        tester,
+        wallet: _wallet(protocol: 'frost', types: ['StoreKey']),
+        transactionReviewed: true,
+      );
+      expect(harness.completed, isTrue);
+      expect(harness.deviceReads, 1);
+      expect(harness.result!.single.id, 'selected-StoreKey-0');
+      expect(harness.result!.single.key, 'fixture-device-key');
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'private-key import without a prior review keeps explicit authorization',
+    (tester) async {
+      final (harness, _) = await _open(
+        tester,
+        wallet: _wallet(protocol: 'frost', types: ['StoreKey']),
+      );
+      expect(harness.completed, isFalse);
+      expect(harness.deviceReads, 0);
+      expect(find.byType(BottomSheet), findsOneWidget);
+    },
+  );
+
+  testWidgets('MPC keeps its share sheet even after review', (tester) async {
+    final (harness, _) = await _open(
+      tester,
+      wallet: _wallet(
+        protocol: 'frost',
+        threshold: 1,
+        types: ['StoreKey', 'Password', 'RemoteKey'],
+      ),
+      transactionReviewed: true,
+    );
+    expect(harness.completed, isFalse);
+    expect(harness.deviceReads, 0);
+    expect(find.byType(BottomSheet), findsOneWidget);
+  });
+
+  for (final throwsError in [false, true]) {
+    testWidgets(
+      'unavailable device key never authorizes a reviewed import (throws: $throwsError)',
+      (tester) async {
+        final (harness, _) = await _open(
+          tester,
+          wallet: _wallet(protocol: 'frost', types: ['StoreKey']),
+          transactionReviewed: true,
+          deviceRead: () async {
+            if (throwsError) throw StateError('fixture read failed');
+            return null;
+          },
+        );
+        expect(harness.completed, isTrue);
+        expect(harness.result, isNull);
+        expect(harness.deviceReads, 1);
+        expect(find.byType(BottomSheet), findsNothing);
+        await tester.pump(const Duration(seconds: 4));
+        await tester.pumpAndSettle();
+      },
+    );
+  }
   for (final language in ['en', 'pt', 'fr', 'ja']) {
     for (final size in [const Size(320, 568), const Size(393, 852)]) {
       for (final scale in [1.0, 1.5]) {

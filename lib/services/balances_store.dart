@@ -8,6 +8,7 @@ import '../constants/solana_constants.dart';
 import '../models/transaction_activity.dart';
 import '../utils/coalescer.dart';
 import 'jupiter_service.dart';
+import 'activity_history_cache.dart';
 import 'transaction_activity_service.dart';
 import 'wallet_service.dart';
 import 'wallet/libwallet_backend.dart' show TransactionHistoryPage;
@@ -32,12 +33,18 @@ class BalancesStore extends ChangeNotifier {
     this._wallet, {
     JupiterService? jupiter,
     TransactionActivityService? activityService,
+    ActivityHistoryCache? historyCache,
   }) : _jupiter = jupiter ?? JupiterService(),
+       _historyCache = historyCache ?? ActivityHistoryCache(),
        _activityService = activityService ?? TransactionActivityService();
 
   final WalletService _wallet;
   final JupiterService _jupiter;
   final TransactionActivityService _activityService;
+  final ActivityHistoryCache _historyCache;
+  String? _restoredHistoryScope;
+  bool _historyFailed = false;
+  bool get historyFailed => _historyFailed;
   final _activity = <String, TransactionActivity>{};
   String get _historyScope =>
       '${_wallet.kind}:${_wallet.publicKey}:${_wallet.libwallet.currentNetwork?.id}';
@@ -70,6 +77,7 @@ class BalancesStore extends ChangeNotifier {
       if (result != null) {
         _activity[key] = result;
         notifyListeners();
+        unawaited(_persistHistory(scope));
       }
       return result;
     } catch (e) {
@@ -83,9 +91,12 @@ class BalancesStore extends ChangeNotifier {
     String? owner,
   ) async {
     // Bound history RPC work and keep the existing balance/price refresh fast.
-    final recent = transactions.take(20).toList();
+    final recent = transactions.take(activityHistoryLimit).toList();
+    final scope = _historyScope;
     for (var offset = 0; offset < recent.length; offset += 4) {
-      if (_disposed || owner != _wallet.publicKey) return;
+      if (_disposed || owner != _wallet.publicKey || scope != _historyScope) {
+        return;
+      }
       await Future.wait(recent.skip(offset).take(4).map(loadActivity));
     }
   }
@@ -155,6 +166,8 @@ class BalancesStore extends ChangeNotifier {
     if (_lastScope == _historyScope) return;
     _lastScope = _historyScope;
     _historyBefore = null;
+    _restoredHistoryScope = null;
+    _historyFailed = false;
     _historyHasMore = false;
     _loadingMoreHistory = false;
     _lastAddress = addr;
@@ -231,13 +244,18 @@ class BalancesStore extends ChangeNotifier {
   /// Sweep before reading the local table, including when no update event fires.
   Future<void> refreshHistory() async {
     if (_disposed) return;
+    final scope = _historyScope;
+    await _restoreHistory(scope);
+    if (_disposed || scope != _historyScope) return;
     _kickedHistoryBackfill = true;
+    _historyFailed = false;
     if (_transactions.isEmpty) {
       _loadingTxs = true;
       notifyListeners();
     }
     await _wallet.libwallet.kickHistoryBackfill();
-    if (_disposed) return;
+    if (_disposed || scope != _historyScope) return;
+    _historyFailed = _wallet.libwallet.historyBackfillFailed;
     await _reload();
   }
 
@@ -272,13 +290,39 @@ class BalancesStore extends ChangeNotifier {
     List<Transaction> first,
     List<Transaction> second,
   ) {
-    final rows = {
-      for (final tx in [...second, ...first])
-        '${tx.network}:${tx.id.isEmpty ? tx.hash : tx.id}': tx,
-    };
-    return rows.values.toList()..sort(
-      (a, b) =>
-          (b.created ?? DateTime(1970)).compareTo(a.created ?? DateTime(1970)),
+    return recentActivityTransactions([...first, ...second]);
+  }
+
+  Future<void> _restoreHistory(String scope) async {
+    if (_restoredHistoryScope == scope || _wallet.publicKey == null) return;
+    final snapshot = await _historyCache.read(scope);
+    if (_disposed || scope != _historyScope) return;
+    _transactions = _mergeHistory(_transactions, snapshot.transactions);
+    for (final entry in snapshot.activity.entries) {
+      _activity.putIfAbsent('$scope:${entry.key}', () => entry.value);
+    }
+    _restoredHistoryScope = scope;
+    if (_transactions.isNotEmpty) _loadingTxs = false;
+    notifyListeners();
+  }
+
+  Future<void> _persistHistory(String scope) async {
+    if (_disposed || scope != _historyScope || _wallet.publicKey == null) {
+      return;
+    }
+    final hashes = _transactions.map(activityTransactionId).toSet();
+    _activity.removeWhere(
+      (key, _) =>
+          key.startsWith('$scope:') &&
+          !hashes.any((hash) => key == '$scope:$hash'),
+    );
+    await _historyCache.write(
+      scope,
+      ActivityHistorySnapshot(List.of(_transactions), {
+        for (final tx in _transactions)
+          activityTransactionId(tx):
+              ?_activity['$scope:${activityTransactionId(tx)}'],
+      }),
     );
   }
 
@@ -286,10 +330,12 @@ class BalancesStore extends ChangeNotifier {
     final lw = _wallet.libwallet;
     final addr = _wallet.publicKey;
     final scope = _historyScope;
+    await _restoreHistory(scope);
+    if (_disposed || scope != _historyScope) return;
     // Jupiter is a Solana RPC — calling it with an EVM address fails, so skip
     // it off-Solana; EVM token balances come from WalletService.assets.
     final isSolana =
-        _wallet.kind == WalletKind.mwa ||
+        _wallet.kind != WalletKind.inapp ||
         (lw.currentNetwork?.type ?? NetworkType.solana) == NetworkType.solana;
     try {
       final results = await Future.wait<Object?>([
@@ -298,6 +344,7 @@ class BalancesStore extends ChangeNotifier {
             return await lw.getTransactionPage(limit: 50, forAddress: addr);
           } catch (e) {
             debugPrint('[balances] transaction reload failed: $e');
+            if (scope == _historyScope) _historyFailed = true;
             return null;
           }
         }(),
@@ -321,8 +368,9 @@ class BalancesStore extends ChangeNotifier {
           _historyHasMore = page.hasMore;
         }
         _transactions = _mergeHistory(txs, _transactions);
+        unawaited(_persistHistory(scope));
         if (addr != null) _wallet.cacheTxsFor(addr, _transactions);
-        unawaited(_enrichActivity(txs, addr));
+        unawaited(_enrichActivity(_transactions, addr));
       }
       if (allHoldings != null) {
         final nativeSol = isSolana

@@ -37,7 +37,35 @@ Future<List<SigningKey>?> showSignSheet(
   String?
   subtitlePurpose, // e.g. 'sign this transaction' (default) / 'change your password'
   String actionLabel = 'Sign',
+  bool transactionReviewed = false,
 }) async {
+  if (transactionReviewed && isSingleDeviceKeyWallet(wallet)) {
+    try {
+      final key = wallet.keys.single;
+      final secret = await readStoreKey(key, null);
+      if (!context.mounted) return null;
+      if (secret == null || secret.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(context.l10n.signSheetDeviceKeyError),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        return null;
+      }
+      return [SigningKey(id: key.id, key: secret, type: 'StoreKey')];
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(walletErrorMessageForContext(context, error)),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+      return null;
+    }
+  }
   if (isNormalMnemonicWallet(wallet)) {
     final password = await showWalletPasswordDialog(context);
     if (!context.mounted || password == null || password.isEmpty) return null;

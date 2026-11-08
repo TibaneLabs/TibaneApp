@@ -7,7 +7,9 @@ import 'package:libwallet/libwallet.dart'
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/solana_constants.dart';
+import 'catcard/catcard_wallet_backend.dart';
 import 'coinbase_spot_price_service.dart';
+import 'activity_history_cache.dart';
 import 'eth_usd_price_service.dart';
 import 'ethereum_rpc_service.dart';
 import 'relay_service.dart';
@@ -23,14 +25,19 @@ import 'wallet/wallet_backend.dart';
 import 'wallet/walletconnect_bridge.dart';
 
 /// Backend selector persisted across launches.
-enum WalletKind { mwa, inapp }
+enum WalletKind { mwa, inapp, catcard }
 
 WalletKind _parseKind(String? s) => switch (s) {
   'inapp' => WalletKind.inapp,
+  'catcard' => WalletKind.catcard,
   _ => WalletKind.mwa,
 };
 
-String _kindToString(WalletKind k) => k == WalletKind.inapp ? 'inapp' : 'mwa';
+String _kindToString(WalletKind k) => switch (k) {
+  WalletKind.inapp => 'inapp',
+  WalletKind.catcard => 'catcard',
+  WalletKind.mwa => 'mwa',
+};
 
 /// Resolve the effective backend kind. If MWA is selected but not connected
 /// while an in-app wallet is available, fall back to in-app — otherwise the
@@ -43,8 +50,12 @@ WalletKind reconcileWalletKind({
   required WalletKind kind,
   required bool mwaConnected,
   required bool inAppHasWallet,
+  bool catCardConnected = false,
 }) {
   if (kind == WalletKind.mwa && !mwaConnected && inAppHasWallet) {
+    return WalletKind.inapp;
+  }
+  if (kind == WalletKind.catcard && !catCardConnected && inAppHasWallet) {
     return WalletKind.inapp;
   }
   return kind;
@@ -75,21 +86,25 @@ class WalletService extends ChangeNotifier {
     EthUsdPriceService? ethPriceService,
     LibwalletBackend? libwalletBackend,
     MwaWalletBackend? mwaBackend,
+    CatCardWalletBackend? catcardBackend,
   }) : _libwallet = libwalletBackend ?? LibwalletBackend(),
        _mwa = mwaBackend ?? MwaWalletBackend(),
+       _catcard = catcardBackend ?? CatCardWalletBackend(),
        _ethereumRpc = ethereumRpc ?? EthereumRpcService(),
        _ethPriceService = ethPriceService ?? EthUsdPriceService() {
-    _accountsService = AccountsService(_libwallet, _mwa);
+    _accountsService = AccountsService(_libwallet, _mwa, catcard: _catcard);
     // Re-emit so existing `context.watch<WalletService>()` consumers rebuild
     // when the account list / current account changes.
     _accountsService.addListener(notifyListeners);
     _mwa.addListener(_onBackendChanged);
+    _catcard.addListener(_onBackendChanged);
     _libwallet.addListener(_onBackendChanged);
     _libwallet.balanceTick.addListener(_onBalanceTick);
   }
 
   final MwaWalletBackend _mwa;
   final LibwalletBackend _libwallet;
+  final CatCardWalletBackend _catcard;
   final EthereumRpcService _ethereumRpc;
   final EthUsdPriceService _ethPriceService;
   final Map<String, CoinbaseSpotPriceService> _bitcoinPriceServices = {};
@@ -131,7 +146,11 @@ class WalletService extends ChangeNotifier {
 
   // --- public API kept compatible with previous WalletService ---
 
-  WalletBackend get active => _kind == WalletKind.inapp ? _libwallet : _mwa;
+  WalletBackend get active => switch (_kind) {
+    WalletKind.inapp => _libwallet,
+    WalletKind.catcard => _catcard,
+    WalletKind.mwa => _mwa,
+  };
 
   /// The current backend kind. UI reads this to decide what buttons to show.
   WalletKind get kind => _kind;
@@ -153,6 +172,9 @@ class WalletService extends ChangeNotifier {
 
   /// Direct access to specific backends for setup flows (create wallet, unlock).
   MwaWalletBackend get mwa => _mwa;
+
+  /// The CatCard hardware wallet over USB.
+  CatCardWalletBackend get catcard => _catcard;
 
   LibwalletBackend get libwallet => _libwallet;
 
@@ -246,6 +268,7 @@ class WalletService extends ChangeNotifier {
   /// Solana, or MWA (Seed Vault is Solana-only).
   bool get _solanaNetworkActive =>
       _kind == WalletKind.mwa ||
+      _kind == WalletKind.catcard ||
       _libwallet.currentNetwork?.type == NetworkType.solana;
 
   Asset? _nativeSolAsset() {
@@ -281,6 +304,7 @@ class WalletService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _kind = _parseKind(prefs.getString('wallet_backend'));
     await _mwa.tryRestore();
+    await _catcard.tryRestore();
     await _libwallet.tryRestore();
     // libwallet's built-in default is Ethereum mainnet, so a fresh install can
     // boot into the wrong family before an account is active. Normalize to
@@ -303,7 +327,11 @@ class WalletService extends ChangeNotifier {
         // Older seed imports saved accounts without persisting an active wallet.
         await setCurrentAccount(cur);
       } else {
-        final desired = cur.isMwa ? WalletKind.mwa : WalletKind.inapp;
+        final desired = cur.isMwa
+            ? WalletKind.mwa
+            : cur.isCatCard
+            ? WalletKind.catcard
+            : WalletKind.inapp;
         if (desired != _kind) await _setKind(desired);
       }
     }
@@ -336,6 +364,19 @@ class WalletService extends ChangeNotifier {
     return true;
   }
 
+  /// Connect a CatCard over USB: pair (code compared on both screens) and
+  /// have the person share an account on the device. Switches to it on
+  /// success; a cancelled or failed pairing leaves the current wallet active
+  /// (the reason is on [catcard].error).
+  Future<bool> connectCatCard() async {
+    final ok = await _catcard.connect();
+    if (!ok) return false;
+    await _setKind(WalletKind.catcard);
+    refreshBalances();
+    unawaited(refreshAccounts());
+    return true;
+  }
+
   /// Switch to the in-app libwallet backend. Assumes the wallet has already
   /// been created or unlocked via the in-app setup flow.
   Future<void> useLibwallet() async {
@@ -354,7 +395,7 @@ class WalletService extends ChangeNotifier {
   /// "disconnect". Guards against the historical footgun where the account
   /// switcher's Disconnect erased the active wallet.
   Future<void> disconnect() async {
-    if (_kind != WalletKind.mwa) return;
+    if (_kind != WalletKind.mwa && _kind != WalletKind.catcard) return;
     await active.disconnect();
     resetSessionState();
     _authedAddress = null;
@@ -399,6 +440,7 @@ class WalletService extends ChangeNotifier {
       // complete reset disconnects it even when an in-app wallet was active.
       await _mwa.disconnect();
       await _accountsService.clearLocalWalletState();
+      await ActivityHistoryCache().clear();
       await _auth.logout();
       _authedAddress = null;
       _lastAddress = null;
@@ -424,8 +466,10 @@ class WalletService extends ChangeNotifier {
   /// the connected MWA account, and reconcile [currentAccount] with the active
   /// backend. Additive in Phase 4b-1: the active backend is still driven by
   /// [_kind]; this only mirrors it as a [UnifiedAccount]. Best-effort.
-  Future<void> refreshAccounts() =>
-      _accountsService.refresh(preferMwa: _kind == WalletKind.mwa);
+  Future<void> refreshAccounts() => _accountsService.refresh(
+    preferMwa: _kind == WalletKind.mwa,
+    preferCatCard: _kind == WalletKind.catcard,
+  );
 
   /// Activate the newly created/imported wallet, never an unrelated current one.
   Future<bool> activateWalletGroup(LogicalWallet group) async {
@@ -486,6 +530,7 @@ class WalletService extends ChangeNotifier {
     String? networkId,
   }) async {
     if (acct.isMwa) await _setKind(WalletKind.mwa);
+    if (acct.isCatCard) await _setKind(WalletKind.catcard);
     final ok = await _accountsService.setCurrent(acct, networkId: networkId);
     if (!ok) return false;
     if (acct.isInApp) {
@@ -582,7 +627,7 @@ class WalletService extends ChangeNotifier {
   void cacheTxsFor(String address, List<Transaction> txs) {
     if (address.isEmpty) return;
     _txCacheByAddress['$kind:${libwallet.currentNetwork?.id}:$address'] =
-        List.unmodifiable(txs);
+        List.unmodifiable(recentActivityTransactions(txs));
   }
 
   /// Call from any flow that knows a tx just committed (swap, send, …) to
@@ -968,6 +1013,7 @@ class WalletService extends ChangeNotifier {
       kind: _kind,
       mwaConnected: _mwa.isConnected,
       inAppHasWallet: _libwallet.publicKey != null,
+      catCardConnected: _catcard.isConnected,
     );
     if (resolved == _kind) return;
     _kind = resolved;

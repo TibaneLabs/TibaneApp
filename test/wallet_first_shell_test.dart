@@ -133,7 +133,7 @@ void main() {
   });
 
   for (final locale in AppLocalizations.supportedLocales) {
-    testWidgets('$locale starts on Wallet with only three footer tabs', (
+    testWidgets('$locale starts on Wallet with only four footer tabs', (
       tester,
     ) async {
       final wallet = _Wallet();
@@ -145,6 +145,7 @@ void main() {
       expect(nav.currentIndex, 0);
       expect(nav.items.map((item) => item.label), [
         l10n.bottomNavWalletLabel,
+        l10n.dashboardTabActivity,
         l10n.bottomNavBrowseLabel,
         l10n.bottomNavSettingsLabel,
       ]);
@@ -181,9 +182,9 @@ void main() {
     expect(find.byType(SettingsScreen), findsOneWidget);
     expect(find.byType(WalletsAccountsScreen), findsNothing);
     expect(find.byType(DAppBrowserScreen), findsNothing);
-    tester.state<TibaneShellState>(find.byType(TibaneShell)).navigateTo(3);
+    tester.state<TibaneShellState>(find.byType(TibaneShell)).navigateTo(4);
     await tester.pumpAndSettle();
-    expect(tester.widget<BottomNavigationBar>(footer).currentIndex, 2);
+    expect(tester.widget<BottomNavigationBar>(footer).currentIndex, 3);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
@@ -203,7 +204,7 @@ void main() {
     expect(find.text('Connect'), findsNothing);
   });
 
-  testWidgets('Settings opens Tools without losing the three-tab footer', (
+  testWidgets('Settings opens Tools without losing the four-tab footer', (
     tester,
   ) async {
     final wallet = _Wallet();
@@ -222,7 +223,7 @@ void main() {
     await tester.tap(tools);
     await tester.pumpAndSettle();
     expect(find.byType(ToolsScreen), findsOneWidget);
-    expect(tester.widget<BottomNavigationBar>(footer).items, hasLength(3));
+    expect(tester.widget<BottomNavigationBar>(footer).items, hasLength(4));
     expect(find.byKey(const Key('tools-stake')), findsOneWidget);
     expect(find.byKey(const Key('tools-incinerator')), findsOneWidget);
     expect(find.byKey(const Key('tools-search')), findsOneWidget);

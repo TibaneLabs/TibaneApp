@@ -17,6 +17,8 @@ import 'screens/settings_screen.dart';
 import 'screens/swap_screen.dart';
 import 'screens/wallet/biometric_migration_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
+import 'screens/wallet/activity_screen.dart';
+import 'screens/wallet/widgets/catcard_pairing_sheet.dart';
 import 'services/balances_store.dart';
 import 'services/browser_preferences.dart';
 import 'services/favorites_service.dart';
@@ -93,7 +95,7 @@ bool startupGateReady({
 /// behaviour where back on a root tab exited. Pure, for unit testing.
 enum ShellBackAction { popTab, exitApp }
 
-enum ShellTab { wallet, browser, settings }
+enum ShellTab { wallet, activity, browser, settings }
 
 @visibleForTesting
 ShellBackAction shellBackAction({required bool activeTabCanPop}) =>
@@ -101,7 +103,9 @@ ShellBackAction shellBackAction({required bool activeTabCanPop}) =>
 
 @visibleForTesting
 bool bottomTabTapPopsToRoot(int index) =>
-    index == ShellTab.wallet.index || index == ShellTab.settings.index;
+    index == ShellTab.wallet.index ||
+    index == ShellTab.activity.index ||
+    index == ShellTab.settings.index;
 
 /// Lazy-build + pause state for the Browse tab, given whether it was already
 /// built (`wasVisited`) and the active tab index. The heavy webview is built
@@ -126,7 +130,15 @@ class TibaneApp extends StatelessWidget {
         // App language: null = System default (follow device). Drives
         // MaterialApp.locale; the Settings → General switcher writes to it.
         ChangeNotifierProvider(create: (_) => LocaleController()..load()),
-        ChangeNotifierProvider(create: (_) => WalletService()..tryRestore()),
+        ChangeNotifierProvider(
+          create: (_) {
+            final wallet = WalletService();
+            // CatCard pairing sheet + progress, reachable from any screen.
+            installCatCardUi(wallet, rootNavigatorKey);
+            unawaited(wallet.tryRestore());
+            return wallet;
+          },
+        ),
         // Centralized holdings + tx store; reads WalletService (listed first so
         // it's resolvable here). See BALANCES_STORE_MIGRATION.md.
         ChangeNotifierProvider(
@@ -178,7 +190,7 @@ class TibaneApp extends StatelessWidget {
 
 /// Main app shell with bottom navigation
 class TibaneShell extends StatefulWidget {
-  /// Tab to show on first build. 0=wallet/swap, 1=browse, 2=settings.
+  /// Tab to show on first build. 0=wallet/swap, 1=activity, 2=browse, 3=settings.
   final int initialIndex;
 
   /// When non-null, forces the Seeker / non-Seeker layout instead of probing
@@ -186,7 +198,7 @@ class TibaneShell extends StatefulWidget {
   final bool? forceSeeker;
 
   const TibaneShell({super.key, this.initialIndex = 0, this.forceSeeker})
-    : assert(initialIndex >= 0 && initialIndex < 3);
+    : assert(initialIndex >= 0 && initialIndex < 4);
 
   @override
   State<TibaneShell> createState() => TibaneShellState();
@@ -374,6 +386,14 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
                 body: _WalletOrSwapTab(forceSeeker: widget.forceSeeker),
               ),
             ),
+            _TabNavigator(
+              navKey: _navKeys[ShellTab.activity.index],
+              rootBuilder: (_) => Scaffold(
+                backgroundColor: TibaneColors.black,
+                appBar: const TibaneAppBar(),
+                body: _ActivityTab(activeTab: _activeTab),
+              ),
+            ),
             // Browse: built (and its heavy webview spun up) only after its first
             // visit, and paused while another tab is active — see [_BrowserTab].
             _TabNavigator(
@@ -406,6 +426,7 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
         border: Border(top: BorderSide(color: TibaneColors.border)),
       ),
       child: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
         currentIndex: _currentIndex,
         onTap: _navigateTo,
         items: [
@@ -421,6 +442,11 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
             label: showSwap
                 ? l10n.bottomNavSwapLabel
                 : l10n.bottomNavWalletLabel,
+          ),
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.history_outlined),
+            activeIcon: const Icon(Icons.history),
+            label: l10n.dashboardTabActivity,
           ),
           BottomNavigationBarItem(
             icon: const Icon(Icons.travel_explore_outlined),
@@ -515,7 +541,31 @@ class _WalletOrSwapTab extends StatelessWidget {
   }
 }
 
-/// Tab-1 root. Builds the heavy dApp browser lazily (only after the tab's first
+class _ActivityTab extends StatefulWidget {
+  const _ActivityTab({required this.activeTab});
+  final ValueListenable<int> activeTab;
+
+  @override
+  State<_ActivityTab> createState() => _ActivityTabState();
+}
+
+class _ActivityTabState extends State<_ActivityTab> {
+  bool _visited = false;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+    valueListenable: widget.activeTab,
+    builder: (_, index, _) {
+      final active = index == ShellTab.activity.index;
+      _visited = _visited || active;
+      return _visited
+          ? ActivityScreen(active: active)
+          : const SizedBox.shrink();
+    },
+  );
+}
+
+/// Browse root. Builds the heavy dApp browser lazily (only after the tab's first
 /// visit) and forwards an `active` flag so the webview pauses while another tab
 /// is showing. Reads tab changes from [activeTab] because this Navigator root
 /// is built once and can't watch the shell's `_currentIndex` directly.

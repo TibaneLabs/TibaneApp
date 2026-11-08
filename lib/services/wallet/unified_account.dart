@@ -3,7 +3,7 @@ import 'package:libwallet/libwallet.dart'
 import 'wallet_export_format.dart' show isNormalMnemonicWallet;
 
 /// Which backend owns / signs for an account.
-enum AccountBackend { inapp, mwa }
+enum AccountBackend { inapp, mwa, catcard }
 
 /// One app-level account spanning both backends (in-app MPC + external MWA/Seed
 /// Vault) and every chain — the unit the account switcher and `WalletService`'s
@@ -68,13 +68,23 @@ class UnifiedAccount {
 
   bool get isInApp => backend == AccountBackend.inapp;
   bool get isMwa => backend == AccountBackend.mwa;
+  bool get isCatCard => backend == AccountBackend.catcard;
+
+  /// Signed outside the app: Seed Vault / MWA, or a CatCard over USB.
+  bool get isExternal => isMwa || isCatCard;
   bool get isSolana => chain == 'solana';
 
   bool get isVirtual => idOverride != null;
 
   /// Stable identity: in-app → `accountId`; virtual in-app contexts can
   /// override this; MWA → `"mwa:<address>"`.
-  String get id => idOverride ?? (isInApp ? accountId! : 'mwa:$address');
+  String get id =>
+      idOverride ??
+      (isInApp
+          ? accountId!
+          : isCatCard
+          ? 'catcard:$address'
+          : 'mwa:$address');
 
   @override
   String toString() => 'UnifiedAccount($id, $backend, $chain, "$label")';
@@ -82,6 +92,9 @@ class UnifiedAccount {
 
 /// Label shown for the external Seed Vault account.
 const String mwaAccountLabel = 'External (Seed Vault)';
+
+/// Label shown for the CatCard hardware-wallet account.
+const String catCardAccountLabel = 'CatCard (USB)';
 
 class BitcoinNetworkContext {
   final String chain;
@@ -232,6 +245,7 @@ List<UnifiedAccount> buildUnifiedAccounts({
   required List<Account> inappAccounts,
   required Map<String, Wallet> walletsById,
   String? mwaAddress,
+  String? catCardAddress,
   String? currentAccountId,
   NetworkType? currentNetworkType,
   String? currentNetworkChainId,
@@ -367,6 +381,17 @@ List<UnifiedAccount> buildUnifiedAccounts({
       ),
     );
   }
+  if (catCardAddress != null && catCardAddress.isNotEmpty) {
+    out.add(
+      UnifiedAccount(
+        backend: AccountBackend.catcard,
+        chain: 'solana',
+        address: catCardAddress,
+        label: catCardAccountLabel,
+        accountName: catCardAccountLabel,
+      ),
+    );
+  }
   return out;
 }
 
@@ -444,6 +469,7 @@ UnifiedAccount? resolveCurrentAccount({
   required List<UnifiedAccount> accounts,
   required String? savedId,
   required bool preferMwa,
+  bool preferCatCard = false,
   required String? activeInAppAccountId,
   NetworkType? activeNetworkType,
   String? activeNetworkChainId,
@@ -456,6 +482,10 @@ UnifiedAccount? resolveCurrentAccount({
   if (preferMwa) {
     for (final a in accounts) {
       if (a.isMwa) return a;
+    }
+  } else if (preferCatCard) {
+    for (final a in accounts) {
+      if (a.isCatCard) return a;
     }
   } else {
     if (activeNetworkType != null) {

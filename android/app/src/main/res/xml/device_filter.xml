@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A CatCard (Karpeles Lab vendor id 0x39F2, product 0x0401): plugging one
+     in offers to open the app, and the USB permission is remembered. -->
+<resources>
+    <usb-device vendor-id="14834" product-id="1025" />
+</resources>
