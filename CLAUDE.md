@@ -16,7 +16,7 @@ Flutter app for Solana Seeker phone, providing Tibane Labs tools from tibane.net
 - Helius RPC: `mainnet.helius-rpc.com` with API key in `solana_constants.dart`
 - ChiefStaker Program: `3Ecf8gyRURyrBtGHS1XAVXyQik5PqgDch4VkxrH4ECcr`
 - $ChiefPussy Mint: `DRtvTCzfiKGhCVREmBbZdN9sB8PHeq9KdRZ3VmFhpump`
-- Reference site: `/Users/magicaltux/projects/tibanenet` (Vue 3 + TypeScript)
+- Reference site: `tibanenet` (Vue 3 + TypeScript, separate repository)
 
 ## Build
 

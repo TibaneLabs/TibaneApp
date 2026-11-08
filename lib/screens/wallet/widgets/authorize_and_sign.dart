@@ -85,6 +85,7 @@ Future<List<SigningKey>?> collectSigningKeys(
     subtitlePurpose: l10n.authSignPurpose,
     actionLabel: l10n.actionSign,
     transactionReviewed: transactionReviewed,
+    normalBiometrics: lw.normalWalletBiometrics,
   );
   if (!context.mounted || keys == null) return null;
   if (sourceContext != lw.signingContext) {

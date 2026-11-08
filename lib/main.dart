@@ -20,6 +20,7 @@ import 'screens/wallet/wallet_screen.dart';
 import 'screens/wallet/activity_screen.dart';
 import 'screens/wallet/widgets/catcard_pairing_sheet.dart';
 import 'services/balances_store.dart';
+import 'services/app_lock_controller.dart';
 import 'services/browser_preferences.dart';
 import 'services/favorites_service.dart';
 import 'services/locale_controller.dart';
@@ -28,6 +29,7 @@ import 'services/uk_compliance_service.dart';
 import 'services/wallet_service.dart';
 import 'theme/tibane_theme.dart';
 import 'widgets/cat_logo.dart';
+import 'widgets/app_lock_gate.dart';
 import 'widgets/tibane_app_bar.dart';
 import 'utils/context_extensions.dart';
 
@@ -127,6 +129,10 @@ class TibaneApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(
+          lazy: false,
+          create: (_) => AppLockController()..load(),
+        ),
         // App language: null = System default (follow device). Drives
         // MaterialApp.locale; the Settings → General switcher writes to it.
         ChangeNotifierProvider(create: (_) => LocaleController()..load()),
@@ -160,6 +166,10 @@ class TibaneApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme: TibaneTheme.darkTheme,
           navigatorKey: rootNavigatorKey,
+          builder: (context, child) => AppLockGate(
+            controller: context.read<AppLockController>(),
+            child: child ?? const SizedBox.shrink(),
+          ),
           // null = follow the device (resolved by localeResolutionCallback);
           // non-null = the user's explicit choice.
           locale: localeController.locale,

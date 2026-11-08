@@ -417,6 +417,7 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
       keys = await showSignSheet(
         context,
         wallet: targetWallet!,
+        normalBiometrics: wallet.libwallet.normalWalletBiometrics,
         readStoreKey: (_, _) async => null,
         title: l10n.accountAddCreateTitle,
         subtitlePurpose: l10n.accountAddCreateTitle,

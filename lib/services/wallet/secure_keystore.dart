@@ -28,8 +28,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// `libw_device_share_blob_v1`) are migrated once by [migrateToPerWalletV2]
 /// to the active wallet's id (verify-before-delete, idempotent).
 ///
-/// The biometric password cache stays single-slot for now (one active
-/// wallet at a time); it becomes per-wallet when wallet-switching lands.
+/// Optional normal-wallet biometric credentials use a separate, per-wallet
+/// vault in NormalWalletBiometrics; they never use the plaintext fallback.
 class SecureKeystore {
   // --- legacy schema-v1 single-slot keys (migration source only) ---
   static const _legacyDeviceShare = 'libw_device_share';
