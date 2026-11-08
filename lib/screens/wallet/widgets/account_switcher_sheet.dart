@@ -177,6 +177,7 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
         final current = wallet.currentAccount;
         final target = addAccountTarget(accounts, current);
         final showMwaConnect = Platform.isAndroid && !wallet.mwa.isConnected;
+        final showCatCardConnect = !wallet.catcard.isConnected;
         final groups = buildAccountGroups(
           accounts: wallet.accounts,
           wallets: wallet.accountsService.walletsById.values,
@@ -185,7 +186,9 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
           walletGroups: wallet.accountsService.walletGroups,
         );
         _initializeExpansion(groups, current);
-        final mwaAccounts = accounts.where((account) => account.isMwa).toList();
+        final mwaAccounts = accounts
+            .where((account) => account.isExternal)
+            .toList();
         return SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -319,7 +322,25 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
                             }
                           },
                         ),
-                      if (current?.isMwa ?? false)
+                      if (showCatCardConnect)
+                        _ActionTile(
+                          icon: Icons.sd_card_outlined,
+                          label: l10n.accountSwitcherConnectCatCard,
+                          onTap: () async {
+                            final messenger = context.messenger;
+                            Navigator.pop(context);
+                            final ok = await wallet.connectCatCard();
+                            if (!ok) {
+                              final reason = wallet.catcard.error;
+                              if (reason != null) {
+                                messenger.showSnackBar(
+                                  SnackBar(content: Text(reason)),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      if (current?.isExternal ?? false)
                         _ActionTile(
                           icon: Icons.logout,
                           label: l10n.accountSwitcherDisconnect,
@@ -920,7 +941,12 @@ class _ActionTile extends StatelessWidget {
             children: [
               Icon(icon, color: color, size: 20),
               const SizedBox(width: 14),
-              Text(label, style: TextStyle(color: color, fontSize: 15)),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(color: color, fontSize: 15),
+                ),
+              ),
             ],
           ),
         ),

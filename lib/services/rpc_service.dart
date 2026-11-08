@@ -77,6 +77,23 @@ class RpcService {
     return result == null ? null : Map<String, dynamic>.from(result as Map);
   }
 
+  /// Broadcast a fully signed transaction; returns its base58 signature.
+  /// Used by backends that sign but cannot send themselves (CatCard).
+  Future<String> sendTransaction(
+    Uint8List signedTx, {
+    bool skipPreflight = false,
+  }) async {
+    final result = await _rpc('sendTransaction', [
+      base64Encode(signedTx),
+      {
+        'encoding': 'base64',
+        'skipPreflight': skipPreflight,
+        'preflightCommitment': 'confirmed',
+      },
+    ]);
+    return result as String;
+  }
+
   /// Get latest blockhash for transaction building
   Future<String> getLatestBlockhash() async {
     final result = await _rpc('getLatestBlockhash', [

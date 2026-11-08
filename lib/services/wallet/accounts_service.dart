@@ -5,6 +5,7 @@ import 'package:libwallet/libwallet.dart'
     show Account, AddressFormat, Wallet, SigningKey;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../catcard/catcard_wallet_backend.dart';
 import 'libwallet_backend.dart';
 import 'mwa_wallet_backend.dart';
 import 'unified_account.dart';
@@ -28,10 +29,12 @@ import 'wallet_export_format.dart' show isNormalMnemonicWallet;
 /// [WalletService], which drives [refresh]/[setCurrent] at the right moments
 /// and reconciles kind + balances afterwards.
 class AccountsService extends ChangeNotifier {
-  AccountsService(this._libwallet, this._mwa);
+  AccountsService(this._libwallet, this._mwa, {CatCardWalletBackend? catcard})
+    : _catcard = catcard;
 
   final LibwalletBackend _libwallet;
   final MwaWalletBackend _mwa;
+  final CatCardWalletBackend? _catcard;
 
   static const _prefsCurrentAccountId = 'current_account_id';
   static const _prefsAccountPreferredChains = 'account_preferred_chains';
@@ -80,7 +83,10 @@ class AccountsService extends ChangeNotifier {
   /// wallets) + the connected MWA account, dropping phantom accounts, and
   /// resolve [current]. [preferMwa] mirrors WalletService's active backend so
   /// the resolved current matches the signer. Best-effort.
-  Future<void> refresh({required bool preferMwa}) async {
+  Future<void> refresh({
+    required bool preferMwa,
+    bool preferCatCard = false,
+  }) async {
     try {
       final client = await _libwallet.ensureClient();
       final prefs = await SharedPreferences.getInstance();
@@ -165,10 +171,14 @@ class AccountsService extends ChangeNotifier {
         prefs.getString(_prefsAccountPreferredChains),
       );
       final mwaAddr = _mwa.isConnected ? _mwa.publicKey : null;
+      final catAddr = (_catcard?.isConnected ?? false)
+          ? _catcard!.publicKey
+          : null;
       _accounts = buildUnifiedAccounts(
         inappAccounts: filtered,
         walletsById: wallets,
         mwaAddress: mwaAddr,
+        catCardAddress: catAddr,
         currentAccountId: _libwallet.accountId,
         currentNetworkType: _libwallet.currentNetwork?.type,
         currentNetworkChainId: _libwallet.currentNetwork?.chainId,
@@ -182,6 +192,7 @@ class AccountsService extends ChangeNotifier {
         _accounts,
         prefs.getString(_prefsCurrentAccountId),
         preferMwa: preferMwa,
+        preferCatCard: preferCatCard,
       );
       notifyListeners();
     } catch (e) {
@@ -195,10 +206,12 @@ class AccountsService extends ChangeNotifier {
     List<UnifiedAccount> accounts,
     String? savedId, {
     required bool preferMwa,
+    bool preferCatCard = false,
   }) => resolveCurrentAccount(
     accounts: accounts,
     savedId: savedId,
     preferMwa: preferMwa,
+    preferCatCard: preferCatCard,
     activeInAppAccountId: _libwallet.accountId,
     activeNetworkType: _libwallet.currentNetwork?.type,
     activeNetworkChainId: _libwallet.currentNetwork?.chainId,
