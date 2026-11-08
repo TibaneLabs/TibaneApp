@@ -1,7 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -49,30 +48,20 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
       _error = null;
     });
     try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.any,
-        allowMultiple: false,
-        withData: true,
-      );
+      final picked = await openFile();
       if (!mounted) return;
-      if (result == null || result.files.isEmpty) {
+      if (picked == null) {
         setState(() => _busy = false);
         return;
       }
-      final picked = result.files.single;
-      if (picked.size > _maxBackupBytes) {
+      if (await picked.length() > _maxBackupBytes) {
         throw const FormatException(
           'File is larger than 1 MB. Backups should be much smaller. '
           'Double-check you picked the right file.',
         );
       }
-      final bytes =
-          picked.bytes ??
-          (picked.path != null ? await File(picked.path!).readAsBytes() : null);
+      final bytes = await picked.readAsBytes();
       if (!mounted) return;
-      if (bytes == null) {
-        throw const FormatException('Could not read the selected file');
-      }
       if (bytes.length > _maxBackupBytes) {
         throw const FormatException('File is larger than 1 MB');
       }
