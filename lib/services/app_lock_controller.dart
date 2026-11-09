@@ -1,22 +1,41 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum AppLockBiometricKind { unavailable, face, other }
 
+enum AppLockMode { off, biometric, passcode }
+
+enum AppLockAuthentication { deviceOwner, biometricOnly, passcodeOnly }
+
 enum AppLockFailure { loading, authentication, unavailable, saving }
 
 abstract class AppLockAuthenticator {
+  bool get supportsPasscodeOnly;
   Future<AppLockBiometricKind> availability();
-  Future<bool> authenticate(String reason, {required bool biometricOnly});
+  Future<bool> passcodeAvailable();
+  Future<bool> authenticate(String reason, AppLockAuthentication policy);
   Future<void> cancel();
 }
 
 class DeviceAppLockAuthenticator implements AppLockAuthenticator {
+  static const _passcode = MethodChannel(
+    'net.tibane.tibaneapp/app-lock-passcode',
+  );
   final _auth = LocalAuthentication();
+  AppLockAuthentication? _activePolicy;
+
+  @override
+  bool get supportsPasscodeOnly => Platform.isIOS;
+
+  @override
+  Future<bool> passcodeAvailable() async =>
+      supportsPasscodeOnly &&
+      await _passcode.invokeMethod<bool>('available') == true;
 
   @override
   Future<AppLockBiometricKind> availability() async {
@@ -35,12 +54,30 @@ class DeviceAppLockAuthenticator implements AppLockAuthenticator {
   }
 
   @override
-  Future<bool> authenticate(String reason, {required bool biometricOnly}) =>
-      _auth.authenticate(localizedReason: reason, biometricOnly: biometricOnly);
+  Future<bool> authenticate(String reason, AppLockAuthentication policy) async {
+    if (_activePolicy != null) return false;
+    _activePolicy = policy;
+    try {
+      if (policy == AppLockAuthentication.passcodeOnly) {
+        return supportsPasscodeOnly &&
+            await _passcode.invokeMethod<bool>('authenticate', reason) == true;
+      }
+      return await _auth.authenticate(
+        localizedReason: reason,
+        biometricOnly: policy == AppLockAuthentication.biometricOnly,
+      );
+    } finally {
+      _activePolicy = null;
+    }
+  }
 
   @override
   Future<void> cancel() async {
-    await _auth.stopAuthentication();
+    if (_activePolicy == AppLockAuthentication.passcodeOnly) {
+      await _passcode.invokeMethod<void>('cancel');
+    } else if (_activePolicy != null) {
+      await _auth.stopAuthentication();
+    }
   }
 }
 
@@ -48,19 +85,19 @@ class DeviceAppLockAuthenticator implements AppLockAuthenticator {
 class AppLockController extends ChangeNotifier {
   AppLockController({
     AppLockAuthenticator? authenticator,
-    Future<bool> Function()? readEnabled,
-    Future<void> Function(bool)? writeEnabled,
+    Future<AppLockMode> Function()? readMode,
+    Future<void> Function(AppLockMode)? writeMode,
   }) : _auth = authenticator ?? DeviceAppLockAuthenticator(),
-       _readEnabled = readEnabled ?? _readPreference,
-       _writeEnabled = writeEnabled ?? _writePreference;
+       _readMode = readMode ?? _readPreference,
+       _writeMode = writeMode ?? _writePreference;
 
   static const preferenceKey = 'app_lock_enabled_v1';
   final AppLockAuthenticator _auth;
-  final Future<bool> Function() _readEnabled;
-  final Future<void> Function(bool) _writeEnabled;
+  final Future<AppLockMode> Function() _readMode;
+  final Future<void> Function(AppLockMode) _writeMode;
   bool _ready = false;
   bool _loading = false;
-  bool _enabled = false;
+  AppLockMode _mode = AppLockMode.off;
   bool _locked = true;
   bool _shield = false;
   bool _foreground = true;
@@ -71,26 +108,33 @@ class AppLockController extends ChangeNotifier {
   AppLockFailure? _failure;
 
   bool get ready => _ready;
-  bool get enabled => _enabled;
+  AppLockMode get mode => _mode;
+  bool get enabled => _mode != AppLockMode.off;
+  bool get supportsPasscodeOnly => _auth.supportsPasscodeOnly;
   bool get busy => _busy;
   bool get foreground => _foreground;
-  bool get needsUnlock => _ready && _enabled && _locked;
-  bool get blocksContent => !_ready || (_enabled && (_locked || _shield));
-  bool get privacyOnly => _ready && _enabled && !_locked && _shield;
+  bool get needsUnlock => _ready && enabled && _locked;
+  bool get blocksContent => !_ready || (enabled && (_locked || _shield));
+  bool get privacyOnly => _ready && enabled && !_locked && _shield;
   int get lockSession => _epoch;
   AppLockFailure? get failure => _failure;
 
-  static Future<bool> _readPreference() async {
+  static Future<AppLockMode> _readPreference() async {
     final value = (await SharedPreferences.getInstance()).get(preferenceKey);
-    // Malformed settings must not turn a previously enabled lock off.
-    return value != null && value != false;
+    return switch (value) {
+      null || false => AppLockMode.off,
+      'passcode' => AppLockMode.passcode,
+      // Preserve existing biometric opt-ins and fail closed on unknown values.
+      _ => AppLockMode.biometric,
+    };
   }
 
-  static Future<void> _writePreference(bool value) async {
-    if (!await (await SharedPreferences.getInstance()).setBool(
-      preferenceKey,
-      value,
-    )) {
+  static Future<void> _writePreference(AppLockMode mode) async {
+    final preferences = await SharedPreferences.getInstance();
+    final saved = mode == AppLockMode.passcode
+        ? await preferences.setString(preferenceKey, mode.name)
+        : await preferences.setBool(preferenceKey, mode != AppLockMode.off);
+    if (!saved) {
       throw StateError('app_lock_preference_not_saved');
     }
   }
@@ -103,6 +147,17 @@ class AppLockController extends ChangeNotifier {
     }
   }
 
+  Future<bool> passcodeAvailable() async {
+    if (!supportsPasscodeOnly) return false;
+    try {
+      return await _auth.passcodeAvailable().timeout(
+        const Duration(seconds: 5),
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> load() async {
     if (_loading || _disposed) return;
     _loading = true;
@@ -110,10 +165,10 @@ class AppLockController extends ChangeNotifier {
     _failure = null;
     notifyListeners();
     try {
-      final value = await _readEnabled();
+      final value = await _readMode();
       if (_disposed) return;
-      _enabled = value;
-      _locked = value;
+      _mode = value;
+      _locked = enabled;
       _ready = true;
       _epoch++;
     } catch (_) {
@@ -124,9 +179,9 @@ class AppLockController extends ChangeNotifier {
     }
   }
 
-  Future<bool> _authenticate(String reason, {required bool biometricOnly}) =>
+  Future<bool> _authenticate(String reason, AppLockAuthentication policy) =>
       _auth
-          .authenticate(reason, biometricOnly: biometricOnly)
+          .authenticate(reason, policy)
           .timeout(
             const Duration(seconds: 60),
             onTimeout: () {
@@ -142,7 +197,12 @@ class AppLockController extends ChangeNotifier {
     _failure = null;
     notifyListeners();
     try {
-      final ok = await _authenticate(reason, biometricOnly: false);
+      final ok = await _authenticate(
+        reason,
+        _mode == AppLockMode.passcode
+            ? AppLockAuthentication.passcodeOnly
+            : AppLockAuthentication.deviceOwner,
+      );
       if (_disposed || epoch != _epoch || _background) return;
       if (ok) {
         _locked = false;
@@ -159,34 +219,48 @@ class AppLockController extends ChangeNotifier {
     }
   }
 
-  Future<bool> setEnabled(bool value, String reason) async {
-    if (_disposed || !_ready || _busy || !_foreground) return false;
-    if (_enabled == value) return true;
+  Future<bool> setMode(AppLockMode value, String reason) async {
+    if (_disposed || !_ready || _busy || !_foreground || _locked) {
+      return false;
+    }
+    if (_mode == value) return true;
     final epoch = _epoch;
     _busy = true;
     _failure = null;
     notifyListeners();
     try {
-      if (value && await availability() == AppLockBiometricKind.unavailable) {
+      final available = switch (value) {
+        AppLockMode.off => true,
+        AppLockMode.biometric =>
+          await availability() != AppLockBiometricKind.unavailable,
+        AppLockMode.passcode => await passcodeAvailable(),
+      };
+      if (_disposed || epoch != _epoch || _background) return false;
+      if (!available) {
         _failure = AppLockFailure.unavailable;
         return false;
       }
-      if (_disposed || epoch != _epoch || _background) return false;
-      final ok = await _authenticate(reason, biometricOnly: value);
+      final policy =
+          _mode == AppLockMode.passcode || value == AppLockMode.passcode
+          ? AppLockAuthentication.passcodeOnly
+          : value == AppLockMode.biometric
+          ? AppLockAuthentication.biometricOnly
+          : AppLockAuthentication.deviceOwner;
+      final ok = await _authenticate(reason, policy);
       if (_disposed || epoch != _epoch || _background) return false;
       if (!ok) {
         _failure = AppLockFailure.authentication;
         return false;
       }
       try {
-        await _writeEnabled(value);
+        await _writeMode(value);
       } catch (_) {
         _failure = AppLockFailure.saving;
         return false;
       }
       if (_disposed) return false;
-      _enabled = value;
-      _locked = value && (_background || epoch != _epoch);
+      _mode = value;
+      _locked = enabled && (_background || epoch != _epoch);
       return true;
     } catch (_) {
       if (!_disposed && epoch == _epoch) {
@@ -208,7 +282,7 @@ class AppLockController extends ChangeNotifier {
         state == AppLifecycleState.detached) {
       _background = true;
       _epoch++;
-      if (_enabled) _locked = true;
+      if (enabled) _locked = true;
       _failure = null;
       if (_busy) unawaited(_cancel());
     } else if (state == AppLifecycleState.resumed) {

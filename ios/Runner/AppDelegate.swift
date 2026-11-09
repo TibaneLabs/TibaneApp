@@ -19,6 +19,9 @@ import UIKit
     if let catCardRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "CatCard") {
       CatCardChannel.register(with: catCardRegistrar)
     }
+    if let appLockRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "AppLockPasscode") {
+      AppLockPasscodeChannel.register(with: appLockRegistrar)
+    }
 
     // Expose the user's App Store storefront country to Dart via a
     // narrow MethodChannel — avoids pulling in the full

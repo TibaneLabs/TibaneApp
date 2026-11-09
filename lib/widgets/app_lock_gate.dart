@@ -153,6 +153,9 @@ class _LockSurface extends StatelessWidget {
                                     Text(
                                       loadingError
                                           ? l10n.appLockLoadFailed
+                                          : controller.mode ==
+                                                AppLockMode.passcode
+                                          ? l10n.appLockPasscodeLockedBody
                                           : l10n.appLockLockedBody,
                                       textAlign: TextAlign.center,
                                       style: const TextStyle(

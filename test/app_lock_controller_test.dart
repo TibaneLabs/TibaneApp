@@ -64,6 +64,7 @@ void main() {
       final lock = AppLockController(authenticator: FakeAppLockAuthenticator());
       addTearDown(lock.dispose);
       await lock.load();
+      expect(lock.mode, AppLockMode.biometric);
       expect(lock.needsUnlock, isTrue);
       expect(lock.blocksContent, isTrue);
       await lock.unlock('Fixture unlock');
@@ -82,8 +83,8 @@ void main() {
     final lock = AppLockController(authenticator: auth);
     addTearDown(lock.dispose);
     await lock.load();
-    expect(await lock.setEnabled(true, 'Fixture enable'), isTrue);
-    expect(auth.policies, [true]);
+    expect(await lock.setMode(AppLockMode.biometric, 'Fixture enable'), isTrue);
+    expect(auth.policies, [AppLockAuthentication.biometricOnly]);
     expect(lock.blocksContent, isFalse);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getKeys(), {AppLockController.preferenceKey});
@@ -95,11 +96,17 @@ void main() {
     final lock = AppLockController(authenticator: auth);
     addTearDown(lock.dispose);
     await lock.load();
-    expect(await lock.setEnabled(true, 'Fixture enable'), isFalse);
+    expect(
+      await lock.setMode(AppLockMode.biometric, 'Fixture enable'),
+      isFalse,
+    );
     expect(lock.enabled, isFalse);
     expect(lock.failure, AppLockFailure.authentication);
     auth.throwsError = true;
-    expect(await lock.setEnabled(true, 'Fixture enable'), isFalse);
+    expect(
+      await lock.setMode(AppLockMode.biometric, 'Fixture enable'),
+      isFalse,
+    );
     expect(lock.enabled, isFalse);
   });
 
@@ -109,7 +116,10 @@ void main() {
     final lock = AppLockController(authenticator: auth);
     addTearDown(lock.dispose);
     await lock.load();
-    expect(await lock.setEnabled(true, 'Fixture enable'), isFalse);
+    expect(
+      await lock.setMode(AppLockMode.biometric, 'Fixture enable'),
+      isFalse,
+    );
     expect(lock.enabled, isFalse);
     expect(auth.calls, 0);
   });
@@ -125,15 +135,15 @@ void main() {
       addTearDown(lock.dispose);
       await lock.load();
       await lock.unlock('Fixture unlock');
-      expect(auth.policies, [false]);
+      expect(auth.policies, [AppLockAuthentication.deviceOwner]);
       auth.result = false;
-      expect(await lock.setEnabled(false, 'Fixture disable'), isFalse);
+      expect(await lock.setMode(AppLockMode.off, 'Fixture disable'), isFalse);
       expect(lock.enabled, isTrue);
       auth.result = true;
       auth.kind = AppLockBiometricKind.unavailable;
-      expect(await lock.setEnabled(false, 'Fixture disable'), isTrue);
+      expect(await lock.setMode(AppLockMode.off, 'Fixture disable'), isTrue);
       expect(lock.enabled, isFalse);
-      expect(auth.policies, [false, false, false]);
+      expect(auth.policies, List.filled(3, AppLockAuthentication.deviceOwner));
     },
   );
 
@@ -209,7 +219,7 @@ void main() {
       final lock = AppLockController(authenticator: auth);
       addTearDown(lock.dispose);
       await lock.load();
-      final pending = lock.setEnabled(true, 'Fixture enable');
+      final pending = lock.setMode(AppLockMode.biometric, 'Fixture enable');
       await Future<void>.delayed(Duration.zero);
       lock.handleLifecycle(AppLifecycleState.paused);
       expect(await pending, isFalse);
@@ -220,9 +230,9 @@ void main() {
   test('loading failure hides content and can be retried', () async {
     var fail = true;
     final lock = AppLockController(
-      readEnabled: () async {
+      readMode: () async {
         if (fail) throw StateError('Fixture storage failure');
-        return true;
+        return AppLockMode.biometric;
       },
       authenticator: FakeAppLockAuthenticator(),
     );
@@ -241,14 +251,14 @@ void main() {
     final startedSaving = Completer<void>();
     final lock = AppLockController(
       authenticator: FakeAppLockAuthenticator(),
-      writeEnabled: (_) {
+      writeMode: (_) {
         startedSaving.complete();
         return saving.future;
       },
     );
     addTearDown(lock.dispose);
     await lock.load();
-    final pending = lock.setEnabled(true, 'Fixture enable');
+    final pending = lock.setMode(AppLockMode.biometric, 'Fixture enable');
     await startedSaving.future;
     lock.handleLifecycle(AppLifecycleState.paused);
     lock.handleLifecycle(AppLifecycleState.resumed);
@@ -261,11 +271,14 @@ void main() {
   test('saving failure preserves the previous security policy', () async {
     final lock = AppLockController(
       authenticator: FakeAppLockAuthenticator(),
-      writeEnabled: (_) async => throw StateError('Fixture write failed'),
+      writeMode: (_) async => throw StateError('Fixture write failed'),
     );
     addTearDown(lock.dispose);
     await lock.load();
-    expect(await lock.setEnabled(true, 'Fixture enable'), isFalse);
+    expect(
+      await lock.setMode(AppLockMode.biometric, 'Fixture enable'),
+      isFalse,
+    );
     expect(lock.enabled, isFalse);
     expect(lock.failure, AppLockFailure.saving);
   });
@@ -285,4 +298,88 @@ void main() {
     await first;
     expect(lock.needsUnlock, isTrue);
   });
+
+  test('passcode mode works without biometrics and survives restart', () async {
+    final auth = FakeAppLockAuthenticator()
+      ..kind = AppLockBiometricKind.unavailable;
+    final lock = AppLockController(authenticator: auth);
+    addTearDown(lock.dispose);
+    await lock.load();
+    expect(await lock.setMode(AppLockMode.passcode, 'Fixture enable'), isTrue);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getKeys(), {AppLockController.preferenceKey});
+    expect(prefs.getString(AppLockController.preferenceKey), 'passcode');
+    final restarted = AppLockController(authenticator: auth);
+    addTearDown(restarted.dispose);
+    await restarted.load();
+    expect(restarted.mode, AppLockMode.passcode);
+    expect(restarted.needsUnlock, isTrue);
+    auth.result = false;
+    await restarted.unlock('Fixture cancel');
+    expect(restarted.blocksContent, isTrue);
+    auth.result = true;
+    await restarted.unlock('Fixture unlock');
+    expect(restarted.blocksContent, isFalse);
+    expect(auth.policies, List.filled(3, AppLockAuthentication.passcodeOnly));
+  });
+
+  test('passcode mode cannot be enabled without a device passcode', () async {
+    final auth = FakeAppLockAuthenticator()..hasPasscode = false;
+    final lock = AppLockController(authenticator: auth);
+    addTearDown(lock.dispose);
+    await lock.load();
+    expect(await lock.setMode(AppLockMode.passcode, 'Fixture enable'), isFalse);
+    expect(lock.mode, AppLockMode.off);
+    expect(lock.failure, AppLockFailure.unavailable);
+    expect(auth.calls, 0);
+  });
+
+  test(
+    'changing away from passcode mode still requires the passcode',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        AppLockController.preferenceKey: 'passcode',
+      });
+      final auth = FakeAppLockAuthenticator();
+      final lock = AppLockController(authenticator: auth);
+      addTearDown(lock.dispose);
+      await lock.load();
+      expect(await lock.setMode(AppLockMode.off, 'Fixture disable'), isFalse);
+      await lock.unlock('Fixture unlock');
+      auth.result = false;
+      expect(await lock.setMode(AppLockMode.off, 'Fixture disable'), isFalse);
+      expect(lock.mode, AppLockMode.passcode);
+      auth.result = true;
+      expect(
+        await lock.setMode(AppLockMode.biometric, 'Fixture change'),
+        isTrue,
+      );
+      expect(lock.mode, AppLockMode.biometric);
+      expect(auth.policies, List.filled(3, AppLockAuthentication.passcodeOnly));
+    },
+  );
+
+  test(
+    'switching to passcode only verifies that policy before saving',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        AppLockController.preferenceKey: true,
+      });
+      final auth = FakeAppLockAuthenticator();
+      final lock = AppLockController(authenticator: auth);
+      addTearDown(lock.dispose);
+      await lock.load();
+      await lock.unlock('Fixture unlock');
+      auth.result = false;
+      expect(
+        await lock.setMode(AppLockMode.passcode, 'Fixture change'),
+        isFalse,
+      );
+      expect(lock.mode, AppLockMode.biometric);
+      expect(auth.policies, [
+        AppLockAuthentication.deviceOwner,
+        AppLockAuthentication.passcodeOnly,
+      ]);
+    },
+  );
 }

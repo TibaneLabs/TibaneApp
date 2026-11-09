@@ -55,23 +55,25 @@ void main() {
       await _pump(tester, lock);
       expect(find.byKey(const Key('app-lock-setting')), findsOneWidget);
       expect(find.byKey(const Key('normal-wallet-biometrics')), findsNothing);
-      await tester.tap(find.byKey(const Key('app-lock-switch')));
+      await tester.tap(find.byKey(const Key('app-lock-mode-biometric')));
       await tester.pumpAndSettle();
       expect(lock.enabled, isTrue);
-      expect(auth.policies, [true]);
+      expect(auth.policies, [AppLockAuthentication.biometricOnly]);
       expect(find.byKey(const Key('wallet-password-dialog')), findsNothing);
-      expect(
-        tester.widget<Switch>(find.byKey(const Key('app-lock-switch'))).value,
-        isTrue,
-      );
-      await tester.tap(find.byKey(const Key('app-lock-switch')));
+      expect(lock.mode, AppLockMode.biometric);
+      await tester.tap(find.byKey(const Key('app-lock-mode-off')));
       await tester.pumpAndSettle();
       expect(lock.enabled, isFalse);
-      expect(auth.policies, [true, false]);
+      expect(auth.policies, [
+        AppLockAuthentication.biometricOnly,
+        AppLockAuthentication.deviceOwner,
+      ]);
     },
   );
 
-  testWidgets('unavailable biometrics cannot enable app lock', (tester) async {
+  testWidgets('passcode mode can be selected without biometrics', (
+    tester,
+  ) async {
     final auth = FakeAppLockAuthenticator()
       ..kind = AppLockBiometricKind.unavailable;
     final lock = AppLockController(authenticator: auth);
@@ -79,10 +81,30 @@ void main() {
     await lock.load();
     await _pump(tester, lock);
     expect(
-      tester.widget<Switch>(find.byKey(const Key('app-lock-switch'))).onChanged,
-      isNull,
+      tester
+          .widget<RadioListTile<AppLockMode>>(
+            find.byKey(const Key('app-lock-mode-biometric')),
+          )
+          .enabled,
+      isFalse,
     );
-    expect(auth.calls, 0);
+    await tester.tap(find.byKey(const Key('app-lock-mode-passcode')));
+    await tester.pumpAndSettle();
+    expect(lock.mode, AppLockMode.passcode);
+    expect(auth.policies, [AppLockAuthentication.passcodeOnly]);
+  });
+
+  testWidgets('only devices with native support show a passcode-only option', (
+    tester,
+  ) async {
+    final lock = AppLockController(
+      authenticator: FakeAppLockAuthenticator()..supportsPasscodeOnly = false,
+    );
+    addTearDown(lock.dispose);
+    await lock.load();
+    await _pump(tester, lock);
+    expect(find.byKey(const Key('app-lock-mode-passcode')), findsNothing);
+    expect(find.byKey(const Key('app-lock-mode-biometric')), findsOneWidget);
   });
 
   for (final locale in AppLocalizations.supportedLocales) {
@@ -97,6 +119,7 @@ void main() {
         await _pump(tester, lock, language: locale.languageCode, width: 320);
         final l10n = await AppLocalizations.delegate.load(locale);
         expect(find.text(l10n.appLockFaceTitle), findsOneWidget);
+        expect(find.text(l10n.appLockPasscodeOnly), findsOneWidget);
         expect(tester.takeException(), isNull);
       },
     );

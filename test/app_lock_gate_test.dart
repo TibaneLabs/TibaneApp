@@ -185,9 +185,9 @@ void main() {
       final auth = FakeAppLockAuthenticator();
       final lock = AppLockController(
         authenticator: auth,
-        readEnabled: () async {
+        readMode: () async {
           if (fail) throw StateError('Fixture load failed');
-          return true;
+          return AppLockMode.biometric;
         },
       );
       await lock.load();
@@ -217,6 +217,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Private background notice'), findsNothing);
     expect(find.byKey(const Key('app-lock-surface')), findsOneWidget);
+    await _dispose(tester, lock);
+  });
+
+  testWidgets('passcode lock shows only the iPhone passcode instructions', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      AppLockController.preferenceKey: 'passcode',
+    });
+    final auth = FakeAppLockAuthenticator()..result = false;
+    final lock = AppLockController(authenticator: auth);
+    await lock.load();
+    await _pump(tester, lock);
+    await tester.pumpAndSettle();
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    expect(find.text(l10n.appLockPasscodeLockedBody), findsOneWidget);
+    expect(find.text(l10n.appLockLockedBody), findsNothing);
+    expect(find.text('Private account view'), findsNothing);
+    expect(auth.policies, [AppLockAuthentication.passcodeOnly]);
     await _dispose(tester, lock);
   });
 

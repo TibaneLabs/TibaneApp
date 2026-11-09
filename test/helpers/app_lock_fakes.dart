@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:tibaneapp/services/app_lock_controller.dart';
 
 class FakeAppLockAuthenticator implements AppLockAuthenticator {
+  @override
+  bool supportsPasscodeOnly = true;
+  bool hasPasscode = true;
   AppLockBiometricKind kind = AppLockBiometricKind.face;
   bool result = true;
   bool throwsError = false;
@@ -10,17 +13,16 @@ class FakeAppLockAuthenticator implements AppLockAuthenticator {
   Completer<bool>? pending;
   int calls = 0;
   int cancels = 0;
-  final policies = <bool>[];
+  final policies = <AppLockAuthentication>[];
 
   @override
   Future<AppLockBiometricKind> availability() async => kind;
   @override
-  Future<bool> authenticate(
-    String reason, {
-    required bool biometricOnly,
-  }) async {
+  Future<bool> passcodeAvailable() async => hasPasscode;
+  @override
+  Future<bool> authenticate(String reason, AppLockAuthentication policy) async {
     calls++;
-    policies.add(biometricOnly);
+    policies.add(policy);
     if (throwsError) throw StateError('Fixture authentication unavailable');
     return pending == null ? result : await pending!.future;
   }
