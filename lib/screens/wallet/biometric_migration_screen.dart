@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,36 +11,42 @@ import '../../utils/wallet_error.dart';
 import '../../widgets/gradient_button.dart';
 import '../../utils/context_extensions.dart';
 
-/// Mandatory one-time screen (Atonline-parity Phase 3 / D7) that re-secures
-/// existing wallets' StoreKey behind biometric. Shown by `TibaneShell` before
-/// the home whenever [LibwalletBackend.needsBiometricMigration] is true.
-///
-/// No defer: the user must complete it. This is safe — the migration is
-/// verify-before-delete and keeps the password blob (D8), so a cancelled or
-/// failed run loses nothing and simply retries.
+/// Optional prompt to protect legacy wallet keys with device biometrics.
+/// Skipping only changes when the prompt appears, not the stored keys.
 class BiometricMigrationScreen extends StatefulWidget {
-  const BiometricMigrationScreen({super.key, required this.onDone});
+  const BiometricMigrationScreen({
+    super.key,
+    required this.onDone,
+    required this.onSkip,
+  });
 
-  /// Called once the migration completes successfully.
+  /// Return to the wallet after securing it or saving the skip preference.
   final VoidCallback onDone;
+  final Future<void> Function(bool dontShowAgain) onSkip;
 
   @override
   State<BiometricMigrationScreen> createState() =>
       _BiometricMigrationScreenState();
 }
 
+enum _Action { secure, skip }
+
 class _BiometricMigrationScreenState extends State<BiometricMigrationScreen> {
-  bool _busy = false;
+  _Action? _action;
+  bool _dontShowAgain = false;
   String? _error;
 
   Future<void> _secure() async {
+    if (_action != null) return;
     setState(() {
-      _busy = true;
+      _action = _Action.secure;
       _error = null;
     });
     try {
-      final ok =
-          await context.read<WalletService>().libwallet.migrateToBiometricV1();
+      final ok = await context
+          .read<WalletService>()
+          .libwallet
+          .migrateToBiometricV1();
       if (!mounted) return;
       if (ok) {
         widget.onDone();
@@ -50,61 +58,139 @@ class _BiometricMigrationScreenState extends State<BiometricMigrationScreen> {
       if (!mounted) return;
       setState(() => _error = walletErrorMessageForContext(context, e));
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _action = null);
+    }
+  }
+
+  Future<void> _skip() async {
+    if (_action != null) return;
+    setState(() {
+      _action = _Action.skip;
+      _error = null;
+    });
+    try {
+      await widget.onSkip(_dontShowAgain);
+      if (mounted) widget.onDone();
+    } catch (e) {
+      logError('[BiometricMigration._skip] save reminder error: $e');
+      if (!mounted) return;
+      if (!_dontShowAgain) {
+        widget.onDone();
+        return;
+      }
+      setState(() => _error = context.l10n.bioMigPreferenceSaveError);
+    } finally {
+      if (mounted) setState(() => _action = null);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final title = context.textTheme.headlineSmall;
+    final body = context.textTheme.bodyMedium;
+    const padding = EdgeInsets.all(24);
     return PopScope(
-      canPop: false, // mandatory — no back-out
+      canPop: false,
       child: Scaffold(
         backgroundColor: TibaneColors.black,
         body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Spacer(),
-                const Icon(
-                  Icons.fingerprint,
-                  size: 64,
-                  color: TibaneColors.gold,
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  l10n.bioMigTitle,
-                  textAlign: TextAlign.center,
-                  style: context.textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  l10n.bioMigBody,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    _error!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: TibaneColors.error,
-                      fontSize: 13,
-                    ),
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              padding: padding,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: math.max(
+                    0,
+                    constraints.maxHeight - padding.vertical,
                   ),
-                ],
-                const Spacer(),
-                GradientButton(
-                  label: l10n.bioMigButton,
-                  loading: _busy,
-                  expanded: true,
-                  onPressed: _busy ? null : _secure,
                 ),
-                const SizedBox(height: 12),
-              ],
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox.shrink(),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Icon(
+                          Icons.fingerprint,
+                          size: 64,
+                          color: TibaneColors.gold,
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          l10n.bioMigTitle,
+                          textAlign: TextAlign.center,
+                          style: title?.copyWith(
+                            fontSize: (title.fontSize ?? 24) * 1.10,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          l10n.bioMigBody,
+                          textAlign: TextAlign.center,
+                          style: body?.copyWith(
+                            color: TibaneColors.textMuted,
+                            fontSize: (body.fontSize ?? 14) * 1.15,
+                            height: 1.4,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                        if (_error != null) ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: TibaneColors.error,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 24),
+                        GradientButton(
+                          label: l10n.bioMigButton,
+                          loading: _action == _Action.secure,
+                          expanded: true,
+                          onPressed: _action == null ? _secure : null,
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: TibaneColors.surface,
+                            foregroundColor: TibaneColors.text,
+                            minimumSize: const Size(0, 48),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: _action == null ? _skip : null,
+                          child: Text(l10n.bioMigNotNow),
+                        ),
+                        const SizedBox(height: 4),
+                        CheckboxListTile(
+                          value: _dontShowAgain,
+                          title: Text(l10n.bioMigDontShowAgain),
+                          contentPadding: EdgeInsets.zero,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          onChanged: _action == null
+                              ? (value) => setState(
+                                  () => _dontShowAgain = value == true,
+                                )
+                              : null,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

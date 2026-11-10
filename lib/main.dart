@@ -26,6 +26,7 @@ import 'services/favorites_service.dart';
 import 'services/locale_controller.dart';
 import 'services/token_meta_store.dart';
 import 'services/uk_compliance_service.dart';
+import 'services/wallet/biometric_migration_reminder.dart';
 import 'services/wallet_service.dart';
 import 'theme/tibane_theme.dart';
 import 'widgets/cat_logo.dart';
@@ -233,8 +234,7 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
     widget.initialIndex,
   );
 
-  /// Null while checking; true shows the mandatory biometric-migration screen
-  /// (Phase 3 / D7); false renders the normal wallet-first shell.
+  /// Null while checking; true shows the optional biometric migration prompt.
   bool? _needsMigration;
 
   /// Startup splash backstop (D16): reveal even if the wallet snapshot never
@@ -257,10 +257,17 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
   }
 
   Future<void> _checkBiometricMigration() async {
-    final need = await context
-        .read<WalletService>()
-        .libwallet
-        .needsBiometricMigration();
+    var need = false;
+    try {
+      if (await BiometricMigrationReminder.isDue() && mounted) {
+        need = await context
+            .read<WalletService>()
+            .libwallet
+            .needsBiometricMigration();
+      }
+    } catch (e) {
+      debugPrint('Biometric migration prompt check failed: $e');
+    }
     if (!mounted) return;
     setState(() => _needsMigration = need);
   }
@@ -344,10 +351,11 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
       return const _StartupSplash();
     }
 
-    // Mandatory one-time biometric migration (Phase 3 / D7) gates the shell.
     if (_needsMigration == true) {
       return BiometricMigrationScreen(
         onDone: () => setState(() => _needsMigration = false),
+        onSkip: (dontShowAgain) =>
+            BiometricMigrationReminder.defer(dontShowAgain: dontShowAgain),
       );
     }
     // The app's mode follows the CURRENT ACCOUNT's backend: an MWA / Seed Vault
