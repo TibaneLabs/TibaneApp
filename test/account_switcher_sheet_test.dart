@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,9 +7,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:tibaneapp/l10n/gen/app_localizations.dart';
 import 'package:tibaneapp/screens/wallet/widgets/account_switcher_sheet.dart';
+import 'package:tibaneapp/screens/wallet/widgets/catcard_pairing_sheet.dart';
 import 'package:tibaneapp/services/wallet/unified_account.dart';
 import 'package:tibaneapp/services/wallet_service.dart';
 import 'package:tibaneapp/theme/tibane_theme.dart';
+import 'package:tibaneapp/widgets/cat_logo.dart';
 
 final _accounts = [
   for (final chain in [
@@ -47,6 +51,7 @@ class _Service extends WalletService {
 
   final List<UnifiedAccount> visibleAccounts;
   final selections = <UnifiedAccount>[];
+  Future<bool> Function()? connectOverride;
 
   @override
   List<UnifiedAccount> get accounts => visibleAccounts;
@@ -56,6 +61,10 @@ class _Service extends WalletService {
 
   @override
   Future<void> refreshAccounts() async {}
+
+  @override
+  Future<bool> connectCatCard() =>
+      connectOverride?.call() ?? super.connectCatCard();
 
   @override
   Future<bool> setCurrentAccount(
@@ -78,17 +87,20 @@ Future<_Service> _open(
   String language = 'en',
   Size size = const Size(393, 852),
   List<UnifiedAccount>? accounts,
+  GlobalKey<NavigatorState>? navigatorKey,
 }) async {
   tester.view.physicalSize = size * 2;
   tester.view.devicePixelRatio = 2;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   final service = _Service(accounts: accounts);
+  if (navigatorKey != null) installCatCardUi(service, navigatorKey);
   addTearDown(service.dispose);
   await tester.pumpWidget(
     ChangeNotifierProvider<WalletService>.value(
       value: service,
       child: MaterialApp(
+        navigatorKey: navigatorKey,
         locale: Locale(language),
         theme: TibaneTheme.darkTheme,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -111,6 +123,107 @@ Future<_Service> _open(
 
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
+
+  const catCardChannel = MethodChannel('net.tibane.tibaneapp/catcard');
+  for (final language in ['en', 'pt', 'fr', 'ja']) {
+    testWidgets('CatCard USB search and missing device: $language', (
+      tester,
+    ) async {
+      final completeOpen = Completer<void>();
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(catCardChannel, (call) async {
+        expect(call.method, 'open');
+        await completeOpen.future;
+        throw PlatformException(code: 'NO_DEVICE');
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(catCardChannel, null),
+      );
+      final navigatorKey = GlobalKey<NavigatorState>();
+      final service = await _open(
+        tester,
+        language: language,
+        size: const Size(320, 568),
+        navigatorKey: navigatorKey,
+      );
+      final previousListener = service.catcard.statusListener;
+      final l10n = AppLocalizations.of(
+        tester.element(find.byType(AccountSwitcherSheet)),
+      );
+      final connect = find.widgetWithText(
+        OutlinedButton,
+        l10n.accountSwitcherConnectCatCard,
+      );
+      expect(find.byIcon(Icons.sd_card_outlined), findsNothing);
+      final style = tester.widget<OutlinedButton>(connect).style!;
+      expect(style.foregroundColor?.resolve({}), TibaneColors.orange);
+      expect(style.side?.resolve({})?.color, TibaneColors.orange);
+
+      await tester.ensureVisible(connect);
+      await tester.tap(connect);
+      await tester.pumpAndSettle();
+      expect(find.byType(AccountSwitcherSheet), findsNothing);
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.byType(CatLogo), findsOneWidget);
+      expect(find.text(l10n.catCardConnectLooking), findsOneWidget);
+      expect(find.text(l10n.catCardConnectUsbHint), findsOneWidget);
+      expect(find.byType(SnackBar), findsNothing);
+      expect(find.widgetWithText(FilledButton, l10n.actionClose), findsNothing);
+
+      completeOpen.complete();
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.catCardConnectLooking), findsNothing);
+      expect(find.text(l10n.catCardConnectNotFound), findsOneWidget);
+      expect(find.byType(SnackBar), findsNothing);
+      expect(
+        identical(service.catcard.statusListener, previousListener),
+        isTrue,
+      );
+      final close = find.widgetWithText(FilledButton, l10n.actionClose);
+      expect(
+        tester.widget<FilledButton>(close).style?.backgroundColor?.resolve({}),
+        TibaneColors.orange,
+      );
+      await tester.tap(close);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('CatCard modal keeps the code comparison and closes on success', (
+    tester,
+  ) async {
+    final service = await _open(
+      tester,
+      navigatorKey: GlobalKey<NavigatorState>(),
+    );
+    final previousListener = service.catcard.statusListener;
+    final l10n = AppLocalizations.of(
+      tester.element(find.byType(AccountSwitcherSheet)),
+    );
+    service.connectOverride = () async {
+      service.catcard.statusListener?.call('Pairing with the CatCard…');
+      return service.catcard.codeConfirmer!('123456');
+    };
+    final connect = find.widgetWithText(
+      OutlinedButton,
+      l10n.accountSwitcherConnectCatCard,
+    );
+    await tester.ensureVisible(connect);
+    await tester.tap(connect);
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.catCardPairTitle), findsOneWidget);
+    expect(find.text('123456'), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
+
+    await tester.tap(find.text(l10n.catCardPairSame));
+    await tester.pumpAndSettle();
+    expect(find.text('123456'), findsNothing);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(identical(service.catcard.statusListener, previousListener), isTrue);
+    expect(tester.takeException(), isNull);
+  });
 
   for (final language in ['en', 'pt', 'fr', 'ja']) {
     for (final size in [const Size(320, 568), const Size(393, 852)]) {

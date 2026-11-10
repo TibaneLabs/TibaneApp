@@ -1,10 +1,13 @@
 # Navigation Migration — Persistent Bottom Nav (per-tab nested Navigators)
 
-## Current Navigation (2026-11-06)
+## Current Navigation (2026-11-08)
 
-Home has been removed. The shell now has three tabs: Wallet/Swap (0),
-Browser (1), and Settings (2), defined by `ShellTab`. Wallet is the default.
-The browser still builds lazily and pauses off-screen; Wallet and Settings
+Home has been removed. The shell now has four tabs: Wallet/Swap (0),
+Activity (1), Browser (2), and Settings (3), defined by `ShellTab`. Wallet is the default.
+The Wallet dashboard only shows tokens; Activity has its own screen and a
+persistent nine-receipt cache per account/network. View All opens the account
+on Solscan for Solana, or its configured explorer on other supported networks.
+The browser still builds lazily and pauses off-screen; Wallet, Activity and Settings
 return to their roots when tapped. The app-bar Connect action is hidden when
 there is no saved in-app wallet or active connection.
 Stake, Incinerator and Search are grouped under Settings > Tools. Staking

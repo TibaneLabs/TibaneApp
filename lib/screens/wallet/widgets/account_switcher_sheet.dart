@@ -18,6 +18,7 @@ import '../../../utils/context_extensions.dart';
 import '../create_account_screen.dart';
 import '../inapp_import_private_key_screen.dart';
 import 'account_switcher_view_model.dart';
+import 'catcard_pairing_sheet.dart';
 import 'sign_sheet.dart';
 
 enum _AddAccountChoice { create, importPrivateKey }
@@ -322,24 +323,36 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
                             }
                           },
                         ),
-                      if (showCatCardConnect)
-                        _ActionTile(
-                          icon: Icons.sd_card_outlined,
-                          label: l10n.accountSwitcherConnectCatCard,
-                          onTap: () async {
-                            final messenger = context.messenger;
-                            Navigator.pop(context);
-                            final ok = await wallet.connectCatCard();
-                            if (!ok) {
-                              final reason = wallet.catcard.error;
-                              if (reason != null) {
-                                messenger.showSnackBar(
-                                  SnackBar(content: Text(reason)),
-                                );
-                              }
-                            }
-                          },
+                      if (showCatCardConnect) ...[
+                        const SizedBox(height: 8),
+                        OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: TibaneColors.orange,
+                            side: const BorderSide(color: TibaneColors.orange),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            minimumSize: const Size(0, 48),
+                          ),
+                          onPressed: wallet.catcard.isConnecting
+                              ? null
+                              : () {
+                                  final navigator = Navigator.of(context);
+                                  navigator.pop();
+                                  unawaited(
+                                    showCatCardConnectDialog(
+                                      navigator.context,
+                                      wallet,
+                                    ),
+                                  );
+                                },
+                          child: Text(
+                            l10n.accountSwitcherConnectCatCard,
+                            textAlign: TextAlign.center,
+                          ),
                         ),
+                      ],
                       if (current?.isExternal ?? false)
                         _ActionTile(
                           icon: Icons.logout,
@@ -417,6 +430,7 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
       keys = await showSignSheet(
         context,
         wallet: targetWallet!,
+        normalBiometrics: wallet.libwallet.normalWalletBiometrics,
         readStoreKey: (_, _) async => null,
         title: l10n.accountAddCreateTitle,
         subtitlePurpose: l10n.accountAddCreateTitle,

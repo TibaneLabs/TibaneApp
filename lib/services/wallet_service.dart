@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/solana_constants.dart';
 import 'catcard/catcard_wallet_backend.dart';
 import 'coinbase_spot_price_service.dart';
+import 'activity_history_cache.dart';
 import 'eth_usd_price_service.dart';
 import 'ethereum_rpc_service.dart';
 import 'relay_service.dart';
@@ -439,6 +440,7 @@ class WalletService extends ChangeNotifier {
       // complete reset disconnects it even when an in-app wallet was active.
       await _mwa.disconnect();
       await _accountsService.clearLocalWalletState();
+      await ActivityHistoryCache().clear();
       await _auth.logout();
       _authedAddress = null;
       _lastAddress = null;
@@ -464,11 +466,10 @@ class WalletService extends ChangeNotifier {
   /// the connected MWA account, and reconcile [currentAccount] with the active
   /// backend. Additive in Phase 4b-1: the active backend is still driven by
   /// [_kind]; this only mirrors it as a [UnifiedAccount]. Best-effort.
-  Future<void> refreshAccounts() =>
-      _accountsService.refresh(
-        preferMwa: _kind == WalletKind.mwa,
-        preferCatCard: _kind == WalletKind.catcard,
-      );
+  Future<void> refreshAccounts() => _accountsService.refresh(
+    preferMwa: _kind == WalletKind.mwa,
+    preferCatCard: _kind == WalletKind.catcard,
+  );
 
   /// Activate the newly created/imported wallet, never an unrelated current one.
   Future<bool> activateWalletGroup(LogicalWallet group) async {
@@ -626,7 +627,7 @@ class WalletService extends ChangeNotifier {
   void cacheTxsFor(String address, List<Transaction> txs) {
     if (address.isEmpty) return;
     _txCacheByAddress['$kind:${libwallet.currentNetwork?.id}:$address'] =
-        List.unmodifiable(txs);
+        List.unmodifiable(recentActivityTransactions(txs));
   }
 
   /// Call from any flow that knows a tx just committed (swap, send, …) to

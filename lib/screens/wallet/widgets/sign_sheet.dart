@@ -3,6 +3,7 @@ import 'package:libwallet/libwallet.dart' show SigningKey, Wallet, WalletKey;
 
 import '../../../l10n/l10n.dart';
 import '../../../services/wallet/signing.dart';
+import '../../../services/wallet/normal_wallet_biometrics.dart';
 import '../../../services/wallet/wallet_export_format.dart'
     show isNormalMnemonicWallet;
 import '../../../theme/tibane_theme.dart';
@@ -37,7 +38,72 @@ Future<List<SigningKey>?> showSignSheet(
   String?
   subtitlePurpose, // e.g. 'sign this transaction' (default) / 'change your password'
   String actionLabel = 'Sign',
+  bool transactionReviewed = false,
+  NormalWalletBiometrics? normalBiometrics,
 }) async {
+  var biometricRequired = false;
+  if (normalBiometrics != null && supportsNormalWalletBiometrics(wallet)) {
+    try {
+      biometricRequired = await normalBiometrics.isEnabled(wallet);
+    } catch (_) {
+      biometricRequired = true;
+    }
+  }
+  if (!context.mounted) return null;
+  if (biometricRequired) {
+    if (!context.mounted) return null;
+    SigningKey? key;
+    try {
+      key = await normalBiometrics!.readSigningKey(
+        wallet,
+        NormalBiometricPrompt(
+          context.l10n.normalBiometricsAuthorize,
+          context.l10n.actionCancel,
+        ),
+      );
+    } catch (_) {
+      // Cancellation never falls through to an unprotected device-key read.
+    }
+    if (!context.mounted) return null;
+    if (key != null) return [key];
+    if (!isNormalMnemonicWallet(wallet)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.l10n.normalBiometricsPrivateKeyFailed),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return null;
+    }
+    // Recovery words remain password-protected; biometrics are optional.
+  }
+  if (transactionReviewed && isSingleDeviceKeyWallet(wallet)) {
+    try {
+      final key = wallet.keys.single;
+      final secret = await readStoreKey(key, null);
+      if (!context.mounted) return null;
+      if (secret == null || secret.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(context.l10n.signSheetDeviceKeyError),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        return null;
+      }
+      return [SigningKey(id: key.id, key: secret, type: 'StoreKey')];
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(walletErrorMessageForContext(context, error)),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+      return null;
+    }
+  }
   if (isNormalMnemonicWallet(wallet)) {
     final password = await showWalletPasswordDialog(context);
     if (!context.mounted || password == null || password.isEmpty) return null;

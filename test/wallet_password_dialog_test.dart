@@ -6,6 +6,10 @@ import 'package:tibaneapp/l10n/gen/app_localizations.dart';
 import 'package:tibaneapp/screens/wallet/widgets/sign_sheet.dart';
 import 'package:tibaneapp/theme/tibane_theme.dart';
 import 'package:tibaneapp/widgets/gradient_button.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tibaneapp/services/wallet/normal_wallet_biometrics.dart';
+
+import 'helpers/normal_biometrics_fixtures.dart';
 
 Wallet _wallet({
   String protocol = 'mnemonic',
@@ -47,6 +51,9 @@ Future<(_Harness, AppLocalizations)> _open(
   double scale = 1,
   double keyboard = 0,
   Wallet? wallet,
+  bool transactionReviewed = false,
+  Future<String?> Function()? deviceRead,
+  NormalWalletBiometrics? normalBiometrics,
 }) async {
   tester.view.physicalSize = size * 2;
   tester.view.devicePixelRatio = 2;
@@ -76,10 +83,14 @@ Future<(_Harness, AppLocalizations)> _open(
                 wallet: wallet ?? _wallet(),
                 readStoreKey: (_, _) async {
                   harness.deviceReads++;
-                  return 'fixture-device-key';
+                  return deviceRead == null
+                      ? 'fixture-device-key'
+                      : await deviceRead();
                 },
                 title: 'Fixture operation',
                 actionLabel: 'Confirm fixture',
+                transactionReviewed: transactionReviewed,
+                normalBiometrics: normalBiometrics,
               );
               harness.completed = true;
             },
@@ -110,6 +121,163 @@ Future<void> _enterAndConfirm(WidgetTester tester, String value) async {
 
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets(
+    'seed signing uses biometric credential without a password or MPC modal',
+    (tester) async {
+      final wallet = _wallet();
+      final vault = FakeNormalBiometricVault();
+      final auth = NormalWalletBiometrics(vault: vault);
+      await auth.enable({
+        wallet: 'verified-fixture-password',
+      }, normalBiometricPrompt);
+      final (harness, _) = await _open(
+        tester,
+        wallet: wallet,
+        normalBiometrics: auth,
+      );
+      expect(harness.completed, isTrue);
+      expect(harness.result!.single.type, 'Password');
+      expect(harness.result!.single.key, 'verified-fixture-password');
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(vault.reads, 2);
+    },
+  );
+
+  testWidgets('cancelled seed biometrics allows explicit password fallback', (
+    tester,
+  ) async {
+    final wallet = _wallet();
+    final vault = FakeNormalBiometricVault();
+    final auth = NormalWalletBiometrics(vault: vault);
+    await auth.enable({wallet: 'fixture'}, normalBiometricPrompt);
+    vault.cancelRead = true;
+    final (harness, _) = await _open(
+      tester,
+      wallet: wallet,
+      normalBiometrics: auth,
+    );
+    expect(harness.completed, isFalse);
+    expect(find.byKey(const Key('wallet-password-input')), findsOneWidget);
+    await _enterAndConfirm(tester, 'manual-fixture-password');
+    expect(harness.result!.single.key, 'manual-fixture-password');
+    expect(await auth.isEnabled(wallet), isTrue);
+  });
+
+  testWidgets(
+    'cancelled private-key biometrics never reads the no-auth fallback',
+    (tester) async {
+      final wallet = _wallet(protocol: 'frost', types: ['StoreKey']);
+      final vault = FakeNormalBiometricVault();
+      final auth = NormalWalletBiometrics(vault: vault);
+      await auth.enable({wallet: 'fixture'}, normalBiometricPrompt);
+      vault.cancelRead = true;
+      final (harness, _) = await _open(
+        tester,
+        wallet: wallet,
+        normalBiometrics: auth,
+        transactionReviewed: true,
+      );
+      expect(harness.completed, isTrue);
+      expect(harness.result, isNull);
+      expect(harness.deviceReads, 0);
+      expect(find.byType(BottomSheet), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'unavailable biometric secret falls back to password for restored seed wallet',
+    (tester) async {
+      final wallet = _wallet();
+      final vault = FakeNormalBiometricVault();
+      final auth = NormalWalletBiometrics(vault: vault);
+      await auth.enable({wallet: 'fixture'}, normalBiometricPrompt);
+      vault.values.clear();
+      final (harness, _) = await _open(
+        tester,
+        wallet: wallet,
+        normalBiometrics: auth,
+      );
+      expect(harness.completed, isFalse);
+      await tester.tap(find.byKey(const Key('wallet-password-cancel')));
+      await tester.pumpAndSettle();
+      expect(harness.completed, isTrue);
+      expect(harness.result, isNull);
+    },
+  );
+
+  testWidgets(
+    'reviewed private-key import reads the device key without a share modal',
+    (tester) async {
+      final (harness, _) = await _open(
+        tester,
+        wallet: _wallet(protocol: 'frost', types: ['StoreKey']),
+        transactionReviewed: true,
+      );
+      expect(harness.completed, isTrue);
+      expect(harness.deviceReads, 1);
+      expect(harness.result!.single.id, 'selected-StoreKey-0');
+      expect(harness.result!.single.key, 'fixture-device-key');
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'private-key import without a prior review keeps explicit authorization',
+    (tester) async {
+      final (harness, _) = await _open(
+        tester,
+        wallet: _wallet(protocol: 'frost', types: ['StoreKey']),
+      );
+      expect(harness.completed, isFalse);
+      expect(harness.deviceReads, 0);
+      expect(find.byType(BottomSheet), findsOneWidget);
+    },
+  );
+
+  testWidgets('MPC keeps its share sheet even after review', (tester) async {
+    final vault = FakeNormalBiometricVault();
+    final (harness, _) = await _open(
+      tester,
+      normalBiometrics: NormalWalletBiometrics(vault: vault),
+      wallet: _wallet(
+        protocol: 'frost',
+        threshold: 1,
+        types: ['StoreKey', 'Password', 'RemoteKey'],
+      ),
+      transactionReviewed: true,
+    );
+    expect(harness.completed, isFalse);
+    expect(harness.deviceReads, 0);
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(vault.reads, 0);
+  });
+
+  for (final throwsError in [false, true]) {
+    testWidgets(
+      'unavailable device key never authorizes a reviewed import (throws: $throwsError)',
+      (tester) async {
+        final (harness, _) = await _open(
+          tester,
+          wallet: _wallet(protocol: 'frost', types: ['StoreKey']),
+          transactionReviewed: true,
+          deviceRead: () async {
+            if (throwsError) throw StateError('fixture read failed');
+            return null;
+          },
+        );
+        expect(harness.completed, isTrue);
+        expect(harness.result, isNull);
+        expect(harness.deviceReads, 1);
+        expect(find.byType(BottomSheet), findsNothing);
+        await tester.pump(const Duration(seconds: 4));
+        await tester.pumpAndSettle();
+      },
+    );
+  }
   for (final language in ['en', 'pt', 'fr', 'ja']) {
     for (final size in [const Size(320, 568), const Size(393, 852)]) {
       for (final scale in [1.0, 1.5]) {

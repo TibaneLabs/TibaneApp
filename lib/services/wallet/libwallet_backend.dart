@@ -17,6 +17,7 @@ import 'creation.dart';
 import 'migration.dart';
 import 'password_rotation.dart';
 import 'secure_keystore.dart';
+import 'normal_wallet_biometrics.dart';
 import 'send_transaction.dart';
 import 'wallet_group_store.dart';
 import 'logical_wallet.dart';
@@ -157,7 +158,13 @@ class EnsureDefaultsResult {
 }
 
 class LibwalletBackend extends ChangeNotifier implements WalletBackend {
-  LibwalletBackend({LibwalletClient? client}) : _client = client;
+  LibwalletBackend({
+    LibwalletClient? client,
+    NormalWalletBiometrics? normalBiometrics,
+  }) : _client = client,
+       normalWalletBiometrics = normalBiometrics ?? NormalWalletBiometrics();
+
+  final NormalWalletBiometrics normalWalletBiometrics;
 
   @override
   String get id => 'inapp';
@@ -2581,6 +2588,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       for (final walletId in walletIds) {
         await deleteAccountsForRemovedWallet(client, walletId);
         await client.wallets.delete(walletId);
+        await normalWalletBiometrics.forget({walletId});
         await WalletExportPolicy.forget({walletId});
         await _keystore.deleteDeviceShare(walletId);
         final removedWallet = walletsById[walletId];
@@ -2626,6 +2634,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       if (walletIds.isNotEmpty && !await removeWallets(walletIds)) {
         return false;
       }
+      await normalWalletBiometrics.clear();
       _clearActiveFields();
       await _clearActivePrefs();
       final prefs = await SharedPreferences.getInstance();
@@ -2742,6 +2751,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       if (id != null) {
         final client = await _getClient();
         await client.wallets.delete(id);
+        await normalWalletBiometrics.forget({id});
       }
     } catch (e) {
       debugPrint('Delete libwallet wallet failed: $e');
@@ -2990,7 +3000,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
 
   /// Fetch on-chain history into LibWallet's local transaction table.
   /// Re-selecting an unchanged account does not reliably trigger this sweep.
+  bool _historyBackfillFailed = false;
+  bool get historyBackfillFailed => _historyBackfillFailed;
+
   Future<void> kickHistoryBackfill() async {
+    _historyBackfillFailed = false;
     if (accountId == null) {
       debugPrint('[txhist] kickHistoryBackfill: no accountId, skipping');
       return;
@@ -3001,6 +3015,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       debugPrint('[txhist] Transaction:backfill: $result');
     } catch (e) {
       debugPrint('[txhist] kickHistoryBackfill failed: $e');
+      _historyBackfillFailed = true;
     }
   }
 
@@ -3408,6 +3423,70 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     if (_walletId == null) return null;
     final client = await _getClient();
     return client.wallets.get(_walletId!);
+  }
+
+  Future<List<Wallet>> normalBiometricWallets() async {
+    final id = walletId;
+    if (id == null) return const [];
+    final client = await _getClient();
+    final wallets = await client.wallets.list();
+    final selected = wallets.where((w) => w.id == id).firstOrNull;
+    if (selected == null || !supportsNormalWalletBiometrics(selected)) {
+      return const [];
+    }
+    if (!isNormalMnemonicWallet(selected)) return [selected];
+    final groups = await WalletGroupStore.read();
+    final group = groups[id];
+    return [
+      for (final wallet in wallets)
+        if (isNormalMnemonicWallet(wallet) &&
+            (wallet.id == id || (group != null && groups[wallet.id] == group)))
+          wallet,
+    ];
+  }
+
+  Future<void> enableNormalWalletBiometrics({
+    String? password,
+    required NormalBiometricPrompt prompt,
+  }) async {
+    final source = signingContext;
+    final targets = await normalBiometricWallets();
+    if (targets.isEmpty) throw const NormalBiometricUnavailable();
+    final client = await _getClient();
+    final credentials = <Wallet, String>{};
+    for (final wallet in targets) {
+      if (isNormalMnemonicWallet(wallet)) {
+        if (password == null || password.isEmpty) {
+          throw StateError('Wrong password');
+        }
+        await _verifyWalletPassword(client, wallet: wallet, password: password);
+        credentials[wallet] = password;
+      } else {
+        final secret = await readStoreKeyPrivateForWallet(
+          wallet.id,
+          wallet.keys.single,
+        );
+        if (secret == null || secret.isEmpty) {
+          throw const NormalBiometricUnavailable();
+        }
+        credentials[wallet] = secret;
+      }
+    }
+    if (source != signingContext) throw StateError('wallet_operation_changed');
+    await normalWalletBiometrics.enable(credentials, prompt);
+    notifyListeners();
+  }
+
+  Future<bool> disableNormalWalletBiometrics(String reason) async {
+    final source = signingContext;
+    final targets = await normalBiometricWallets();
+    if (source != signingContext || targets.isEmpty) return false;
+    final disabled = await normalWalletBiometrics.disable(
+      targets.map((w) => w.id),
+      reason,
+    );
+    notifyListeners();
+    return disabled;
   }
 
   /// Resolve [storeKey]'s private share via the §3.2 fallback chain — used by

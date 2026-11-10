@@ -58,7 +58,10 @@ void _promptSetUp(BuildContext context, String walletId, String message) {
 /// sign sheet. Returns the keys, or null when the user cancels or the wallet
 /// can't be signed on this device (an explanatory toast is shown). Only call
 /// when [useSignSheet] is true.
-Future<List<SigningKey>?> collectSigningKeys(BuildContext context) async {
+Future<List<SigningKey>?> collectSigningKeys(
+  BuildContext context, {
+  bool transactionReviewed = false,
+}) async {
   final lw = context.read<WalletService>().libwallet;
   final sourceContext = lw.signingContext;
   final wallet = await lw.currentWallet();
@@ -81,6 +84,8 @@ Future<List<SigningKey>?> collectSigningKeys(BuildContext context) async {
     title: l10n.authSignTitle,
     subtitlePurpose: l10n.authSignPurpose,
     actionLabel: l10n.actionSign,
+    transactionReviewed: transactionReviewed,
+    normalBiometrics: lw.normalWalletBiometrics,
   );
   if (!context.mounted || keys == null) return null;
   if (sourceContext != lw.signingContext) {
@@ -196,10 +201,16 @@ Future<Uint8List?> signOne(
 /// [BatchAuth] whose `.keys` is non-null for the sheet path and null for the
 /// MWA path; returns null if the user cancelled or the wallet can't be signed.
 /// Pass `.keys` to [signAndSendOne] / [signOne] for each tx in the batch.
-Future<BatchAuth?> authorizeBatch(BuildContext context) async {
+Future<BatchAuth?> authorizeBatch(
+  BuildContext context, {
+  bool transactionReviewed = false,
+}) async {
   final wallet = context.read<WalletService>();
   if (useSignSheet(wallet)) {
-    final keys = await collectSigningKeys(context);
+    final keys = await collectSigningKeys(
+      context,
+      transactionReviewed: transactionReviewed,
+    );
     if (keys == null) return null;
     return BatchAuth(keys);
   }

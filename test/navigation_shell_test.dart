@@ -30,7 +30,10 @@ void main() {
     });
 
     test('opening Browse builds the webview and marks it active', () {
-      final s = browserTabState(wasVisited: false, activeIndex: 1);
+      final s = browserTabState(
+        wasVisited: false,
+        activeIndex: ShellTab.browser.index,
+      );
       expect(s.visited, isTrue);
       expect(s.active, isTrue);
     });
@@ -42,21 +45,33 @@ void main() {
     });
 
     test('returning to Browse re-activates the already-built webview', () {
-      final s = browserTabState(wasVisited: true, activeIndex: 1);
+      final s = browserTabState(
+        wasVisited: true,
+        activeIndex: ShellTab.browser.index,
+      );
       expect(s.visited, isTrue);
       expect(s.active, isTrue);
     });
 
     test('cold-start on Browse (initialIndex 1) builds immediately', () {
-      final s = browserTabState(wasVisited: false, activeIndex: 1);
+      final s = browserTabState(
+        wasVisited: false,
+        activeIndex: ShellTab.browser.index,
+      );
       expect(s.visited, isTrue);
       expect(s.active, isTrue);
     });
 
     test('visited latch never regresses once set', () {
-      var s = browserTabState(wasVisited: false, activeIndex: 1); // open
+      var s = browserTabState(
+        wasVisited: false,
+        activeIndex: ShellTab.browser.index,
+      ); // open
       s = browserTabState(wasVisited: s.visited, activeIndex: 0); // leave
-      s = browserTabState(wasVisited: s.visited, activeIndex: 2); // elsewhere
+      s = browserTabState(
+        wasVisited: s.visited,
+        activeIndex: ShellTab.settings.index,
+      ); // elsewhere
       expect(s.visited, isTrue);
       expect(s.active, isFalse);
     });
@@ -65,21 +80,22 @@ void main() {
   group('bottomTabTapPopsToRoot', () {
     test('Wallet and Settings reset their tab stacks', () {
       expect(bottomTabTapPopsToRoot(0), isTrue);
-      expect(bottomTabTapPopsToRoot(2), isTrue);
+      expect(bottomTabTapPopsToRoot(ShellTab.settings.index), isTrue);
     });
 
     test('Browse keeps its browser state', () {
-      expect(bottomTabTapPopsToRoot(1), isFalse);
+      expect(bottomTabTapPopsToRoot(ShellTab.browser.index), isFalse);
     });
   });
 
-  test('shell has three tabs and starts on Wallet', () {
+  test('shell has four tabs and starts on Wallet', () {
     expect(ShellTab.values, [
       ShellTab.wallet,
+      ShellTab.activity,
       ShellTab.browser,
       ShellTab.settings,
     ]);
     expect(const TibaneShell().initialIndex, ShellTab.wallet.index);
-    expect(() => TibaneShell(initialIndex: 3), throwsAssertionError);
+    expect(() => TibaneShell(initialIndex: 4), throwsAssertionError);
   });
 }

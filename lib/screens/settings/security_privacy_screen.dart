@@ -6,6 +6,10 @@ import 'package:provider/provider.dart';
 
 import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
+import '../../services/app_lock_controller.dart';
+import 'app_lock_settings_tile.dart';
+import '../../services/wallet/normal_wallet_biometrics.dart';
+import 'normal_wallet_biometrics_tile.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import '../settings_screen.dart' show SettingsTile;
@@ -29,6 +33,7 @@ class SecurityPrivacyScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final appLock = context.watch<AppLockController?>();
     final wallet = context.watch<WalletService>();
     final inapp = wallet.kind == WalletKind.inapp;
     final hasInappWallet = inapp && wallet.libwallet.hasWallet;
@@ -47,6 +52,20 @@ class SecurityPrivacyScreen extends StatelessWidget {
           padding: const EdgeInsets.all(20),
           child: Column(
             children: [
+              if (appLock != null) ...[
+                AppLockSettingsTile(controller: appLock),
+                const SizedBox(height: 6),
+              ],
+              if (hasInappWallet &&
+                  accountWallet != null &&
+                  supportsNormalWalletBiometrics(accountWallet)) ...[
+                NormalWalletBiometricsTile(
+                  key: ValueKey('normal-biometrics-${accountWallet.id}'),
+                  backend: wallet.libwallet,
+                  wallet: accountWallet,
+                ),
+                const SizedBox(height: 6),
+              ],
               if (hasInappWallet && isMpc) ...[
                 if (hasPassword)
                   SettingsTile(

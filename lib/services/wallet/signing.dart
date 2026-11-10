@@ -18,6 +18,13 @@ import 'package:libwallet/libwallet.dart'
 /// impossible by construction (min threshold 1 ⇒ min 2 shares).
 int requiredSigningShares(int threshold) => threshold + 1;
 
+/// A private-key import has one device-protected key, not an MPC committee.
+bool isSingleDeviceKeyWallet(Wallet wallet) =>
+    wallet.threshold == 0 &&
+    wallet.protocol != 'mnemonic' &&
+    wallet.keys.length == 1 &&
+    wallet.keys.single.isStoreKey;
+
 /// The key shares a user can actually supply on this device at sign time:
 /// **StoreKey** (biometric / OS-keystore) + **Password** (typed). RemoteKey is
 /// recovery-only and dormant at sign time (D9), so it's excluded from the set

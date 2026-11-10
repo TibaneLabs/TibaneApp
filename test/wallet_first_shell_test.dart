@@ -3,14 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tibaneapp/l10n/gen/app_localizations.dart';
 import 'package:tibaneapp/main.dart';
 import 'package:tibaneapp/screens/browser/dapp_browser_screen.dart';
 import 'package:tibaneapp/screens/settings/wallets_accounts_screen.dart';
 import 'package:tibaneapp/screens/settings_screen.dart';
 import 'package:tibaneapp/screens/tools_screen.dart';
+import 'package:tibaneapp/screens/wallet/biometric_migration_screen.dart';
 import 'package:tibaneapp/screens/wallet/wallet_welcome_screen.dart';
 import 'package:tibaneapp/services/uk_compliance_service.dart';
+import 'package:tibaneapp/services/wallet/biometric_migration_reminder.dart';
 import 'package:tibaneapp/services/wallet/libwallet_backend.dart';
 import 'package:tibaneapp/services/wallet/unified_account.dart';
 import 'package:tibaneapp/services/wallet_service.dart';
@@ -34,10 +37,19 @@ const _external = UnifiedAccount(
 
 class _Backend extends LibwalletBackend {
   bool exists = false;
+  bool migrationPending = false;
+  bool migrationSucceeds = true;
+  int migrationCalls = 0;
   @override
   bool get hasWallet => exists;
   @override
-  Future<bool> needsBiometricMigration() async => false;
+  Future<bool> needsBiometricMigration() async => migrationPending;
+  @override
+  Future<bool> migrateToBiometricV1() async {
+    migrationCalls++;
+    if (migrationSucceeds) migrationPending = false;
+    return migrationSucceeds;
+  }
 }
 
 class _Wallet extends WalletService {
@@ -114,6 +126,7 @@ Future<AppLocalizations> _pump(
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
     for (final name in [
       'com.llfbandit.app_links/messages',
       'com.llfbandit.app_links/events',
@@ -132,8 +145,138 @@ void main() {
     }
   });
 
+  test(
+    'biometric reminder is due exactly seven days after deferring',
+    () async {
+      final now = DateTime.utc(2026);
+      expect(await BiometricMigrationReminder.isDue(now: now), isTrue);
+      await BiometricMigrationReminder.defer(dontShowAgain: false, now: now);
+      expect(
+        await BiometricMigrationReminder.isDue(
+          now: now.add(
+            const Duration(days: 7) - const Duration(milliseconds: 1),
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        await BiometricMigrationReminder.isDue(
+          now: now.add(const Duration(days: 7)),
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  testWidgets('Not now skips without migrating and reappears only when due', (
+    tester,
+  ) async {
+    final wallet = _Wallet();
+    wallet.backend.migrationPending = true;
+    addTearDown(wallet.dispose);
+    final l10n = await _pump(tester, wallet, shell: true);
+    expect(find.byType(BiometricMigrationScreen), findsOneWidget);
+    await tester.tap(find.text(l10n.bioMigNotNow));
+    await tester.pumpAndSettle();
+    expect(wallet.backend.migrationCalls, 0);
+    expect(find.byType(WalletWelcomeScreen), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await _pump(tester, wallet, shell: true);
+    expect(find.byType(BiometricMigrationScreen), findsNothing);
+
+    await BiometricMigrationReminder.defer(
+      dontShowAgain: false,
+      now: DateTime.now().subtract(const Duration(days: 8)),
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    await _pump(tester, wallet, shell: true);
+    expect(find.byType(BiometricMigrationScreen), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('checking Never show again only takes effect after Not now', (
+    tester,
+  ) async {
+    final wallet = _Wallet();
+    wallet.backend.migrationPending = true;
+    addTearDown(wallet.dispose);
+    final l10n = await _pump(tester, wallet, shell: true);
+    await tester.tap(find.text(l10n.bioMigDontShowAgain));
+    await tester.pumpAndSettle();
+    expect(await BiometricMigrationReminder.isDue(), isTrue);
+    await tester.tap(find.text(l10n.bioMigNotNow));
+    await tester.pumpAndSettle();
+    expect(wallet.backend.migrationCalls, 0);
+    expect(
+      await BiometricMigrationReminder.isDue(now: DateTime.utc(2099)),
+      isFalse,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await _pump(tester, wallet, shell: true);
+    expect(find.byType(BiometricMigrationScreen), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('protecting keys dismisses the prompt only on success', (
+    tester,
+  ) async {
+    final wallet = _Wallet();
+    wallet.backend
+      ..migrationPending = true
+      ..migrationSucceeds = false;
+    addTearDown(wallet.dispose);
+    final l10n = await _pump(tester, wallet, shell: true);
+    await tester.tap(find.text(l10n.bioMigButton));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.bioMigPartialError), findsOneWidget);
+    expect(await BiometricMigrationReminder.isDue(), isTrue);
+
+    wallet.backend.migrationSucceeds = true;
+    await tester.tap(find.text(l10n.bioMigButton));
+    await tester.pumpAndSettle();
+    expect(wallet.backend.migrationCalls, 2);
+    expect(find.byType(WalletWelcomeScreen), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await _pump(tester, wallet, shell: true);
+    expect(find.byType(BiometricMigrationScreen), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final locale in AppLocalizations.supportedLocales) {
-    testWidgets('$locale starts on Wallet with only three footer tabs', (
+    testWidgets('$locale biometric actions fit on a compact screen', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(320, 568));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final wallet = _Wallet();
+      wallet.backend.migrationPending = true;
+      addTearDown(wallet.dispose);
+      final l10n = await _pump(tester, wallet, shell: true, locale: locale);
+      final primary = find.text(l10n.bioMigButton);
+      final skip = find.text(l10n.bioMigNotNow);
+      final checkbox = find.text(l10n.bioMigDontShowAgain);
+      expect(
+        tester.getBottomLeft(primary).dy,
+        lessThan(tester.getTopLeft(skip).dy),
+      );
+      expect(
+        tester.getBottomLeft(skip).dy,
+        lessThan(tester.getTopLeft(checkbox).dy),
+      );
+      await tester.ensureVisible(skip);
+      await tester.pumpAndSettle();
+      expect(skip.hitTestable(), findsOneWidget);
+      await tester.ensureVisible(checkbox);
+      await tester.pumpAndSettle();
+      expect(checkbox.hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('$locale starts on Wallet with only four footer tabs', (
       tester,
     ) async {
       final wallet = _Wallet();
@@ -145,6 +288,7 @@ void main() {
       expect(nav.currentIndex, 0);
       expect(nav.items.map((item) => item.label), [
         l10n.bottomNavWalletLabel,
+        l10n.dashboardTabActivity,
         l10n.bottomNavBrowseLabel,
         l10n.bottomNavSettingsLabel,
       ]);
@@ -181,9 +325,9 @@ void main() {
     expect(find.byType(SettingsScreen), findsOneWidget);
     expect(find.byType(WalletsAccountsScreen), findsNothing);
     expect(find.byType(DAppBrowserScreen), findsNothing);
-    tester.state<TibaneShellState>(find.byType(TibaneShell)).navigateTo(3);
+    tester.state<TibaneShellState>(find.byType(TibaneShell)).navigateTo(4);
     await tester.pumpAndSettle();
-    expect(tester.widget<BottomNavigationBar>(footer).currentIndex, 2);
+    expect(tester.widget<BottomNavigationBar>(footer).currentIndex, 3);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
@@ -203,7 +347,7 @@ void main() {
     expect(find.text('Connect'), findsNothing);
   });
 
-  testWidgets('Settings opens Tools without losing the three-tab footer', (
+  testWidgets('Settings opens Tools without losing the four-tab footer', (
     tester,
   ) async {
     final wallet = _Wallet();
@@ -222,7 +366,7 @@ void main() {
     await tester.tap(tools);
     await tester.pumpAndSettle();
     expect(find.byType(ToolsScreen), findsOneWidget);
-    expect(tester.widget<BottomNavigationBar>(footer).items, hasLength(3));
+    expect(tester.widget<BottomNavigationBar>(footer).items, hasLength(4));
     expect(find.byKey(const Key('tools-stake')), findsOneWidget);
     expect(find.byKey(const Key('tools-incinerator')), findsOneWidget);
     expect(find.byKey(const Key('tools-search')), findsOneWidget);

@@ -101,6 +101,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
   // Swap execution
   bool _swapping = false;
+  bool _reviewingSwap = false;
   String? _error;
 
   // Output token metadata cache (for decimals)
@@ -855,6 +856,16 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   }
 
   Future<void> _executeSwap() async {
+    if (_reviewingSwap) return;
+    _reviewingSwap = true;
+    try {
+      await _reviewAndExecuteSwap();
+    } finally {
+      _reviewingSwap = false;
+    }
+  }
+
+  Future<void> _reviewAndExecuteSwap() async {
     if (!_hasQuote || _swapping) return;
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
@@ -888,7 +899,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     );
     if (approved != true || !mounted || !isCurrent() || !_hasQuote) return;
 
-    final auth = await authorizeBatch(context);
+    final auth = await authorizeBatch(context, transactionReviewed: true);
     if (auth == null) return;
     if (!isCurrent() || !_hasQuote) return;
 

@@ -66,13 +66,18 @@ class GradientButton extends StatelessWidget {
                   Icon(icon, size: 18, color: TibaneColors.black),
                   const SizedBox(width: 8),
                 ],
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: enabled ? TibaneColors.black : TibaneColors.textDim,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                    letterSpacing: 0.3,
+                Flexible(
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: enabled
+                          ? TibaneColors.black
+                          : TibaneColors.textDim,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      letterSpacing: 0.3,
+                    ),
                   ),
                 ),
               ],
