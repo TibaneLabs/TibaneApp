@@ -1580,7 +1580,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         throw StateError('New password must be at least 8 characters');
       }
       await _passwordRotationPlans(oldPassword, newPassword);
-      return startRemoteKeyReshare();
+      return await startRemoteKeyReshare();
     } catch (error) {
       _error = 'Change password failed: $error';
       notifyListeners();
