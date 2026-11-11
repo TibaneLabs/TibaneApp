@@ -96,14 +96,27 @@ void main() {
           );
           await tester.pumpAndSettle();
           final sol = find.text('1.0000 SOL');
-          final percent = find.textContaining(RegExp(r'^[+-][0-9.]+%$'));
           final pnl = find.byKey(const Key('wallet-pnl-content'));
+          final pill = find.descendant(
+            of: pnl,
+            matching: find.byType(Container),
+          );
+          final amount = find.descendant(
+            of: pnl,
+            matching: find.textContaining(RegExp(r'^\$[0-9.,]+$')),
+          );
+          final percent = find.descendant(
+            of: pnl,
+            matching: find.textContaining(RegExp(r'^[+-][0-9.]+%$')),
+          );
           final total = find.byKey(const Key('wallet-total-balance'));
           final totalText = tester.widget<Text>(total);
           expect(
             totalText.style!.fontSize,
             closeTo(
-              Theme.of(tester.element(total)).textTheme.displaySmall!.fontSize! *
+              Theme.of(
+                    tester.element(total),
+                  ).textTheme.displaySmall!.fontSize! *
                   1.38 *
                   1.15,
               0.001,
@@ -114,14 +127,26 @@ void main() {
             closeTo(0, 0.01),
           );
           expect(sol, findsOneWidget);
+          expect(amount, findsOneWidget);
           expect(percent, findsOneWidget);
+          expect(find.descendant(of: pill, matching: amount), findsOneWidget);
+          expect(find.descendant(of: pill, matching: percent), findsNothing);
+          final amountStyle = tester.widget<Text>(amount).style!;
+          expect(amountStyle.fontSize, 12);
+          expect(amountStyle.fontWeight, FontWeight.w700);
+          expect(
+            amountStyle.fontFamily,
+            GoogleFonts.dmSans(fontWeight: FontWeight.w700).fontFamily,
+          );
+          expect(tester.widget<Text>(percent).style!.fontSize, 11);
+          expect(tester.widget<Text>(percent).style!.fontWeight, FontWeight.w800);
           expect(
             tester.getCenter(pnl).dx,
             closeTo(tester.getCenter(sol).dx - 3, 0.01),
           );
           expect(
-            tester.getCenter(percent).dx,
-            lessThan(tester.getCenter(pnl).dx),
+            tester.getTopRight(pill).dx,
+            lessThan(tester.getTopLeft(percent).dx),
           );
           expect(
             tester.getTopLeft(percent).dy,

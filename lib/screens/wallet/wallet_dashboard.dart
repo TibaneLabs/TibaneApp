@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:libwallet/libwallet.dart' show Asset, NetworkType;
 import 'package:provider/provider.dart';
@@ -593,20 +594,20 @@ class _PortfolioPerformanceLine extends StatelessWidget {
                   border: Border.all(color: color.withValues(alpha: 0.35)),
                 ),
                 child: Text(
-                  percent,
-                  style: monoStyle(
-                    fontSize: 11,
-                    color: color,
-                  ).copyWith(fontWeight: FontWeight.w800),
+                  amount,
+                  style: GoogleFonts.dmSans(
+                    textStyle: monoStyle(fontSize: 12, color: color),
+                    fontWeight: FontWeight.w700,
+                  ).copyWith(fontFamilyFallback: cjkFallback),
                 ),
               ),
               const SizedBox(width: 7),
               Text(
-                amount,
+                percent,
                 style: monoStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   color: color,
-                ).copyWith(fontWeight: FontWeight.w600),
+                ).copyWith(fontWeight: FontWeight.w800),
               ),
             ],
           ),
