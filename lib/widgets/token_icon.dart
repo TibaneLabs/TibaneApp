@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show Uint8List;
 import 'package:provider/provider.dart';
 
 import '../constants/solana_constants.dart';
+import '../services/token_icon_cache.dart';
 import '../services/token_meta_store.dart';
 import '../theme/tibane_theme.dart';
 
@@ -13,7 +15,7 @@ import '../theme/tibane_theme.dart';
 /// 2. If [mint] has a bundled logo ([kBundledTokenIcons] — SOL, USDC, USDT,
 ///    ChiefPussy), that asset is used (offline + crisp; metadata servers are
 ///    unreliable for these, e.g. USDT has no logo).
-/// 3. [imageUrl] — fetched via [Image.network].
+/// 3. [imageUrl] or a cached thumbnail for the mint.
 /// 4. If no [imageUrl] but [mint] is a Solana-shaped mint, the logo is resolved
 ///    from the shared [TokenMetaStore] (Helius backfill), so tokens whose source
 ///    list carries no logo still get their icon — consistent across every
@@ -25,6 +27,7 @@ class TokenIcon extends StatelessWidget {
   final String? mint;
   final String symbol;
   final double size;
+  final bool useOnlyProvidedImage;
 
   const TokenIcon({
     super.key,
@@ -33,6 +36,7 @@ class TokenIcon extends StatelessWidget {
     this.mint,
     required this.symbol,
     this.size = 32,
+    this.useOnlyProvidedImage = false,
   });
 
   static bool _isSolanaShaped(String m) =>
@@ -44,15 +48,27 @@ class TokenIcon extends StatelessWidget {
       return _assetImage(assetPath!, size, symbol);
     }
     final m = mint;
-    final bundled = m == null ? null : kBundledTokenIcons[m];
+    final bundled = useOnlyProvidedImage ? null : kBundledTokenIcons[m];
     if (bundled != null) return _assetImage(bundled, size, symbol);
-    if (imageUrl != null && imageUrl!.isNotEmpty) {
-      return _networkImage(imageUrl!, size, symbol);
+    final url = imageUrl;
+    if (url != null && url.isNotEmpty) {
+      return _logoFromUrl(context, url, size, symbol, mint: m);
     }
     // No direct logo — resolve via the shared token-metadata store, falling
     // back to the coloured initial until (or unless) one lands.
-    if (m != null && _isSolanaShaped(m)) {
-      return _ResolvingIcon(mint: m, symbol: symbol, size: size);
+    if (!useOnlyProvidedImage && m != null && _isSolanaShaped(m)) {
+      final fallback = _ResolvingIcon(mint: m, symbol: symbol, size: size);
+      final cache = context.read<TokenIconCache?>();
+      if (cache != null && TokenIconCache.canIdentifySolanaMint(m)) {
+        return _CachedTokenImage(
+          cache: cache,
+          mint: m,
+          size: size,
+          symbol: symbol,
+          onMiss: fallback,
+        );
+      }
+      return fallback;
     }
     return tokenIconFallback(symbol, size);
   }
@@ -69,8 +85,91 @@ Widget _assetImage(String path, double size, String symbol) => ClipRRect(
   ),
 );
 
-Widget _networkImage(String url, double size, String symbol) =>
-    _ResilientNetworkImage(url: url, size: size, symbol: symbol);
+Widget _logoFromUrl(
+  BuildContext context,
+  String url,
+  double size,
+  String symbol, {
+  String? mint,
+}) {
+  final cache = context.read<TokenIconCache?>();
+  if (cache == null) {
+    return _ResilientNetworkImage(url: url, size: size, symbol: symbol);
+  }
+  return _CachedTokenImage(
+    cache: cache,
+    mint: mint,
+    url: url,
+    size: size,
+    symbol: symbol,
+  );
+}
+
+class _CachedTokenImage extends StatefulWidget {
+  const _CachedTokenImage({
+    required this.cache,
+    required this.size,
+    required this.symbol,
+    this.mint,
+    this.url,
+    this.onMiss,
+  });
+
+  final TokenIconCache cache;
+  final String? mint;
+  final String? url;
+  final double size;
+  final String symbol;
+  final Widget? onMiss;
+
+  @override
+  State<_CachedTokenImage> createState() => _CachedTokenImageState();
+}
+
+class _CachedTokenImageState extends State<_CachedTokenImage> {
+  late Future<Uint8List?> _image = _load();
+
+  Future<Uint8List?> _load() {
+    final url = widget.url;
+    return widget.cache.load(
+      mint: widget.mint,
+      urls: url == null ? const [] : tokenImageCandidates(url),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _CachedTokenImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url ||
+        oldWidget.mint != widget.mint ||
+        oldWidget.cache != widget.cache) {
+      _image = _load();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = tokenIconFallback(widget.symbol, widget.size);
+    return FutureBuilder<Uint8List?>(
+      future: _image,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) return fallback;
+        final bytes = snapshot.data;
+        if (bytes == null) return widget.onMiss ?? fallback;
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(widget.size / 2),
+          child: Image.memory(
+            bytes,
+            width: widget.size,
+            height: widget.size,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => widget.onMiss ?? fallback,
+          ),
+        );
+      },
+    );
+  }
+}
 
 /// Returns the original image URL followed by a public IPFS fallback when the
 /// metadata points at IPFS. Some gateways rate-limit mobile clients even when
@@ -227,7 +326,13 @@ class _ResolvingIconState extends State<_ResolvingIcon> {
       return tokenIconFallback(widget.symbol, widget.size);
     }
     if (url != null && url.isNotEmpty) {
-      return _networkImage(url, widget.size, widget.symbol);
+      return _logoFromUrl(
+        context,
+        url,
+        widget.size,
+        widget.symbol,
+        mint: widget.mint,
+      );
     }
     return tokenIconFallback(widget.symbol, widget.size);
   }

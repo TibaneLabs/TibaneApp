@@ -294,10 +294,15 @@ class TibaneTheme {
 }
 
 /// Shared detail style: DM Sans for addresses, amounts and technical text.
-TextStyle monoStyle({double fontSize = 13, Color color = TibaneColors.text}) {
+TextStyle monoStyle({
+  double fontSize = 13,
+  Color color = TibaneColors.text,
+  FontWeight? fontWeight,
+}) {
   return GoogleFonts.dmSans(
     fontSize: fontSize,
     color: color,
+    fontWeight: fontWeight,
     letterSpacing: 0,
   ).copyWith(
     fontFamilyFallback: cjkFallback,

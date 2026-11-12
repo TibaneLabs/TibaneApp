@@ -8,7 +8,6 @@ import '../l10n/l10n.dart';
 import '../models/staking_pool.dart';
 import '../models/token_account.dart';
 import '../services/chiefstaker_api.dart';
-import '../services/favorites_service.dart';
 import '../services/jupiter_service.dart';
 import '../services/rpc_service.dart';
 import '../services/staker_instructions.dart';
@@ -20,20 +19,20 @@ import '../widgets/gradient_button.dart';
 import '../widgets/tibane_card.dart';
 import '../widgets/token_icon.dart';
 import '../widgets/tx_success.dart';
-import 'fee_sharing_screen.dart';
 import 'staking/staking_detail_screen.dart';
 import 'swap_screen.dart';
 import 'wallet/receive_screen.dart';
 import 'wallet/send_screen.dart';
 import 'wallet/widgets/wallet_action_button.dart';
 import '../utils/log.dart';
-import '../utils/wallet_error.dart';
 import '../utils/context_extensions.dart';
 
+const _sectionTitleSize = 13.75;
+
 /// Read-only analytics view for a single SPL token: metadata, supply,
-/// market cap, top holders, optional staking-pool + fee-sharing entry
-/// points. Pushed as its own route by
-/// [TokenFavoritesScreen] and by deep-link / token-row taps elsewhere
+/// market cap, top holders and an optional staking-pool entry point.
+/// Pushed as its own route by
+/// the token search screen and by deep-link / token-row taps elsewhere
 /// in the app, so it owns its [Scaffold] and [AppBar] — no caller
 /// wrapping required.
 class TokenDetailScreen extends StatefulWidget {
@@ -122,33 +121,34 @@ class _TokenDetailScreenState extends State<TokenDetailScreen> {
     }
     try {
       final results = await Future.wait([
-        _rpc.getAsset(widget.mint),
-        _rpc.getTopHolders(widget.mint, limit: 10),
-      ]);
+        _rpc.getAssetFromModChain(widget.mint),
+        _rpc.getTopHolders(widget.mint, limit: 5),
+      ], eagerError: true);
       if (!mounted) return;
       setState(() {
         _token = results[0] as TokenMetadata?;
         _holders = results[1] as List<TokenHolder>;
         _loading = false;
-        if (_token == null) {
-          _error = context.l10n.tokenNotFound;
-        }
+        _error = _token == null ? context.l10n.tokenNotFound : null;
       });
+      if (_token == null) {
+        debugPrint('[token-detail] ModChain getAsset: token not found');
+        return;
+      }
       _checkStakingPool();
       _backfillPriceIfMissing();
       _loadUserBalance();
     } catch (e) {
-      logError('[token-detail._loadToken] error: $e');
+      logError('[token-detail] ModChain getAsset failed: $e');
       if (!mounted) return;
       setState(() {
-        _error = walletErrorMessageForContext(context, e);
+        _error = context.l10n.tokenDetailModChainUnavailable;
         _loading = false;
       });
     }
   }
 
-  /// Helius's getAsset only carries a price for a small subset of
-  /// SPL tokens. When it doesn't, ask Jupiter's price API — which
+  /// When ModChain's getAsset has no price, ask Jupiter's price API — which
   /// covers any actively-traded SPL — so the Market Cap stat can
   /// render for the long tail of tokens too. Idempotent: skips if a
   /// price is already populated or if the screen has unmounted.
@@ -319,13 +319,13 @@ class _TokenDetails extends StatelessWidget {
 
             if (isNative && token.pricePerToken != null) ...[
               const SizedBox(height: 20),
-              _TokenPriceCard(token: token),
+              _TokenPriceCard(price: token.pricePerToken),
             ],
 
             if (!isNative) ...[
               const SizedBox(height: 20),
 
-              _SupplySection(token: token),
+              _MarketSection(token: token),
               const SizedBox(height: 20),
 
               if (stakingPool != null)
@@ -347,24 +347,12 @@ class _TokenDetails extends StatelessWidget {
                     },
                     child: Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: TibaneColors.cyan.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Icon(
-                            Icons.account_balance,
-                            size: 16,
-                            color: TibaneColors.cyan,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             context.l10n.tokenDetailStakingPool,
                             style: const TextStyle(
                               color: TibaneColors.text,
+                              fontSize: _sectionTitleSize,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -397,27 +385,6 @@ class _TokenDetails extends StatelessWidget {
                   ),
                 ),
 
-              if (token.mint.endsWith('pump'))
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 20),
-                  child: SecondaryButton(
-                    label: context.l10n.tokenDetailFeeSharing,
-                    icon: Icons.payments,
-                    expanded: true,
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => FeeSharingScreen(
-                            mint: token.mint,
-                            tokenName: token.name,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
               if (holders.isNotEmpty) ...[
                 _HoldersSection(holders: holders, token: token),
                 const SizedBox(height: 20),
@@ -443,9 +410,6 @@ class _TokenHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final favs = context.watch<FavoritesService>();
-    final isFav = favs.isFavorite(token.mint);
-
     return TibaneCard(
       child: Column(
         children: [
@@ -454,7 +418,9 @@ class _TokenHeader extends StatelessWidget {
               TokenIcon(
                 imageUrl: token.imageUrl,
                 assetPath: nativeAssetPath,
+                // SPL logos come from the metadata response, not the shared lookup.
                 mint: token.mint,
+                useOnlyProvidedImage: !isNative,
                 symbol: token.symbol ?? token.name ?? '',
                 size: 64,
               ),
@@ -478,7 +444,7 @@ class _TokenHeader extends StatelessWidget {
                       Text(
                         '\$${token.symbol}',
                         style: const TextStyle(
-                          color: TibaneColors.gold,
+                          color: TibaneColors.textMuted,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -508,7 +474,7 @@ class _TokenHeader extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                   style: monoStyle(
                                     fontSize: 14,
-                                    color: TibaneColors.textMuted,
+                                    color: TibaneColors.orange,
                                   ),
                                 ),
                               ),
@@ -516,7 +482,7 @@ class _TokenHeader extends StatelessWidget {
                               const Icon(
                                 Icons.copy,
                                 size: 18,
-                                color: TibaneColors.textMuted,
+                                color: TibaneColors.orange,
                               ),
                             ],
                           ),
@@ -524,19 +490,6 @@ class _TokenHeader extends StatelessWidget {
                       ),
                     ],
                   ],
-                ),
-              ),
-              GestureDetector(
-                onTap: () => favs.toggle(
-                  token.mint,
-                  name: token.name,
-                  symbol: token.symbol,
-                  imageUrl: token.imageUrl,
-                ),
-                child: Icon(
-                  isFav ? Icons.star : Icons.star_border,
-                  color: isFav ? TibaneColors.gold : TibaneColors.textDim,
-                  size: 28,
                 ),
               ),
             ],
@@ -631,10 +584,10 @@ class _TokenActions extends StatelessWidget {
   }
 }
 
-class _SupplySection extends StatelessWidget {
+class _MarketSection extends StatelessWidget {
   final TokenMetadata token;
 
-  const _SupplySection({required this.token});
+  const _MarketSection({required this.token});
 
   @override
   Widget build(BuildContext context) {
@@ -642,32 +595,20 @@ class _SupplySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          l10n.tokenDetailSupplySection,
-          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: StatCard(
-                label: l10n.labelTotalSupply,
-                value: formatTokenAmount(token.supply, token.decimals),
-                icon: Icons.pie_chart,
-              ),
-            ),
-            if (token.pricePerToken != null) ...[
-              const SizedBox(width: 8),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
               Expanded(
-                child: StatCard(
+                child: _TokenStatCard(
                   label: l10n.tokenDetailMarketCap,
                   value: _formatMarketCap(token),
-                  valueColor: TibaneColors.gold,
-                  icon: Icons.attach_money,
                 ),
               ),
+              const SizedBox(width: 8),
+              Expanded(child: _TokenPriceCard(price: token.pricePerToken)),
             ],
-          ],
+          ),
         ),
         if (token.burned > BigInt.zero) ...[
           const SizedBox(height: 8),
@@ -678,44 +619,70 @@ class _SupplySection extends StatelessWidget {
             icon: Icons.local_fire_department,
           ),
         ],
-        if (token.pricePerToken != null) ...[
-          const SizedBox(height: 8),
-          _TokenPriceCard(token: token),
-        ],
       ],
     );
   }
 }
 
 class _TokenPriceCard extends StatelessWidget {
-  final TokenMetadata token;
+  final double? price;
 
-  const _TokenPriceCard({required this.token});
+  const _TokenPriceCard({required this.price});
 
   @override
   Widget build(BuildContext context) {
-    final price = token.pricePerToken;
-    if (price == null) return const SizedBox.shrink();
+    final price = this.price;
+    return _TokenStatCard(
+      label: context.l10n.tokenDetailPrice,
+      value: price == null
+          ? 'N/A'
+          : '\$${price.toStringAsFixed(price < 0.01 ? 8 : 4)}',
+    );
+  }
+}
 
+class _TokenStatCard extends StatelessWidget {
+  final String label;
+  final String value;
+  const _TokenStatCard({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = context.textTheme.titleLarge;
+    final valueSize = (style?.fontSize ?? 22) * 1.15;
+    const valueLineHeight = 1.3;
     return TibaneCard(
-      padding: const EdgeInsets.all(14),
-      child: Row(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.attach_money, size: 20, color: TibaneColors.gold),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '\$${price.toStringAsFixed(price < 0.01 ? 8 : 4)}',
-              style: const TextStyle(
-                color: TibaneColors.text,
-                fontWeight: FontWeight.w700,
-                fontSize: 18,
-              ),
+          Text(
+            label.toUpperCase(),
+            style: monoStyle(
+              fontSize: _sectionTitleSize,
+              color: TibaneColors.textMuted,
             ),
           ),
-          Text(
-            context.l10n.tokenDetailPerToken,
-            style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
+          const SizedBox(height: 8),
+          SizedBox(
+            height:
+                (MediaQuery.textScalerOf(context).scale(valueSize) *
+                        valueLineHeight)
+                    .ceilToDouble(),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: (style ?? const TextStyle()).copyWith(
+                  color: TibaneColors.text,
+                  fontWeight: FontWeight.w700,
+                  fontSize: valueSize,
+                  height: valueLineHeight,
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -748,21 +715,56 @@ class _HoldersSection extends StatelessWidget {
 
   const _HoldersSection({required this.holders, required this.token});
 
+  Future<void> _openAllHolders(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final l10n = dialogContext.l10n;
+        return AlertDialog(
+          title: Text(l10n.tokenDetailOpenSolscanTitle),
+          content: Text(l10n.tokenDetailOpenSolscanBody),
+          actions: [
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: TibaneColors.textDim,
+                foregroundColor: TibaneColors.text,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(l10n.actionCancel),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: TibaneColors.orange,
+                foregroundColor: TibaneColors.black,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(l10n.actionConfirm),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !context.mounted) return;
+    await openExplorerUrl(context, solscanTokenUrl(token.mint, holders: true));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final visibleHolders = holders.take(10).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           context.l10n.tokenDetailTopHolders,
-          style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+          style: monoStyle(
+            fontSize: _sectionTitleSize,
+            color: TibaneColors.textMuted,
+          ),
         ),
         const SizedBox(height: 12),
         TibaneCard(
           child: Column(
             children: [
-              for (var i = 0; i < visibleHolders.length; i++) ...[
+              for (var i = 0; i < holders.length; i++) ...[
                 if (i > 0) const Divider(height: 1, color: TibaneColors.border),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 10),
@@ -775,7 +777,7 @@ class _HoldersSection extends StatelessWidget {
                           maxLines: 1,
                           softWrap: false,
                           style: monoStyle(
-                            fontSize: 11,
+                            fontSize: 13.2,
                             color: i < 3
                                 ? TibaneColors.gold
                                 : TibaneColors.textDim,
@@ -788,7 +790,7 @@ class _HoldersSection extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                           onTap: () => openExplorerUrl(
                             context,
-                            solscanAccountUrl(visibleHolders[i].address),
+                            solscanAccountUrl(holders[i].address),
                           ),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 4),
@@ -797,14 +799,14 @@ class _HoldersSection extends StatelessWidget {
                                 Flexible(
                                   child: Text(
                                     shortenAddress(
-                                      visibleHolders[i].address,
+                                      holders[i].address,
                                       chars: 6,
                                     ),
                                     maxLines: 1,
                                     softWrap: false,
                                     overflow: TextOverflow.ellipsis,
                                     style: monoStyle(
-                                      fontSize: 12,
+                                      fontSize: 14.4,
                                       color: TibaneColors.orange,
                                     ),
                                   ),
@@ -821,10 +823,11 @@ class _HoldersSection extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '${visibleHolders[i].percentage.toStringAsFixed(2)}%',
+                        '${holders[i].percentage.toStringAsFixed(2)}%',
                         style: monoStyle(
-                          fontSize: 12,
-                          color: visibleHolders[i].percentage > 5
+                          fontSize: 14.4,
+                          fontWeight: FontWeight.w500,
+                          color: holders[i].percentage > 5
                               ? TibaneColors.orange
                               : TibaneColors.text,
                         ),
@@ -839,12 +842,8 @@ class _HoldersSection extends StatelessWidget {
         const SizedBox(height: 12),
         SecondaryButton(
           label: context.l10n.tokenDetailAllHolders,
-          icon: Icons.open_in_new,
           expanded: true,
-          onPressed: () => openExplorerUrl(
-            context,
-            solscanTokenUrl(token.mint, holders: true),
-          ),
+          onPressed: () => _openAllHolders(context),
         ),
       ],
     );

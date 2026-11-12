@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../constants/solana_constants.dart';
 import '../../models/staking_pool.dart';
 import '../../services/chiefstaker_api.dart';
-import '../../services/favorites_service.dart';
 import '../../services/uk_compliance_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -395,49 +394,16 @@ class _PoolCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Builder(
-                builder: (context) {
-                  final favs = context.watch<FavoritesService>();
-                  final isFav = favs.isFavorite(pool.mint);
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      GestureDetector(
-                        onTap: () => favs.toggle(
-                          pool.mint,
-                          name: pool.tokenName,
-                          symbol: pool.tokenSymbol,
-                          imageUrl: pool.tokenImage,
-                        ),
-                        child: Icon(
-                          isFav ? Icons.star : Icons.star_border,
-                          color: isFav
-                              ? TibaneColors.gold
-                              : TibaneColors.textDim,
-                          size: 22,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: TibaneColors.cyan.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          'tau ${pool.tauFormatted}',
-                          style: monoStyle(
-                            fontSize: 10,
-                            color: TibaneColors.cyan,
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: TibaneColors.cyan.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'tau ${pool.tauFormatted}',
+                  style: monoStyle(fontSize: 10, color: TibaneColors.cyan),
+                ),
               ),
             ],
           ),

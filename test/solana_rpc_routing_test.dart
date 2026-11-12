@@ -8,6 +8,58 @@ import 'package:tibaneapp/constants/solana_constants.dart';
 import 'package:tibaneapp/services/rpc_service.dart';
 
 void main() {
+  test('loads DAS token metadata from ModChain without a price', () async {
+    final service = RpcService.real(
+      client: MockClient((request) async {
+        expect(request.url.toString(), modchainSolanaRpcUrl);
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['method'], 'getAsset');
+        expect(body['params'], {'id': usdcMint});
+        return http.Response(
+          jsonEncode({
+            'result': {
+              'id': usdcMint,
+              'content': {
+                'metadata': {'name': 'USD Coin', 'symbol': 'USDC'},
+                'links': {'image': 'https://example.com/usdc.png'},
+              },
+              'token_info': {'decimals': 6, 'supply': '123456789'},
+            },
+          }),
+          200,
+        );
+      }),
+    );
+    addTearDown(service.dispose);
+
+    final token = (await service.getAssetFromModChain(usdcMint))!;
+    expect(token.name, 'USD Coin');
+    expect(token.symbol, 'USDC');
+    expect(token.imageUrl, 'https://example.com/usdc.png');
+    expect(token.decimals, 6);
+    expect(token.supply, BigInt.from(123456789));
+    expect(token.pricePerToken, isNull);
+  });
+
+  test('reports ModChain metadata failure without calling Helius', () async {
+    final urls = <String>[];
+    final service = RpcService.real(
+      client: MockClient((request) async {
+        urls.add(request.url.toString());
+        return http.Response('Service unavailable', 503);
+      }),
+    );
+    addTearDown(service.dispose);
+
+    await expectLater(
+      service.getAssetFromModChain(usdcMint),
+      throwsA(
+        isA<StateError>().having((e) => e.message, 'message', contains('503')),
+      ),
+    );
+    expect(urls, [modchainSolanaRpcUrl]);
+  });
+
   test('routes verified Solana reads to ModChain', () async {
     final methods = <String>[];
     final service = RpcService.real(

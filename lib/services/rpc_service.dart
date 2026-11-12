@@ -484,30 +484,48 @@ class RpcService {
   /// Get token metadata from Helius getAsset
   Future<TokenMetadata?> getAsset(String mint) async {
     try {
-      final body = jsonEncode({
-        'jsonrpc': '2.0',
-        'id': ++_requestId,
-        'method': 'getAsset',
-        'params': {'id': mint},
-      });
-
-      final response = await _client.post(
-        Uri.parse(heliusRpcUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: body,
-      );
-
-      if (response.statusCode != 200) return null;
-      final json = jsonDecode(response.body);
-      if (json['error'] != null || json['result'] == null) return null;
-
-      return TokenMetadata.fromHeliusAsset(
-        json['result'] as Map<String, dynamic>,
-      );
+      return await _requestAsset(mint, heliusRpcUrl);
     } catch (e) {
       debugPrint('getAsset error: $e');
       return null;
     }
+  }
+
+  /// Read DAS metadata from ModChain only. Errors are reported to the caller.
+  Future<TokenMetadata?> getAssetFromModChain(String mint) => _requestAsset(
+    mint,
+    modchainSolanaRpcUrl,
+  ).timeout(const Duration(seconds: 10));
+
+  Future<TokenMetadata?> _requestAsset(String mint, String rpcUrl) async {
+    final response = await _client.post(
+      Uri.parse(rpcUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'jsonrpc': '2.0',
+        'id': ++_requestId,
+        'method': 'getAsset',
+        'params': {'id': mint},
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw StateError('getAsset HTTP ${response.statusCode}');
+    }
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    if (json['error'] case final Map error) {
+      if (error['code'] == -32004) return null;
+      throw StateError('getAsset RPC ${error['code']}: ${error['message']}');
+    }
+    if (json['error'] != null || !json.containsKey('result')) {
+      throw const FormatException('Invalid getAsset response');
+    }
+    final result = json['result'];
+    if (result == null) return null;
+    final token = TokenMetadata.fromHeliusAsset(result as Map<String, dynamic>);
+    if (token.mint != mint) {
+      throw const FormatException('getAsset returned a different mint');
+    }
+    return token;
   }
 
   /// Batch get token metadata

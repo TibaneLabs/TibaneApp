@@ -33,8 +33,7 @@ import 'wallet_backend.dart';
 
 /// Minimal token result shape returned by
 /// [LibwalletBackend.searchCuratedTokens] — symbol/name/mint/image/
-/// decimals, suitable for rendering directly in a list or wrapping
-/// into a [FavoriteToken] / passing to a swap selector callback.
+/// decimals, suitable for rendering in a list or passing to a swap selector.
 class TokenSearchResult {
   final String mint;
   final String? name;
@@ -2941,7 +2940,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   final Map<String, List<CuratedToken>> _curatedCache = {};
 
   /// Search libwallet's embedded curated-token registry by
-  /// case-insensitive substring match on symbol, name, or address.
+  /// case-insensitive substring match on symbol, name, or address,
+  /// with verified matches before other matches.
   /// Purely local — no RPC, no third-party HTTP. Backed by the
   /// vetted per-chain list libwallet ships (Jupiter verified list
   /// for Solana, Uniswap default list for EVM, etc.).
@@ -2953,29 +2953,55 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     String? network,
     int limit = 20,
   }) async {
-    final q = query.trim().toLowerCase();
-    if (q.isEmpty) return const [];
+    if (query.trim().isEmpty || limit <= 0) return const [];
     final chainKey = network ?? _curatedChainKey();
     if (chainKey == null) return const [];
-    final tokens = await _loadCurated(chainKey);
-    final results = <TokenSearchResult>[];
+    return rankCuratedTokenMatches(await _loadCurated(chainKey), query, limit);
+  }
+
+  @visibleForTesting
+  static List<TokenSearchResult> rankCuratedTokenMatches(
+    Iterable<CuratedToken> tokens,
+    String query,
+    int limit,
+  ) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty || limit <= 0) return const [];
+    final verified = <CuratedToken>[];
+    final other = <CuratedToken>[];
     for (final t in tokens) {
       if (t.symbol.toLowerCase().contains(q) ||
           t.name.toLowerCase().contains(q) ||
           t.address.toLowerCase().contains(q)) {
-        results.add(
-          TokenSearchResult(
-            mint: t.address,
-            name: t.name,
-            symbol: t.symbol,
-            imageUrl: t.logoUri.isEmpty ? null : t.logoUri,
-            decimals: t.decimals,
-          ),
-        );
-        if (results.length >= limit) break;
+        if (_isCuratedTokenVerified(t)) {
+          verified.add(t);
+          if (verified.length == limit) break;
+        } else if (other.length < limit) {
+          other.add(t);
+        }
       }
     }
-    return results;
+    return [
+      for (final t in [...verified, ...other.take(limit - verified.length)])
+        TokenSearchResult(
+          mint: t.address,
+          name: t.name,
+          symbol: t.symbol,
+          imageUrl: t.logoUri.isEmpty ? null : t.logoUri,
+          decimals: t.decimals,
+        ),
+    ];
+  }
+
+  static bool _isCuratedTokenVerified(CuratedToken token) {
+    // LibWallet 0.5.8 does not expose the getter. Use a typed read once the
+    // minimum supported version includes verified.
+    try {
+      final Object? verified = (token as dynamic).verified;
+      return identical(verified, true);
+    } on NoSuchMethodError {
+      return false;
+    }
   }
 
   String? _curatedChainKey() {
