@@ -160,9 +160,11 @@ class StatCard extends StatelessWidget {
                 Icon(icon, size: 14, color: TibaneColors.textDim),
                 const SizedBox(width: 6),
               ],
-              Text(
-                label.toUpperCase(),
-                style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+              Flexible(
+                child: Text(
+                  label.toUpperCase(),
+                  style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
+                ),
               ),
               if (tooltip != null) ...[
                 const SizedBox(width: 4),

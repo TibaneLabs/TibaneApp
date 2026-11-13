@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:tibaneapp/constants/solana_constants.dart';
 import 'package:tibaneapp/l10n/gen/app_localizations.dart';
 import 'package:tibaneapp/models/staking_pool.dart';
 import 'package:tibaneapp/screens/incinerator_screen.dart';
 import 'package:tibaneapp/screens/staking/staking_pools_screen.dart';
-import 'package:tibaneapp/screens/token_favorites_screen.dart';
+import 'package:tibaneapp/screens/token_search_screen.dart';
 import 'package:tibaneapp/screens/tools_screen.dart';
 import 'package:tibaneapp/services/chiefstaker_api.dart';
-import 'package:tibaneapp/services/favorites_service.dart';
 import 'package:tibaneapp/services/uk_compliance_service.dart';
 import 'package:tibaneapp/services/wallet/libwallet_backend.dart';
 import 'package:tibaneapp/services/wallet/unified_account.dart';
@@ -42,7 +42,14 @@ class _Backend extends LibwalletBackend {
     int limit = 20,
   }) async {
     searches.add(query);
-    return [];
+    return const [
+      TokenSearchResult(
+        mint: wsolMint,
+        name: 'Wrapped SOL',
+        symbol: 'SOL',
+        decimals: 9,
+      ),
+    ];
   }
 }
 
@@ -113,16 +120,13 @@ Future<AppLocalizations> _pump(
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   final region = compliance ?? _Compliance();
-  final favorites = FavoritesService();
   addTearDown(region.dispose);
-  addTearDown(favorites.dispose);
   addTearDown(wallet.dispose);
   await tester.pumpWidget(
     MultiProvider(
       providers: [
         ChangeNotifierProvider<WalletService>.value(value: wallet),
         ChangeNotifierProvider<UkComplianceService>.value(value: region),
-        ChangeNotifierProvider<FavoritesService>.value(value: favorites),
       ],
       child: MaterialApp(
         locale: locale,
@@ -235,11 +239,14 @@ void main() {
       ..entries = [_ethereum];
     await _pump(tester, wallet, compliance: _Compliance()..uk = true);
     await _tap(tester, 'tools-search');
-    expect(find.byType(TokenFavoritesScreen), findsOneWidget);
+    expect(find.byType(TokenSearchScreen), findsOneWidget);
     await tester.enterText(find.byType(TextField), 'SOL');
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
     expect(wallet.backend.searches, ['SOL']);
+    expect(find.text('Wrapped SOL'), findsOneWidget);
+    expect(find.byIcon(Icons.star), findsNothing);
+    expect(find.byIcon(Icons.star_border), findsNothing);
     expect(wallet.current, _ethereum);
     expect(wallet.switches, isEmpty);
     expect(tester.takeException(), isNull);

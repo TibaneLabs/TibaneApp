@@ -5,20 +5,16 @@ import 'package:provider/provider.dart';
 
 import '../constants/solana_constants.dart';
 import '../l10n/l10n.dart';
-import '../services/favorites_service.dart';
 import '../services/wallet/libwallet_backend.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
-import 'tibane_card.dart';
-import 'token_icon.dart';
+import 'token_picker_tile.dart';
 
 /// Reusable token-search surface: a debounced search field over
-/// libwallet's curated token registry, with results rendered as
-/// tappable tiles and (optionally) a per-row favourite toggle.
+/// libwallet's curated token registry, with results rendered as tappable tiles.
 ///
 /// The widget owns no opinions about layout above or below itself —
-/// the caller supplies the [emptyBody] (usually a favourites list or
-/// a "popular tokens" panel) shown when the field is empty.
+/// the caller can supply an [emptyBody] shown when the field is empty.
 ///
 /// Typical layout:
 ///
@@ -28,7 +24,7 @@ import 'token_icon.dart';
 ///   const SizedBox(height: 16),
 ///   Expanded(child: TokenSearch(
 ///     onResultSelected: (r) => navigateToPool(r.mint),
-///     emptyBody: favouritesList,
+///     emptyBody: popularTokens,
 ///   )),
 /// ])
 /// ```
@@ -57,14 +53,8 @@ class TokenSearch extends StatefulWidget {
   /// [AppLocalizations.tokenSearchHint] is used at build time.
   final String? hintText;
 
-  /// Body to render when the search query is empty. Typically a list
-  /// of favourites or popular tokens.
+  /// Body to render when the search query is empty.
   final Widget emptyBody;
-
-  /// Whether to render a star toggle on the trailing edge of each
-  /// search result tile. Tapping it flips the [FavoritesService]
-  /// state for the result's mint.
-  final bool showFavoriteToggle;
 
   /// Horizontal padding applied to the search field row and the
   /// results list. Matches the host screen's own padding so the
@@ -81,10 +71,9 @@ class TokenSearch extends StatefulWidget {
   const TokenSearch({
     super.key,
     required this.onResultSelected,
-    required this.emptyBody,
+    this.emptyBody = const SizedBox.shrink(),
     this.onMintSubmitted,
     this.hintText,
-    this.showFavoriteToggle = true,
     this.padding = const EdgeInsets.symmetric(horizontal: 20),
     this.scrollController,
   });
@@ -261,101 +250,29 @@ class _TokenSearchState extends State<TokenSearch> {
         ),
       );
     }
-    final favs = context.watch<FavoritesService>();
     return ListView.builder(
       controller: widget.scrollController,
       padding: widget.padding,
       itemCount: _results.length,
       itemBuilder: (context, index) {
         final r = _results[index];
-        return _SearchResultTile(
-          result: r,
-          isFavorite: widget.showFavoriteToggle && favs.isFavorite(r.mint),
-          showFavoriteToggle: widget.showFavoriteToggle,
-          onTap: () => widget.onResultSelected(r),
-          onToggleFavorite: widget.showFavoriteToggle
-              ? () => favs.toggle(
-                  r.mint,
-                  name: r.name,
-                  symbol: r.symbol,
-                  imageUrl: r.imageUrl,
-                )
-              : null,
+        final address = shortenAddress(r.mint);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: TokenPickerTile(
+            mint: r.mint,
+            name: r.name ?? r.symbol ?? address,
+            symbol: r.symbol,
+            imageUrl: r.imageUrl,
+            framed: true,
+            trailing: Text(
+              address,
+              style: monoStyle(fontSize: 15, color: TibaneColors.orange),
+            ),
+            onTap: () => widget.onResultSelected(r),
+          ),
         );
       },
-    );
-  }
-}
-
-class _SearchResultTile extends StatelessWidget {
-  final TokenSearchResult result;
-  final bool isFavorite;
-  final bool showFavoriteToggle;
-  final VoidCallback onTap;
-  final VoidCallback? onToggleFavorite;
-
-  const _SearchResultTile({
-    required this.result,
-    required this.isFavorite,
-    required this.showFavoriteToggle,
-    required this.onTap,
-    required this.onToggleFavorite,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: TibaneCard(
-        onTap: onTap,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
-          children: [
-            TokenIcon(
-              imageUrl: result.imageUrl,
-              mint: result.mint,
-              symbol: result.symbol ?? '?',
-              size: 36,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    result.name ?? result.symbol ?? shortenAddress(result.mint),
-                    style: const TextStyle(
-                      color: TibaneColors.text,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (result.symbol != null)
-                    Text(
-                      '\$${result.symbol}',
-                      style: monoStyle(fontSize: 11, color: TibaneColors.gold),
-                    ),
-                ],
-              ),
-            ),
-            Text(
-              shortenAddress(result.mint),
-              style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
-            ),
-            if (showFavoriteToggle && onToggleFavorite != null) ...[
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: onToggleFavorite,
-                child: Icon(
-                  isFavorite ? Icons.star : Icons.star_border,
-                  color: isFavorite ? TibaneColors.gold : TibaneColors.textDim,
-                  size: 22,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
     );
   }
 }

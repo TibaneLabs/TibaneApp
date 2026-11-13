@@ -9,7 +9,6 @@ import 'package:provider/provider.dart';
 
 import '../constants/solana_constants.dart';
 import '../services/balances_store.dart';
-import '../services/favorites_service.dart';
 import '../services/jupiter_service.dart';
 import '../services/rpc_service.dart';
 import '../services/tx_confirmation.dart';
@@ -24,6 +23,7 @@ import '../widgets/gradient_button.dart';
 import '../widgets/network_logos.dart';
 import '../widgets/tibane_card.dart';
 import '../widgets/token_icon.dart';
+import '../widgets/token_picker_tile.dart';
 import '../widgets/token_search.dart';
 import '../widgets/tx_success.dart';
 import 'wallet/widgets/authorize_and_sign.dart';
@@ -72,6 +72,20 @@ class SwapScreen extends StatefulWidget {
 }
 
 class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
+  static const _tokenPanelPadding = EdgeInsets.symmetric(
+    horizontal: 16,
+    vertical: 8,
+  );
+  static const _selectedTokenIconSize = 34.56;
+  static const _selectedTokenStyle = TextStyle(
+    fontSize: 18.48,
+    fontWeight: FontWeight.w600,
+  );
+  static const _balanceFontSize = 12.65;
+  static const _amountFontSize = 18.7;
+  static const _amountUsdFontSize = 14.4;
+  static const _amountVerticalPadding = 6.0;
+
   late final _jupiter = widget.jupiter ?? JupiterService();
   final _amountController = TextEditingController();
   WalletService? _wallet;
@@ -122,6 +136,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   BigInt? _maxSpendableRaw;
   String? _maxSpendableForPair;
   bool _loadingMax = false;
+  ({int percent, String text, String? maxPair})? _amountPreset;
   int _amountRequest = 0;
   int _quoteRequest = 0;
   int _holdingsRequest = 0;
@@ -283,6 +298,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     _quoteRequest++;
     _quoteDebounce?.cancel();
     setState(() {
+      if (_amountPreset?.text != _amountController.text) _amountPreset = null;
       _loadingMax = false;
       _jupiterQuote = null;
       _lwQuote = null;
@@ -843,16 +859,21 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     // Format the official base-unit amount exactly; rounding can exceed MAX.
     final text = formatExactTokenAmount(raw, input.decimals);
     _amountController.text = text;
-    if (maxQuote != null) {
-      _quoteDebounce?.cancel();
-      setState(() {
+    setState(() {
+      _amountPreset = (
+        percent: percent,
+        text: text,
+        maxPair: percent == 100 && input.mint == _nativeMint ? pair : null,
+      );
+      if (maxQuote != null) {
+        _quoteDebounce?.cancel();
         _lwQuote = maxQuote;
         _jupiterQuote = null;
         _hasQuote = true;
-        _quoteOutUi = maxQuote!.amountOut.toDouble();
+        _quoteOutUi = maxQuote.amountOut.toDouble();
         _loadingQuote = false;
-      });
-    }
+      }
+    });
   }
 
   Future<void> _executeSwap() async {
@@ -1399,7 +1420,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
                     // To section
                     _buildToSection(l10n),
-                    const SizedBox(height: 6),
+                    SizedBox(height: _hasQuote ? 2 : 6),
 
                     // Quote details
                     if (_loadingQuote)
@@ -1502,8 +1523,14 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   }
 
   Widget _buildFromSection(AppLocalizations l10n) {
+    final preset = _amountPreset;
+    final selectedPercent =
+        preset == null ||
+            (preset.maxPair != null && preset.maxPair != _swapPairKey)
+        ? null
+        : preset.percent;
     return TibaneCard(
-      padding: const EdgeInsets.all(16),
+      padding: _tokenPanelPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1513,14 +1540,21 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                 l10n.labelFrom,
                 style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
               ),
-              const Spacer(),
-              if (_selectedInput != null)
-                Text(
-                  l10n.commonBalanceLabel(
-                    _formatBalance(_selectedInput!.uiBalance),
+              if (_selectedInput != null) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    l10n.commonBalanceLabel(
+                      _formatBalance(_selectedInput!.uiBalance),
+                    ),
+                    textAlign: TextAlign.end,
+                    style: monoStyle(
+                      fontSize: _balanceFontSize,
+                      color: TibaneColors.textMuted,
+                    ),
                   ),
-                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
+              ],
             ],
           ),
           const SizedBox(height: 12),
@@ -1549,15 +1583,13 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                             imageUrl: _selectedInput!.imageUrl,
                             mint: _selectedInput!.mint,
                             symbol: _selectedInput!.symbol,
-                            size: 24,
+                            size: _selectedTokenIconSize,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               _selectedInput!.symbol,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
+                              style: _selectedTokenStyle,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -1606,16 +1638,24 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => context.unfocus(),
-            style: monoStyle(fontSize: 20),
+            style: monoStyle(fontSize: _amountFontSize),
             decoration: InputDecoration(
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: _amountVerticalPadding,
+              ),
               hintText: '0.00',
-              hintStyle: monoStyle(fontSize: 20, color: TibaneColors.textDim),
+              hintStyle: monoStyle(
+                fontSize: _amountFontSize,
+                color: TibaneColors.textDim,
+              ),
               suffixText:
                   _selectedInput != null && _selectedInput!.priceUsd != null
                   ? '\$${(_formatUsd(parseAmount(_amountController.text) ?? 0, _selectedInput!.priceUsd!))}'
                   : null,
               suffixStyle: monoStyle(
-                fontSize: 12,
+                fontSize: _amountUsdFontSize,
                 color: TibaneColors.textMuted,
               ),
             ),
@@ -1631,6 +1671,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                     child: _PercentButton(
                       key: Key('swap-percent-$pct'),
                       label: pct == 100 ? l10n.sendMax : '$pct%',
+                      selected: selectedPercent == pct,
                       loading: pct == 100 && _loadingMax,
                       onTap:
                           _selectedInput != null && !(pct == 100 && _loadingMax)
@@ -1648,7 +1689,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
   Widget _buildToSection(AppLocalizations l10n) {
     return TibaneCard(
-      padding: const EdgeInsets.all(16),
+      padding: _tokenPanelPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1658,18 +1699,26 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                 l10n.labelTo,
                 style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
               ),
-              const Spacer(),
-              if (_selectedOutput != null)
-                Text(
-                  l10n.commonBalanceLabel(
-                    _formatBalance(_outputHolding?.uiBalance ?? 0),
+              if (_selectedOutput != null) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    l10n.commonBalanceLabel(
+                      _formatBalance(_outputHolding?.uiBalance ?? 0),
+                    ),
+                    textAlign: TextAlign.end,
+                    style: monoStyle(
+                      fontSize: _balanceFontSize,
+                      color: TibaneColors.textMuted,
+                    ),
                   ),
-                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
                 ),
+              ],
             ],
           ),
           const SizedBox(height: 12),
           InkWell(
+            key: const Key('swap-output-selector'),
             onTap: _showOutputPicker,
             borderRadius: BorderRadius.circular(8),
             child: Container(
@@ -1686,13 +1735,13 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                       imageUrl: _outputImageUrl ?? _selectedOutput!.imageUrl,
                       mint: _selectedOutput!.mint,
                       symbol: _selectedOutput!.symbol,
-                      size: 24,
+                      size: _selectedTokenIconSize,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         _selectedOutput!.symbol,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                        style: _selectedTokenStyle,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -1721,8 +1770,12 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
           if (_hasQuote && _quoteOutUi != null) ...[
             const SizedBox(height: 12),
             Container(
+              key: const Key('swap-amount-output'),
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: _amountVerticalPadding,
+              ),
               decoration: BoxDecoration(
                 color: TibaneColors.darker,
                 borderRadius: BorderRadius.circular(8),
@@ -1732,7 +1785,10 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                   Expanded(
                     child: Text(
                       _formatOutputAmount(_quoteOutUi!),
-                      style: monoStyle(fontSize: 20, color: TibaneColors.cyan),
+                      style: monoStyle(
+                        fontSize: _amountFontSize,
+                        color: TibaneColors.cyan,
+                      ),
                     ),
                   ),
                   if (_outputUsdValue() != null) ...[
@@ -1740,7 +1796,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                     Text(
                       '\$${_outputUsdValue()!.toStringAsFixed(2)}',
                       style: monoStyle(
-                        fontSize: 12,
+                        fontSize: _amountUsdFontSize,
                         color: TibaneColors.textMuted,
                       ),
                     ),
@@ -1978,18 +2034,22 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   }) {
     return Padding(
       key: const Key('swap-fees-details'),
-      padding: const EdgeInsets.only(bottom: 2),
+      padding: const EdgeInsets.only(bottom: 1),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(
-                  title,
-                  style: monoStyle(
-                    fontSize: 11 * 1.15,
-                    color: TibaneColors.textMuted,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    title,
+                    style: monoStyle(
+                      fontSize: 11 * 1.15,
+                      color: TibaneColors.textMuted,
+                    ),
                   ),
                 ),
               ),
@@ -1997,10 +2057,14 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                 key: const Key('swap-fees-toggle'),
                 tooltip: title,
                 constraints: const BoxConstraints.tightFor(
-                  width: 40,
+                  width: 44,
                   height: 36,
                 ),
-                padding: EdgeInsets.zero,
+                style: const ButtonStyle(
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                alignment: Alignment.topCenter,
+                padding: const EdgeInsets.only(top: 5),
                 onPressed: () => setState(
                   () => _quoteDetailsExpanded = !_quoteDetailsExpanded,
                 ),
@@ -2015,7 +2079,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
           if (_quoteDetailsExpanded) ...[
             const SizedBox(height: 6),
             ...children,
-            const SizedBox(height: 8),
+            const SizedBox(height: 4.8),
           ],
         ],
       ),
@@ -2108,25 +2172,33 @@ class _PercentButton extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
   final bool loading;
+  final bool selected;
 
   const _PercentButton({
     super.key,
     required this.label,
     this.onTap,
     this.loading = false,
+    this.selected = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    final orange = TibaneColors.orange.withValues(alpha: 0.9);
+    final button = InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(6),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
         decoration: BoxDecoration(
-          color: TibaneColors.surface,
+          color: selected
+              ? TibaneColors.orange.withValues(alpha: 0.15)
+              : TibaneColors.surface,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: TibaneColors.border),
+          border: Border.all(
+            color: selected ? TibaneColors.orange : TibaneColors.border,
+          ),
         ),
         child: Center(
           child: Stack(
@@ -2134,23 +2206,26 @@ class _PercentButton extends StatelessWidget {
             children: [
               Opacity(
                 opacity: loading ? 0 : 1,
-                child: Text(
-                  label,
-                  style: monoStyle(
-                    fontSize: 11,
-                    color: onTap != null
-                        ? TibaneColors.orange
-                        : TibaneColors.textDim,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: monoStyle(
+                      fontSize: 15.84,
+                      fontWeight: FontWeight.w500,
+                      color: onTap != null ? orange : TibaneColors.textDim,
+                    ),
                   ),
                 ),
               ),
               if (loading)
-                const SizedBox(
+                SizedBox(
                   width: 14,
                   height: 14,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: TibaneColors.orange,
+                    color: orange,
                   ),
                 ),
             ],
@@ -2158,6 +2233,7 @@ class _PercentButton extends StatelessWidget {
         ),
       ),
     );
+    return Semantics(selected: selected, child: button);
   }
 }
 
@@ -2181,11 +2257,12 @@ class _InputTokenPicker extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Text(
-                  context.l10n.swapSelectInputToken,
-                  style: context.textTheme.titleMedium,
+                Expanded(
+                  child: Text(
+                    context.l10n.swapSelectInputToken,
+                    style: context.textTheme.titleMedium,
+                  ),
                 ),
-                const Spacer(),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close, size: 20),
@@ -2200,37 +2277,24 @@ class _InputTokenPicker extends StatelessWidget {
               itemCount: holdings.length,
               itemBuilder: (context, index) {
                 final h = holdings[index];
-                return ListTile(
-                  leading: TokenIcon(
-                    imageUrl: h.imageUrl,
-                    mint: h.mint,
-                    symbol: h.symbol,
-                    size: 36,
-                  ),
-                  title: Text(
-                    h.symbol,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    h.name,
-                    style: TextStyle(
-                      color: TibaneColors.textMuted,
-                      fontSize: 12,
-                    ),
-                  ),
+                return TokenPickerTile(
+                  imageUrl: h.imageUrl,
+                  mint: h.mint,
+                  name: h.name,
+                  symbol: h.symbol,
                   trailing: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
                         _formatHoldingBalance(h.uiBalance),
-                        style: monoStyle(fontSize: 12),
+                        style: monoStyle(fontSize: 14.4),
                       ),
                       if (h.valueUsd != null)
                         Text(
                           '\$${h.valueUsd!.toStringAsFixed(2)}',
                           style: monoStyle(
-                            fontSize: 10,
+                            fontSize: 12,
                             color: TibaneColors.textMuted,
                           ),
                         ),
@@ -2354,7 +2418,6 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final favorites = context.watch<FavoritesService>().favorites;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.7,
@@ -2367,11 +2430,12 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Text(
-                  l10n.swapSelectOutputToken,
-                  style: context.textTheme.titleMedium,
+                Expanded(
+                  child: Text(
+                    l10n.swapSelectOutputToken,
+                    style: context.textTheme.titleMedium,
+                  ),
                 ),
-                const Spacer(),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close, size: 20),
@@ -2400,26 +2464,11 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
                           ),
                         ),
                         for (final token in commonTokens)
-                          ListTile(
-                            leading: TokenIcon(
-                              imageUrl: token.imageUrl,
-                              mint: token.mint,
-                              symbol: token.symbol,
-                              size: 36,
-                            ),
-                            title: Text(
-                              token.symbol,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            subtitle: Text(
-                              token.name,
-                              style: TextStyle(
-                                color: TibaneColors.textMuted,
-                                fontSize: 12,
-                              ),
-                            ),
+                          TokenPickerTile(
+                            imageUrl: token.imageUrl,
+                            mint: token.mint,
+                            name: token.name,
+                            symbol: token.symbol,
                             onTap: () {
                               // SOL=9, USDC/USDT/pump=6
                               final decimals = token.mint == wsolMint ? 9 : 6;
@@ -2432,51 +2481,6 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
                               );
                             },
                           ),
-                        if (favorites.isNotEmpty) ...[
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                            child: Text(
-                              l10n.swapFavorites,
-                              style: monoStyle(
-                                fontSize: 10,
-                                color: TibaneColors.textDim,
-                              ),
-                            ),
-                          ),
-                          for (final fav in favorites)
-                            // Skip if already in common tokens.
-                            if (!commonTokens.any((c) => c.mint == fav.mint))
-                              ListTile(
-                                leading: TokenIcon(
-                                  imageUrl: fav.imageUrl,
-                                  mint: fav.mint,
-                                  symbol: fav.symbol ?? '?',
-                                  size: 36,
-                                ),
-                                title: Text(
-                                  fav.symbol ?? shortenAddress(fav.mint),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  fav.name ?? fav.mint,
-                                  style: TextStyle(
-                                    color: TibaneColors.textMuted,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                onTap: () {
-                                  widget.onSelect(
-                                    fav.mint,
-                                    fav.symbol ?? shortenAddress(fav.mint),
-                                    fav.name ?? fav.mint,
-                                    fav.imageUrl,
-                                    6,
-                                  );
-                                },
-                              ),
-                        ],
                       ],
                     )
                   : _evmEmptyBody(scrollController),
@@ -2487,9 +2491,8 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
     );
   }
 
-  /// Empty-state body for non-Solana chains: the account's held tokens (from
-  /// libwallet getAssets, passed in) — there's no curated list for EVM, so a
-  /// pasted contract (resolved via libwallet) or a held token are the options.
+  /// Show held tokens on non-Solana chains before the user searches or pastes
+  /// a contract. Typed searches use the active network's curated catalog.
   Widget _evmEmptyBody(ScrollController scrollController) {
     final l10n = context.l10n;
     final tokens = widget.evmTokens;
@@ -2506,24 +2509,11 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
           ),
         ),
         for (final h in tokens)
-          ListTile(
-            leading: TokenIcon(
-              imageUrl: h.imageUrl,
-              mint: h.mint,
-              symbol: h.symbol,
-              size: 36,
-            ),
-            title: Text(
-              h.symbol,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              h.name,
-              style: const TextStyle(
-                color: TibaneColors.textMuted,
-                fontSize: 12,
-              ),
-            ),
+          TokenPickerTile(
+            imageUrl: h.imageUrl,
+            mint: h.mint,
+            name: h.name,
+            symbol: h.symbol,
             onTap: () => widget.onSelect(
               h.mint,
               h.symbol,

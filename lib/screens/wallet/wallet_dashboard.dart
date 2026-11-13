@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:libwallet/libwallet.dart' show Asset, NetworkType;
 import 'package:provider/provider.dart';
@@ -43,6 +44,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
       store.holdings,
       nativeSolHolding: store.nativeSolHolding,
     );
+    final visibleTokens = displayTokens.where(_shouldShowTokenRow).toList();
 
     return RefreshIndicator(
       // Pull-to-refresh: the store forces fresh balances + on-chain SPL
@@ -200,7 +202,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
           const SizedBox(height: 24),
 
           ...[
-            if (displayTokens.isEmpty)
+            if (visibleTokens.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Center(
@@ -211,7 +213,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 ),
               )
             else
-              ...displayTokens.map((h) {
+              ...visibleTokens.map((h) {
                 final isNativeRow = h.mint.endsWith('.NATIVE');
                 final net = wallet.libwallet.currentNetwork;
                 final isSolanaNative =
@@ -253,6 +255,7 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 // the row's mint untouched (synthetic `.NATIVE` sentinel
                 // for non-Solana native, real on-chain mint for SPL).
                 final iconMint = isSolanaNative ? wsolMint : h.mint;
+                final roundedBalance = _roundedTokenBalance(h);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: TibaneCard(
@@ -295,11 +298,10 @@ class _WalletDashboardState extends State<WalletDashboard> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              formatTokenAmount(
-                                h.balance,
-                                h.decimals,
-                                displayDecimals: 4,
-                              ),
+                              h.balance > BigInt.zero &&
+                                      roundedBalance == '0.0000'
+                                  ? '<0.0001'
+                                  : roundedBalance,
                               style: monoStyle(fontSize: 18.4),
                             ),
                             if (h.valueUsd != null)
@@ -321,6 +323,18 @@ class _WalletDashboardState extends State<WalletDashboard> {
         ],
       ),
     );
+  }
+
+  String _roundedTokenBalance(TokenHolding holding) =>
+      formatTokenAmount(holding.balance, holding.decimals, displayDecimals: 4);
+
+  bool _shouldShowTokenRow(TokenHolding holding) {
+    if (holding.mint.endsWith('.NATIVE')) return true;
+    if (holding.balance <= BigInt.zero) return false;
+    // Only hide residuals when both displayed values would round to zero.
+    // An unknown USD value does not mean the holding is worthless.
+    return holding.valueUsd?.toStringAsFixed(2) != '0.00' ||
+        _roundedTokenBalance(holding) != '0.0000';
   }
 
   /// Tokens to render in the Tokens tab. Always prepends a synthetic
@@ -593,20 +607,20 @@ class _PortfolioPerformanceLine extends StatelessWidget {
                   border: Border.all(color: color.withValues(alpha: 0.35)),
                 ),
                 child: Text(
-                  percent,
-                  style: monoStyle(
-                    fontSize: 11,
-                    color: color,
-                  ).copyWith(fontWeight: FontWeight.w800),
+                  amount,
+                  style: GoogleFonts.dmSans(
+                    textStyle: monoStyle(fontSize: 12, color: color),
+                    fontWeight: FontWeight.w700,
+                  ).copyWith(fontFamilyFallback: cjkFallback),
                 ),
               ),
               const SizedBox(width: 7),
               Text(
-                amount,
+                percent,
                 style: monoStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   color: color,
-                ).copyWith(fontWeight: FontWeight.w600),
+                ).copyWith(fontWeight: FontWeight.w800),
               ),
             ],
           ),

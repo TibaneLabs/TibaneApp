@@ -16,6 +16,8 @@ import 'package:tibaneapp/services/wallet_service.dart';
 import 'package:tibaneapp/theme/tibane_theme.dart';
 import 'package:tibaneapp/widgets/gradient_button.dart';
 import 'package:tibaneapp/widgets/tibane_card.dart';
+import 'package:tibaneapp/widgets/token_icon.dart';
+import 'package:tibaneapp/widgets/token_search.dart';
 
 final _network = lw.Network(
   id: 'solana',
@@ -134,6 +136,7 @@ class _Client implements lw.LibwalletClient {
 
 class _Backend extends LibwalletBackend {
   final client = _Client();
+  final searches = <String>[];
   @override
   lw.Network? get currentNetwork => _network;
   @override
@@ -142,6 +145,22 @@ class _Backend extends LibwalletBackend {
   Future<lw.LibwalletClient> ensureClient() async => client;
   @override
   String? get accountId => 'fixture-solana-account';
+  @override
+  Future<List<TokenSearchResult>> searchCuratedTokens(
+    String query, {
+    String? network,
+    int limit = 20,
+  }) async {
+    searches.add(query);
+    return const [
+      TokenSearchResult(
+        mint: usdcMint,
+        name: 'USD Coin',
+        symbol: 'USDC',
+        decimals: 6,
+      ),
+    ];
+  }
 }
 
 class _Wallet extends WalletService {
@@ -169,8 +188,15 @@ class _Wallet extends WalletService {
 class _Jupiter extends JupiterService {
   final BigInt lamports;
   final int tokenUnits;
+  final double? solValueUsd;
+  final bool withUsdPrices;
   bool? reserved;
-  _Jupiter(this.lamports, {this.tokenUnits = 1000000000});
+  _Jupiter(
+    this.lamports, {
+    this.tokenUnits = 1000000000,
+    this.solValueUsd,
+    this.withUsdPrices = false,
+  });
   @override
   Future<List<TokenHolding>> fetchHoldings(
     String walletAddress, {
@@ -192,6 +218,18 @@ class _Jupiter extends JupiterService {
           balance: balance,
           decimals: 9,
           uiBalance: balance.toDouble() / 1e9,
+          valueUsd: solValueUsd,
+          priceUsd: withUsdPrices ? 100 : null,
+        ),
+      if (withUsdPrices)
+        TokenHolding(
+          mint: chiefPussyMint,
+          symbol: 'ChiefPussy',
+          name: 'Tibane Thecat',
+          balance: BigInt.from(1000000),
+          decimals: 6,
+          uiBalance: 1,
+          priceUsd: 0.002,
         ),
       TokenHolding(
         mint: 'flash-mint',
@@ -211,9 +249,16 @@ Future<_Wallet> _pump(
   String input = wsolMint,
   Locale locale = const Locale('en'),
   int tokenUnits = 1000000000,
+  double? solValueUsd,
+  bool withUsdPrices = false,
 }) async {
   final wallet = _Wallet(BigInt.from(lamports));
-  final jupiter = _Jupiter(wallet.balance, tokenUnits: tokenUnits);
+  final jupiter = _Jupiter(
+    wallet.balance,
+    tokenUnits: tokenUnits,
+    solValueUsd: solValueUsd,
+    withUsdPrices: withUsdPrices,
+  );
   final compliance = UkComplianceService();
   addTearDown(wallet.dispose);
   addTearDown(jupiter.dispose);
@@ -244,6 +289,71 @@ Future<_Wallet> _pump(
 
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
+  testWidgets('output token search styles results on a narrow screen', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(640, 1136);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final wallet = await _pump(tester, lamports: 5959822);
+    await tester.tap(find.text('ChiefPussy'));
+    await tester.pumpAndSettle();
+
+    final search = find.byType(TokenSearch);
+    expect(search, findsOneWidget);
+    expect(find.text('FAVORITES'), findsNothing);
+    final popularIcon = tester.widget<TokenIcon>(
+      find.descendant(
+        of: search,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is TokenIcon && widget.mint == usdcMint,
+        ),
+      ),
+    );
+    expect(popularIcon.size, 43.2);
+    expect(tester.widget<Text>(find.text('USD Coin')).style!.fontSize, 17.5);
+    final popularTicker = tester.widget<Text>(find.text(r'$USDC'));
+    expect(popularTicker.style!.fontSize, 12.65);
+    expect(popularTicker.style!.color, TibaneColors.textMuted);
+    expect(popularTicker.style!.fontWeight, FontWeight.w500);
+    expect(wallet.backend.searches, isEmpty);
+
+    await tester.enterText(
+      find.descendant(of: search, matching: find.byType(TextField)),
+      'USD',
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(wallet.backend.searches, ['USD']);
+    expect(find.byIcon(Icons.star), findsNothing);
+    expect(find.byIcon(Icons.star_border), findsNothing);
+    final icon = tester.widget<TokenIcon>(
+      find.descendant(of: search, matching: find.byType(TokenIcon)),
+    );
+    expect(icon.size, 43.2);
+    final name = find.text('USD Coin');
+    expect(tester.widget<Text>(name).style!.fontSize, 17.5);
+    final ticker = tester.widget<Text>(find.text(r'$USDC'));
+    expect(ticker.style!.fontSize, 12.65);
+    expect(ticker.style!.color, TibaneColors.textMuted);
+    expect(ticker.style!.fontWeight, FontWeight.w500);
+    final address = find.descendant(
+      of: search,
+      matching: find.text(shortenAddress(usdcMint)),
+    );
+    expect(tester.widget<Text>(address).style!.fontSize, 15);
+    expect(tester.widget<Text>(address).style!.color, TibaneColors.orange);
+    expect(tester.getRect(name).right, lessThan(tester.getRect(address).left));
+    await tester.tap(name);
+    await tester.pumpAndSettle();
+    expect(search, findsNothing);
+    expect(find.text('USDC'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('account change discards the previous swap quote', (
     tester,
   ) async {
@@ -445,6 +555,44 @@ void main() {
     );
   });
 
+  testWidgets('amount preset highlights only the applied shortcut', (
+    tester,
+  ) async {
+    await _pump(tester, lamports: 5959822);
+
+    BoxDecoration decorationFor(int percent) =>
+        tester
+                .widget<Container>(
+                  find.descendant(
+                    of: find.byKey(Key('swap-percent-$percent')),
+                    matching: find.byType(Container),
+                  ),
+                )
+                .decoration!
+            as BoxDecoration;
+
+    expect(decorationFor(50).border, Border.all(color: TibaneColors.border));
+    expect(
+      tester.widget<Text>(find.text('50%')).style!.color,
+      TibaneColors.orange.withValues(alpha: 0.9),
+    );
+    await tester.tap(find.text('50%'));
+    await tester.pump();
+    expect(decorationFor(50).border, Border.all(color: TibaneColors.orange));
+    await tester.tap(find.text('75%'));
+    await tester.pump();
+    expect(decorationFor(50).border, Border.all(color: TibaneColors.border));
+    expect(decorationFor(75).border, Border.all(color: TibaneColors.orange));
+
+    await tester.enterText(find.byKey(const Key('swap-amount-input')), '0.001');
+    await tester.pump();
+    expect(decorationFor(75).border, Border.all(color: TibaneColors.border));
+
+    await tester.tap(find.text('MAX'));
+    await tester.pumpAndSettle();
+    expect(decorationFor(100).border, Border.all(color: TibaneColors.orange));
+  });
+
   testWidgets('late MAX response does not overwrite a newer percentage', (
     tester,
   ) async {
@@ -483,10 +631,100 @@ void main() {
       await tester.tap(find.byKey(const Key('swap-input-selector')));
       await tester.pumpAndSettle();
       expect(find.text('Solana'), findsOneWidget);
-      expect(find.text('FLASH'), findsOneWidget);
+      expect(find.text(r'$FLASH'), findsOneWidget);
+      expect(find.text('1.00K'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('input picker shows larger token and USD balances', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(640, 1136);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pump(tester, lamports: 63970000, solValueUsd: 5.43);
+    await tester.tap(find.byKey(const Key('swap-input-selector')));
+    await tester.pumpAndSettle();
+
+    final balance = tester.widget<Text>(find.text('0.063970'));
+    final usdValue = tester.widget<Text>(find.text(r'$5.43'));
+    expect(balance.style!.fontSize, 14.4);
+    expect(usdValue.style!.fontSize, 12);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('swap panels use compact padding and larger selected tokens', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(786, 1704);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pump(tester, lamports: 10000000, withUsdPrices: true);
+
+    for (final percent in [25, 50, 75, 100]) {
+      final button = find.byKey(Key('swap-percent-$percent'));
+      final label = find.descendant(
+        of: button,
+        matching: find.text(percent == 100 ? 'MAX' : '$percent%'),
+      );
+      expect(tester.getSize(button).height, 36);
+      final style = tester.widget<Text>(label).style!;
+      expect(style.fontSize, 15.84);
+      expect(style.fontWeight, FontWeight.w500);
+    }
+
+    for (final (side, label, symbol) in [
+      ('input', 'From', 'SOL'),
+      ('output', 'To', 'ChiefPussy'),
+    ]) {
+      final selector = find.byKey(Key('swap-$side-selector'));
+      final panel = find.widgetWithText(TibaneCard, label);
+      final icon = find.descendant(
+        of: selector,
+        matching: find.byType(TokenIcon),
+      );
+      final name = find.descendant(of: selector, matching: find.text(symbol));
+      expect(
+        tester.widget<TibaneCard>(panel).padding,
+        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      );
+      expect(tester.widget<TokenIcon>(icon).size, 34.56);
+      expect(tester.widget<Text>(name).style!.fontSize, 18.48);
+      final balance = find.descendant(
+        of: panel,
+        matching: find.textContaining('Balance:'),
+      );
+      expect(tester.widget<Text>(balance).style!.fontSize, 12.65);
+    }
+
+    final input = find.byKey(const Key('swap-amount-input'));
+    final field = tester.widget<TextField>(input);
+    expect(field.style!.fontSize, 18.7);
+    expect(field.decoration!.hintStyle!.fontSize, 18.7);
+    expect(field.decoration!.suffixStyle!.fontSize, 14.4);
+    expect(field.decoration!.contentPadding!.vertical, 12);
+    expect(tester.getSize(input).height, greaterThan(36));
+
+    await tester.enterText(input, '0.001');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+
+    final output = find.byKey(const Key('swap-amount-output'));
+    final amount = find.descendant(
+      of: output,
+      matching: find.text('658.560678'),
+    );
+    final usd = find.descendant(of: output, matching: find.text(r'$1.32'));
+    expect(tester.widget<Container>(output).padding!.vertical, 12);
+    expect(tester.widget<Text>(amount).style!.fontSize, 18.7);
+    expect(tester.widget<Text>(usd).style!.fontSize, 14.4);
+    expect(tester.getSize(output).height, greaterThan(36));
+    expect(tester.takeException(), isNull);
+  });
 
   for (final size in [
     const Size(393, 852),
@@ -540,8 +778,19 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.text('Fees'), findsOneWidget);
+        final toPanel = find.widgetWithText(TibaneCard, 'To');
+        expect(
+          tester.getTopLeft(find.text('Fees')).dy -
+              tester.getBottomLeft(toPanel).dy,
+          closeTo(6, 0.01),
+        );
         final fees = find.byKey(const Key('swap-fees-details'));
-        expect(tester.getSize(fees).height, 50);
+        expect(tester.getSize(fees).height, 37);
+        expect(tester.getSize(toggle), const Size(44, 36));
+        final slippageGap =
+            tester.getTopLeft(find.text('Max slippage')).dy -
+            tester.getBottomLeft(find.text('Fees')).dy;
+        expect(slippageGap, closeTo(13.4, 0.5));
         expect(
           tester.widget<Padding>(slippage).padding,
           const EdgeInsets.only(bottom: 4),

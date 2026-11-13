@@ -32,7 +32,6 @@ import 'screens/staking/staking_pools_screen.dart';
 import 'screens/token_detail_screen.dart';
 import 'screens/wallet/wallet_welcome_screen.dart';
 import 'services/chiefstaker_api.dart';
-import 'services/favorites_service.dart';
 import 'services/rpc_service.dart';
 import 'services/wallet/libwallet_backend.dart';
 import 'services/wallet/wallet_backend.dart';
@@ -135,9 +134,6 @@ class _ScreenshotApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider<WalletService>(
           create: (_) => _StubWalletService(),
-        ),
-        ChangeNotifierProvider<FavoritesService>(
-          create: (_) => FavoritesService()..load(),
         ),
       ],
       child: MaterialApp(
@@ -602,6 +598,9 @@ class _StubRpcService extends RpcService {
     }
     return null;
   }
+
+  @override
+  Future<TokenMetadata?> getAssetFromModChain(String mint) => getAsset(mint);
 
   @override
   Future<List<TokenHolder>> getTopHolders(String mint, {int limit = 10}) async {

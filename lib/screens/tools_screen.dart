@@ -7,7 +7,7 @@ import '../theme/tibane_theme.dart';
 import '../widgets/tibane_card.dart';
 import 'incinerator_screen.dart';
 import 'staking/staking_pools_screen.dart';
-import 'token_favorites_screen.dart';
+import 'token_search_screen.dart';
 import 'wallet/solana_context.dart';
 
 /// Settings entry point for staking, account cleanup and token search.
@@ -65,7 +65,7 @@ class ToolsScreen extends StatelessWidget {
         description: l10n.homeTokenInfoDescription,
         onTap: () => Navigator.of(
           context,
-        ).push(MaterialPageRoute(builder: (_) => const TokenFavoritesScreen())),
+        ).push(MaterialPageRoute(builder: (_) => const TokenSearchScreen())),
       ),
     ];
 

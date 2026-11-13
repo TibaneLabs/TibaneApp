@@ -22,8 +22,8 @@ import 'screens/wallet/widgets/hardware_status.dart';
 import 'services/balances_store.dart';
 import 'services/app_lock_controller.dart';
 import 'services/browser_preferences.dart';
-import 'services/favorites_service.dart';
 import 'services/locale_controller.dart';
+import 'services/token_icon_cache.dart';
 import 'services/token_meta_store.dart';
 import 'services/uk_compliance_service.dart';
 import 'services/wallet/biometric_migration_reminder.dart';
@@ -149,10 +149,13 @@ class TibaneApp extends StatelessWidget {
         ),
         // Centralized holdings + tx store; reads WalletService (listed first so
         // it's resolvable here). See BALANCES_STORE_MIGRATION.md.
+        if (!kIsWeb) Provider(create: (_) => TokenIconCache()),
         ChangeNotifierProvider(
-          create: (ctx) => BalancesStore(ctx.read<WalletService>())..init(),
+          create: (ctx) => BalancesStore(
+            ctx.read<WalletService>(),
+            tokenIcons: ctx.read<TokenIconCache?>(),
+          )..init(),
         ),
-        ChangeNotifierProvider(create: (_) => FavoritesService()..load()),
         ChangeNotifierProvider(create: (_) => BrowserPreferences()..load()),
         ChangeNotifierProvider(create: (_) => UkComplianceService()..init()),
         // Single source of truth for token logos/metadata; TokenIcon resolves

@@ -9,6 +9,7 @@ import '../models/transaction_activity.dart';
 import '../utils/coalescer.dart';
 import 'jupiter_service.dart';
 import 'activity_history_cache.dart';
+import 'token_icon_cache.dart';
 import 'transaction_activity_service.dart';
 import 'wallet_service.dart';
 import 'wallet/libwallet_backend.dart' show TransactionHistoryPage;
@@ -34,14 +35,17 @@ class BalancesStore extends ChangeNotifier {
     JupiterService? jupiter,
     TransactionActivityService? activityService,
     ActivityHistoryCache? historyCache,
+    TokenIconCache? tokenIcons,
   }) : _jupiter = jupiter ?? JupiterService(),
        _historyCache = historyCache ?? ActivityHistoryCache(),
-       _activityService = activityService ?? TransactionActivityService();
+       _activityService = activityService ?? TransactionActivityService(),
+       _tokenIcons = tokenIcons;
 
   final WalletService _wallet;
   final JupiterService _jupiter;
   final TransactionActivityService _activityService;
   final ActivityHistoryCache _historyCache;
+  final TokenIconCache? _tokenIcons;
   String? _restoredHistoryScope;
   bool _historyFailed = false;
   bool get historyFailed => _historyFailed;
@@ -377,6 +381,16 @@ class BalancesStore extends ChangeNotifier {
             ? allHoldings.where((h) => h.mint == wsolMint).firstOrNull
             : null;
         _holdings = allHoldings.where((h) => h.mint != wsolMint).toList();
+        if (addr != null && isSolana && lw.currentNetwork?.testNet != true) {
+          unawaited(
+            _tokenIcons?.recordSolanaHoldings(
+              addr,
+              _holdings
+                  .where((h) => h.balance > BigInt.zero)
+                  .map((h) => h.mint),
+            ),
+          );
+        }
         _nativeSolHolding = nativeSol;
         if (nativeSol != null) {
           _wallet.updateBalances(sol: nativeSol.balance);

@@ -16,6 +16,7 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/wallet_error_display.dart';
+import '../fee_sharing_screen.dart';
 import '../swap_screen.dart';
 import '../wallet/widgets/authorize_and_sign.dart';
 import 'staking_members_screen.dart';
@@ -230,6 +231,23 @@ class _StakingDetailScreenState extends State<StakingDetailScreen>
               // Pool stats
               _PoolStatsSection(pool: pool),
               const SizedBox(height: 20),
+
+              if (pool.mint.endsWith('pump')) ...[
+                SecondaryButton(
+                  label: l10n.feeShareTitle,
+                  icon: Icons.payments,
+                  expanded: true,
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => FeeSharingScreen(
+                        mint: pool.mint,
+                        tokenName: pool.tokenName,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
 
               // User stake section
               if (wallet.isConnected) ...[
