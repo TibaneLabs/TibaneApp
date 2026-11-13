@@ -230,8 +230,10 @@ class TokenIconCache {
               continue;
             }
             if (bytes == null || bytes.isEmpty) continue;
+            // A non-null local: [bytes] cannot be promoted inside the closure.
+            final data = bytes;
             try {
-              if (bytes.length <= maxBytes) {
+              if (data.length <= maxBytes) {
                 await _serialize((dir) async {
                   if (dir == null) return;
                   final previous = _entries[key];
@@ -243,7 +245,7 @@ class TokenIconCache {
                   final file = _image(dir, key);
                   final temp = await File(
                     '${file.path}.tmp',
-                  ).writeAsBytes(bytes!);
+                  ).writeAsBytes(data);
                   await temp.rename(file.path);
                   final now = _now();
                   await file.setLastModified(now);
@@ -252,7 +254,7 @@ class TokenIconCache {
                     owners: owners,
                     releasedAt: owners.isEmpty ? previous?.releasedAt : null,
                     lastUsed: now,
-                    bytes: bytes.length,
+                    bytes: data.length,
                   );
                   await _trim(dir);
                   await _save(dir);

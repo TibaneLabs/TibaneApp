@@ -3015,16 +3015,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     ];
   }
 
-  static bool _isCuratedTokenVerified(CuratedToken token) {
-    // LibWallet 0.5.8 does not expose the getter. Use a typed read once the
-    // minimum supported version includes verified.
-    try {
-      final Object? verified = (token as dynamic).verified;
-      return identical(verified, true);
-    } on NoSuchMethodError {
-      return false;
-    }
-  }
+  /// libwallet 0.5.9: the token's issuer is identified and confirmed.
+  static bool _isCuratedTokenVerified(CuratedToken token) => token.verified;
 
   String? _curatedChainKey() {
     final n = _currentNetwork;

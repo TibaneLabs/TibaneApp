@@ -2,19 +2,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:libwallet/libwallet.dart';
 import 'package:tibaneapp/services/wallet/libwallet_backend.dart';
 
-class _VerifiedToken extends CuratedToken {
-  const _VerifiedToken(String address, {String symbol = 'GOAT'})
-    : super(
-        chainKey: 'solana.mainnet',
-        address: address,
-        symbol: symbol,
-        name: symbol,
-        decimals: 6,
-        type: 'spl-token',
-      );
-
-  bool get verified => true;
-}
+CuratedToken _verified(String address, {String symbol = 'GOAT'}) =>
+    CuratedToken(
+      chainKey: 'solana.mainnet',
+      address: address,
+      symbol: symbol,
+      name: symbol,
+      decimals: 6,
+      type: 'spl-token',
+      verified: true,
+    );
 
 CuratedToken _token(String address) => CuratedToken(
   chainKey: 'solana.mainnet',
@@ -32,9 +29,9 @@ void main() {
         _token('unverified-1'),
         _token('unverified-2'),
         _token('unverified-3'),
-        const _VerifiedToken('verified-1'),
-        const _VerifiedToken('verified-2'),
-        const _VerifiedToken('unrelated', symbol: 'JUP'),
+        _verified('verified-1'),
+        _verified('verified-2'),
+        _verified('unrelated', symbol: 'JUP'),
       ],
       ' GOAT ',
       3,
