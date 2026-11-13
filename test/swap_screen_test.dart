@@ -531,7 +531,8 @@ void main() {
       '70645.495481',
     );
     final params = wallet.backend.client.transport.quoteParams!;
-    expect(params['amountIn'], '70645495481');
+    // A whole SPL balance quotes as "MAX" so libwallet closes the account.
+    expect(params['amountIn'], 'MAX');
     expect(params['tokenIn']['address'], 'flash-mint');
     expect(params['tokenIn']['decimals'], 6);
     expect(wallet.backend.client.transport.maxParams, isNull);

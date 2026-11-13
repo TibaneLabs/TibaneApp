@@ -726,7 +726,13 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         decimals: _selectedInput!.decimals,
       ),
       tokenOut: SwapTokenRef(address: outTokenAddr, decimals: _outputDecimals),
-      amountIn: rawAmount.toString(),
+      // A whole token balance goes as "MAX": libwallet then closes the
+      // emptied Solana token account after the swap and returns its rent
+      // (0.5.10). Native balances keep the exact amount (maxSpendable
+      // already left the fee and rent aside).
+      amountIn: inputMint != _nativeMint && rawAmount == _selectedInput!.balance
+          ? 'MAX'
+          : rawAmount.toString(),
       slippageBps: _slippageBps,
     );
     if (!mounted || request != _quoteRequest) return;
@@ -1165,7 +1171,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     final result = await client.swap.execute(quoteId: q.quoteId, keys: keys);
     debugPrint(
       '[swap.exec] RESULT hash=${result.hash} orderId=${result.orderId} '
-      'provider=${result.provider} chain=${result.chain} url=${result.url}',
+      'provider=${result.provider} chain=${result.chain} url=${result.url} '
+      'closeAccount=${result.closeAccount?.status} '
+      '${result.closeAccount?.reason ?? ''}',
     );
     return result;
   }
