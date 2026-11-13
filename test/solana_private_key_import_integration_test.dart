@@ -9,7 +9,17 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libwallet/libwallet.dart';
 import 'package:tibaneapp/services/solana_common.dart';
+import 'package:tibaneapp/services/wallet/libwallet_backend.dart';
 import 'package:tibaneapp/services/wallet/solana_private_key.dart';
+
+class _Backend extends LibwalletBackend {
+  _Backend(this.client);
+
+  final LibwalletClient client;
+
+  @override
+  Future<LibwalletClient> ensureClient() async => client;
+}
 
 void main() {
   test('Solana seed import preserves its RFC 8032 address', () async {
@@ -28,6 +38,8 @@ void main() {
     );
     addTearDown(client.dispose);
     await client.ready;
+    final backend = _Backend(client);
+    addTearDown(backend.dispose);
 
     Future<String> importAddress(
       String name,
@@ -47,6 +59,20 @@ void main() {
         wallet: wallet.id,
         type: 'solana',
         index: 0,
+      );
+      expect(
+        await backend.createAccount(
+          walletId: wallet.id,
+          name: 'Do not derive',
+          type: 'solana',
+        ),
+        isNull,
+      );
+      expect(
+        (await client.accounts.list())
+            .where((candidate) => candidate.wallet == wallet.id)
+            .map((candidate) => candidate.id),
+        [account.id],
       );
       return account.address;
     }
