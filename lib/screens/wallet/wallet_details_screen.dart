@@ -13,6 +13,7 @@ import '../../widgets/tibane_card.dart';
 import '../../widgets/wallet_error_display.dart';
 import 'device_transfer_send_screen.dart';
 import 'inapp_export_screen.dart';
+import 'ledger_manage_screen.dart';
 import 'reset_password_screen.dart';
 import 'share_labels.dart';
 import '../../utils/log.dart';
@@ -278,6 +279,17 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     }
   }
 
+  void _manageLedger() {
+    final apps = {
+      for (final a in _accounts) ?ledgerAppForAccountType(a.type),
+    }.toList();
+    context.navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => LedgerManageScreen(neededApps: apps),
+      ),
+    );
+  }
+
   Future<void> _remove() async {
     if (_removing) return;
     final wallet = _wallet;
@@ -359,15 +371,23 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                 children: [
                   _HeaderCard(wallet: _wallet!, onEdit: _rename),
                   const SizedBox(height: 20),
-                  if (_isHardware)
+                  if (_isHardware) ...[
                     Text(
                       l10n.hwWalletDetailsNote,
                       style: const TextStyle(
                         color: TibaneColors.textMuted,
                         height: 1.4,
                       ),
-                    )
-                  else
+                    ),
+                    if (hardwareKindOf(_wallet) == HardwareKind.ledger) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _manageLedger,
+                        icon: const Icon(Icons.settings_outlined),
+                        label: Text(l10n.hwLedgerManage),
+                      ),
+                    ],
+                  ] else
                     _SharesCard(wallet: _wallet!),
                   const SizedBox(height: 20),
                   _AccountsCard(accounts: _accounts),

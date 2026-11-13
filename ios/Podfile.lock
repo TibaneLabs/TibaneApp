@@ -2,7 +2,7 @@ PODS:
   - biometric_storage (0.0.1):
     - Flutter
   - Flutter (1.0.0)
-  - libwallet (0.5.8)
+  - libwallet (0.5.10)
 
 DEPENDENCIES:
   - biometric_storage (from `.symlinks/plugins/biometric_storage/ios`)
@@ -20,7 +20,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   biometric_storage: 662167ef947fba48891850f0b3042f892a839e9a
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
-  libwallet: 115fee4f326f52c8270d999926ce8ad05d522f26
+  libwallet: a47932b07e8ed47f76e679b7d1906d9dbcd708fe
 
 PODFILE CHECKSUM: 288656d4464589360115d6f81dd5d8f559352730
 

@@ -12,6 +12,7 @@ Flutter app for Solana Seeker phone, providing Tibane Labs tools from tibane.net
   - Ledger APDUs: `lib/services/ledger/` - Android USB HID (`android/.../LedgerUsb.kt`) and BLE (`flutter_blue_plus` pinned to 1.x: 2.x needs a commercial license)
   - Air-gapped: `screens/wallet/widgets/airgap_scan_screen.dart` (animated UR/BBQr scan), `airgap_sign_sheet.dart`
   - Add flow: `screens/wallet/add_hardware_wallet_screen.dart`
+  - Ledger device management (`screens/wallet/ledger_manage_screen.dart`, from wallet details): firmware status and updates, genuine check, app install/remove, all through libwallet's manager routes (device on its dashboard). A sign that needs a missing app offers to install it (`offerLedgerAppInstall` → `widgets/ledger_app_install_dialog.dart`)
 - **Models**: `lib/models/` - StakingPool, UserStake, TokenAccount deserialization matching on-chain layout
 - **Screens**: Home, Incinerator, Staking Pools, Staking Detail, Token Info, About
 - **Widgets**: CatLogo, TibaneCard, GradientButton, WalletButton

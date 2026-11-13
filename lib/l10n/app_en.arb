@@ -2371,7 +2371,7 @@
   "hwCatCardShare": "Pick the account to share on your CatCard…",
   "hwLedgerSteps": "Connect your Ledger by USB-C, or turn on Bluetooth on a Nano X, Stax or Flex, then unlock it.",
   "hwLedgerChains": "Accounts to add",
-  "hwLedgerChainsHint": "Each chain's app must be installed on the Ledger (with Ledger Live). They are opened one at a time: approve on the Ledger if it asks.",
+  "hwLedgerChainsHint": "Each chain's app is opened on the Ledger in turn: approve on the Ledger if it asks. A missing app can be installed from here.",
   "hwLedgerAdd": "Add accounts",
   "hwLedgerConnectTitle": "Connect a Ledger",
   "hwLedgerScanning": "Looking for Ledger devices…",
@@ -2424,7 +2424,7 @@
   },
   "hwErrCatcardMissing": "Plug in your CatCard and unlock it.",
   "hwErrLedgerMissing": "Connect your Ledger and unlock it.",
-  "hwErrLedgerApp": "Open the {app} app on your Ledger (install it with Ledger Live if it's missing).",
+  "hwErrLedgerApp": "Open the {app} app on your Ledger.",
   "@hwErrLedgerApp": {
     "placeholders": {
       "app": {
@@ -2448,5 +2448,162 @@
   "hwVerifyOk": "The device confirmed this address.",
   "hwVerifyMismatch": "The device shows a different address: don't use this one.",
   "hwWalletBadge": "Hardware",
-  "hwWalletDetailsNote": "This wallet's keys are on your hardware device. Backups, passwords and recovery phrases don't apply: to restore it, add the device again."
+  "hwWalletDetailsNote": "This wallet's keys are on your hardware device. Backups, passwords and recovery phrases don't apply: to restore it, add the device again.",
+  "hwLedgerManage": "Manage device",
+  "hwLedgerManageTitle": "Manage Ledger",
+  "hwLedgerNotConnected": "No Ledger connected.",
+  "hwLedgerConnect": "Connect",
+  "hwLedgerConnectedTo": "Connected: {name}",
+  "@hwLedgerConnectedTo": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "hwLedgerDisconnect": "Disconnect",
+  "hwLedgerDeviceSection": "DEVICE",
+  "hwLedgerDeviceHint": "Check the device to see its model, firmware and available updates. Unlock it first.",
+  "hwLedgerCheckDevice": "Check device",
+  "hwLedgerReading": "Reading the device…",
+  "hwLedgerModel": "Model",
+  "hwLedgerFirmware": "Firmware",
+  "hwLedgerUpToDate": "The firmware is up to date.",
+  "hwLedgerUpdateAvailable": "Firmware {version} is available.",
+  "@hwLedgerUpdateAvailable": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "hwLedgerUpdateCheckFailed": "Couldn't check for updates: {error}",
+  "@hwLedgerUpdateCheckFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "hwLedgerUpdateFirmware": "Update firmware",
+  "hwLedgerUpdateConfirmTitle": "Update firmware to {version}?",
+  "@hwLedgerUpdateConfirmTitle": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "hwLedgerUpdateConfirmBody": "Have your 24-word recovery phrase at hand. Keep the Ledger connected and this screen open until the update finishes. Apps may need to be installed again afterwards.",
+  "hwLedgerUpdateConfirm": "Update",
+  "hwLedgerUpdateUsbOnly": "This update restarts the Ledger in a mode that works over USB only. Connect it with a USB cable (Android), or update it with Ledger Live on a computer.",
+  "hwLedgerUpdateRestarting": "Your Ledger is installing the update and will restart. When it's back and unlocked, continue here.",
+  "hwLedgerUpdateBootloader": "Your Ledger is restarting in update mode. When it's back, continue here and select it again.",
+  "hwLedgerUpdateInProgress": "A firmware update is in progress on this Ledger.",
+  "hwLedgerUpdateContinue": "Reconnect and continue",
+  "hwLedgerUpdateDone": "Your Ledger now runs firmware {version}.",
+  "@hwLedgerUpdateDone": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "hwLedgerGenuineCheck": "GENUINE CHECK",
+  "hwLedgerGenuineHint": "Asks the manufacturer to confirm this Ledger is authentic. Allow it on the device when asked.",
+  "hwLedgerGenuineRun": "Run check",
+  "hwLedgerGenuineOk": "Your Ledger is genuine.",
+  "hwLedgerGenuineFail": "The manufacturer did not vouch for this device. Don't keep funds on it.",
+  "hwLedgerAppsSection": "APPS",
+  "hwLedgerAppsHint": "Each chain signs with its own app on the Ledger. Installing or removing an app never touches your keys or funds.",
+  "hwLedgerAppInstalled": "Installed",
+  "hwLedgerAppNotInstalled": "Not installed",
+  "hwLedgerAppUnknown": "Not checked",
+  "hwLedgerListApps": "Show installed apps",
+  "hwLedgerInstall": "Install",
+  "hwLedgerRemove": "Remove",
+  "hwLedgerRemoveTitle": "Remove the {app} app?",
+  "@hwLedgerRemoveTitle": {
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "hwLedgerRemoveBody": "Your keys and funds stay on the Ledger, and the app can be installed again at any time.",
+  "hwLedgerInstallOther": "Install another app",
+  "hwLedgerSearchApps": "Search apps",
+  "hwLedgerInstallTitle": "Install the {app} app?",
+  "@hwLedgerInstallTitle": {
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "hwLedgerInstallMissingBody": "Your Ledger doesn't have the {app} app, which this needs. It can be installed now: your Ledger will ask you to allow it.",
+  "@hwLedgerInstallMissingBody": {
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "hwLedgerInstallBody": "Your Ledger will ask you to allow the installation. Keep it connected until it finishes.",
+  "hwLedgerInstalledApp": "{app} app installed.",
+  "@hwLedgerInstalledApp": {
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "hwLedgerRemovedApp": "{app} app removed.",
+  "@hwLedgerRemovedApp": {
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "hwLedgerProgressAllow": "Allow it on your Ledger…",
+  "hwLedgerProgressInstalling": "Installing {app}… {percent}%",
+  "@hwLedgerProgressInstalling": {
+    "placeholders": {
+      "app": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "hwLedgerProgressRemoving": "Removing {app}…",
+  "@hwLedgerProgressRemoving": {
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "hwLedgerProgressGenuine": "Checking with the manufacturer…",
+  "hwLedgerProgressFirmware": "Updating the firmware… {percent}%",
+  "@hwLedgerProgressFirmware": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "hwLedgerProgressWorking": "Working…",
+  "hwErrLedgerAppMissing": "The {app} app isn't installed on your Ledger.",
+  "@hwErrLedgerAppMissing": {
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "hwErrLedgerDashboard": "Close the open app on your Ledger and try again.",
+  "hwErrLedgerLocked": "Unlock your Ledger and try again."
 }

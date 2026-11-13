@@ -45,6 +45,48 @@ class HardwareWalletException implements Exception {
       'HardwareWalletException($code${detail == null ? '' : ': $detail'})';
 }
 
+/// Progress of a Ledger management operation (libwallet `ledger:progress`).
+class LedgerProgress {
+  const LedgerProgress({
+    required this.op,
+    required this.type,
+    this.app,
+    this.progress,
+    this.message,
+  });
+
+  factory LedgerProgress.fromJson(Map<String, dynamic> j) => LedgerProgress(
+    op: j['op'] as String? ?? '',
+    type: j['type'] as String? ?? '',
+    app: j['app'] as String?,
+    progress: (j['progress'] as num?)?.toDouble(),
+    message: j['message'] as String?,
+  );
+
+  /// `install`, `uninstall`, `genuine`, `firmware` or `flash`.
+  final String op;
+
+  /// `opened`, `permissionRequested`, `permissionGranted`, `progress` or
+  /// `warning`.
+  final String type;
+
+  /// The app being installed or removed.
+  final String? app;
+
+  /// 0..1 for `progress`.
+  final double? progress;
+
+  /// The text of a `warning`.
+  final String? message;
+}
+
+/// Whether [e] is libwallet saying the Ledger app it was asked to open is
+/// not installed (`404`, as opposed to `404` for no device at all).
+bool isLedgerAppMissing(Object e) =>
+    e is LibwalletException &&
+    e.code == '404' &&
+    e.message.contains('not installed');
+
 /// An `airgap:sign` request: a libwallet signing call is waiting for the
 /// air-gapped signer's answer. Show [request] (its [AirgapSignRequest.parts]
 /// as an animated QR), scan the answer, and hand it to [submit]; or [cancel].
@@ -112,8 +154,20 @@ class HardwareWalletService extends ChangeNotifier {
   /// [LedgerConnector.current] is open.
   Future<bool> Function()? connectLedgerDevice;
 
+  /// Offers to install the Ledger app [app] that an operation needs and the
+  /// device lacks, and installs it (with [installLedgerApp]) on a yes.
+  /// Resolves true once it is installed.
+  Future<bool> Function(String app)? offerLedgerAppInstall;
+
   /// Progress for the person.
   void Function(HardwareStatusEvent event)? onStatus;
+
+  final StreamController<LedgerProgress> _ledgerProgress =
+      StreamController<LedgerProgress>.broadcast();
+
+  /// Progress of Ledger installs, removals, genuine checks and firmware
+  /// updates.
+  Stream<LedgerProgress> get ledgerProgress => _ledgerProgress.stream;
 
   void _status(HardwareStatus s, [String? detail]) =>
       onStatus?.call(HardwareStatusEvent(s, detail));
@@ -125,6 +179,13 @@ class HardwareWalletService extends ChangeNotifier {
       ..add(client.catcard.pairing.listen(_onPairing))
       ..add(client.catcard.waiting.listen(_onWaiting))
       ..add(client.ledger.bridge(_ledgerExchange))
+      ..add(
+        client.events.where((e) => e.event == 'ledger:progress').listen((e) {
+          if (!_ledgerProgress.isClosed) {
+            _ledgerProgress.add(LedgerProgress.fromJson(e.data));
+          }
+        }),
+      )
       ..add(
         client.events
             .where((e) => e.event == 'airgap:sign')
@@ -234,7 +295,15 @@ class HardwareWalletService extends ChangeNotifier {
       await client.ledger.quitApp();
       await Future<void>.delayed(const Duration(milliseconds: 1200));
     }
-    await client.ledger.openApp(app);
+    try {
+      await client.ledger.openApp(app);
+    } catch (e) {
+      if (!isLedgerAppMissing(e)) rethrow;
+      final installed =
+          await (offerLedgerAppInstall?.call(app) ?? Future.value(false));
+      if (!installed) throw HardwareWalletException('ledger_app_missing', app);
+      await client.ledger.openApp(app);
+    }
     for (var attempt = 0; attempt < 10; attempt++) {
       await Future<void>.delayed(const Duration(milliseconds: 800));
       try {
@@ -245,6 +314,107 @@ class HardwareWalletService extends ChangeNotifier {
       }
     }
     throw HardwareWalletException('ledger_app', app);
+  }
+
+  // ── Ledger device management (libwallet's manager routes) ────────────────
+
+  /// Make sure a Ledger is connected and on its dashboard (no app open), which
+  /// device management needs.
+  Future<void> ensureLedgerDashboard() async {
+    final client = await _ensureClient();
+    var info = await client.ledger.info();
+    if (info.dashboard) return;
+    await client.ledger.quitApp();
+    for (var attempt = 0; attempt < 10; attempt++) {
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      try {
+        info = await client.ledger.info();
+        if (info.dashboard) return;
+      } catch (e) {
+        debugPrint('[hardware] ledger info while quitting: $e');
+      }
+    }
+    throw const HardwareWalletException('ledger_dashboard');
+  }
+
+  /// Model, firmware and the firmware update available, if any. Leaves the
+  /// device on its dashboard, unless it is mid-update ([LedgerStatus.bootloader]
+  /// or [LedgerStatus.updater]), when no app can run anyway.
+  Future<LedgerStatus> ledgerStatus() async {
+    final client = await _ensureClient();
+    try {
+      await ensureLedgerDashboard();
+    } catch (e) {
+      // A device in bootloader mode answers no app query: ask for its status
+      // directly.
+      debugPrint('[hardware] ledger dashboard before status: $e');
+    }
+    return client.ledger.status();
+  }
+
+  /// Whether the manufacturer vouches for the device. The device asks the
+  /// person to allow the check.
+  Future<bool> ledgerGenuineCheck() async {
+    await ensureLedgerDashboard();
+    return (await _ensureClient()).ledger.genuineCheck();
+  }
+
+  /// The installed apps. The device asks the person to allow the listing.
+  Future<List<LedgerApp>> ledgerInstalledApps() async {
+    await ensureLedgerDashboard();
+    return (await _ensureClient()).ledger.installedApps();
+  }
+
+  /// The apps available for this device and firmware.
+  Future<List<LedgerApp>> ledgerCatalog() async {
+    await ensureLedgerDashboard();
+    return (await _ensureClient()).ledger.catalog();
+  }
+
+  /// Install [app] (and what it needs). The device asks the person to allow
+  /// it; progress arrives on [ledgerProgress].
+  Future<void> installLedgerApp(String app) async {
+    await ensureLedgerDashboard();
+    await (await _ensureClient()).ledger.installApp(app);
+  }
+
+  /// Remove [app]. Keys and funds stay on the device.
+  Future<void> uninstallLedgerApp(String app) async {
+    await ensureLedgerDashboard();
+    await (await _ensureClient()).ledger.uninstallApp(app);
+  }
+
+  /// Step 1 of a firmware update: install the updater. The person confirms
+  /// on the device, which then restarts, so the link is closed here and has
+  /// to be opened again before [continueLedgerFirmware]. Returns whether the
+  /// device restarts in bootloader mode (older models: MCU / bootloader to
+  /// flash next).
+  Future<bool> startLedgerFirmwareUpdate(LedgerFirmwareUpdate update) async {
+    await ensureLedgerDashboard();
+    final flashMcu = await (await _ensureClient()).ledger.firmwareUpdate(
+      update,
+    );
+    await ledger.closeCurrent();
+    return flashMcu;
+  }
+
+  /// After the restart: flash the MCU / bootloader for as long as the device
+  /// comes back in bootloader mode. Without [update] (the app was restarted
+  /// mid-update) libwallet works out what the device needs. Returns the
+  /// device's status at the end.
+  Future<LedgerStatus> continueLedgerFirmware({
+    LedgerFirmwareUpdate? update,
+  }) async {
+    final client = await _ensureClient();
+    var st = await client.ledger.status();
+    for (var round = 0; round < 4 && st.bootloader; round++) {
+      await client.ledger.firmwareFlash(update: update);
+      // Each flash restarts the device again.
+      await ledger.closeCurrent();
+      await Future<void>.delayed(const Duration(seconds: 4));
+      st = await client.ledger.status();
+    }
+    return st;
   }
 
   /// Read the keys of [apps] in turn (each opened on the device) into one
@@ -367,6 +537,7 @@ class HardwareWalletService extends ChangeNotifier {
     }
     _subs.clear();
     unawaited(_catcard.close());
+    unawaited(_ledgerProgress.close());
     super.dispose();
   }
 }

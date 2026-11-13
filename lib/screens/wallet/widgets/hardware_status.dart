@@ -8,6 +8,7 @@ import '../../../services/ledger/ledger_transport.dart';
 import '../../../services/wallet_service.dart';
 import 'airgap_sign_sheet.dart';
 import 'catcard_pairing_sheet.dart';
+import 'ledger_app_install_dialog.dart';
 import 'ledger_connect_sheet.dart';
 
 /// A Ledger transport failure, for a person.
@@ -30,6 +31,8 @@ String hardwareErrorText(BuildContext context, Object e) {
       'catcard_missing' => l10n.hwErrCatcardMissing,
       'ledger_missing' => l10n.hwErrLedgerMissing,
       'ledger_app' => l10n.hwErrLedgerApp(e.detail ?? ''),
+      'ledger_app_missing' => l10n.hwErrLedgerAppMissing(e.detail ?? ''),
+      'ledger_dashboard' => l10n.hwErrLedgerDashboard,
       _ => l10n.hwErrGeneric(e.code),
     };
   }
@@ -42,8 +45,14 @@ String hardwareErrorText(BuildContext context, Object e) {
     };
   }
   if (e is LibwalletException) {
+    if (isLedgerAppMissing(e)) {
+      // libwallet: `ledger: app "Solana" is not installed`.
+      final app = RegExp(r'"([^"]+)"').firstMatch(e.message)?.group(1);
+      return l10n.hwErrLedgerAppMissing(app ?? 'Ledger');
+    }
     return switch (e.code) {
       '4001' => l10n.hwErrDeclined,
+      '423' => l10n.hwErrLedgerLocked,
       '501' => l10n.hwErrUnsupported,
       _ => l10n.hwErrGeneric(e.message),
     };
@@ -78,6 +87,11 @@ void installHardwareWalletUi(
     final ctx = navigatorKey.currentContext;
     if (ctx == null) return false;
     return showLedgerConnectSheet(ctx, hw.ledger);
+  };
+  hw.offerLedgerAppInstall = (app) async {
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) return false;
+    return showLedgerAppInstallDialog(ctx, hw, app, missing: true);
   };
   hw.onStatus = (event) {
     final ctx = navigatorKey.currentContext;
