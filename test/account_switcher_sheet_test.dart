@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,11 +5,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:tibaneapp/l10n/gen/app_localizations.dart';
 import 'package:tibaneapp/screens/wallet/widgets/account_switcher_sheet.dart';
-import 'package:tibaneapp/screens/wallet/widgets/catcard_pairing_sheet.dart';
+import 'package:libwallet/libwallet.dart' show CatCardPairing;
+import 'package:tibaneapp/screens/wallet/add_hardware_wallet_screen.dart';
+import 'package:tibaneapp/screens/wallet/widgets/hardware_status.dart';
 import 'package:tibaneapp/services/wallet/unified_account.dart';
 import 'package:tibaneapp/services/wallet_service.dart';
 import 'package:tibaneapp/theme/tibane_theme.dart';
-import 'package:tibaneapp/widgets/cat_logo.dart';
 
 final _accounts = [
   for (final chain in [
@@ -51,7 +50,6 @@ class _Service extends WalletService {
 
   final List<UnifiedAccount> visibleAccounts;
   final selections = <UnifiedAccount>[];
-  Future<bool> Function()? connectOverride;
 
   @override
   List<UnifiedAccount> get accounts => visibleAccounts;
@@ -61,10 +59,6 @@ class _Service extends WalletService {
 
   @override
   Future<void> refreshAccounts() async {}
-
-  @override
-  Future<bool> connectCatCard() =>
-      connectOverride?.call() ?? super.connectCatCard();
 
   @override
   Future<bool> setCurrentAccount(
@@ -94,7 +88,7 @@ Future<_Service> _open(
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   final service = _Service(accounts: accounts);
-  if (navigatorKey != null) installCatCardUi(service, navigatorKey);
+  if (navigatorKey != null) installHardwareWalletUi(service, navigatorKey);
   addTearDown(service.dispose);
   await tester.pumpWidget(
     ChangeNotifierProvider<WalletService>.value(
@@ -124,104 +118,46 @@ Future<_Service> _open(
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
 
-  const catCardChannel = MethodChannel('net.tibane.tibaneapp/catcard');
   for (final language in ['en', 'pt', 'fr', 'ja']) {
-    testWidgets('CatCard USB search and missing device: $language', (
+    testWidgets('Add hardware wallet opens the device chooser: $language', (
       tester,
     ) async {
-      final completeOpen = Completer<void>();
-      final messenger = tester.binding.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(catCardChannel, (call) async {
-        expect(call.method, 'open');
-        await completeOpen.future;
-        throw PlatformException(code: 'NO_DEVICE');
-      });
-      addTearDown(
-        () => messenger.setMockMethodCallHandler(catCardChannel, null),
-      );
-      final navigatorKey = GlobalKey<NavigatorState>();
-      final service = await _open(
-        tester,
-        language: language,
-        size: const Size(320, 568),
-        navigatorKey: navigatorKey,
-      );
-      final previousListener = service.catcard.statusListener;
+      await _open(tester, language: language, size: const Size(320, 568));
       final l10n = AppLocalizations.of(
         tester.element(find.byType(AccountSwitcherSheet)),
       );
-      final connect = find.widgetWithText(
-        OutlinedButton,
-        l10n.accountSwitcherConnectCatCard,
-      );
-      expect(find.byIcon(Icons.sd_card_outlined), findsNothing);
-      final style = tester.widget<OutlinedButton>(connect).style!;
-      expect(style.foregroundColor?.resolve({}), TibaneColors.orange);
-      expect(style.side?.resolve({})?.color, TibaneColors.orange);
-
-      await tester.ensureVisible(connect);
-      await tester.tap(connect);
+      final add = find.text(l10n.hwAddTitle);
+      await tester.ensureVisible(add);
+      await tester.tap(add);
       await tester.pumpAndSettle();
       expect(find.byType(AccountSwitcherSheet), findsNothing);
-      expect(find.byType(AlertDialog), findsOneWidget);
-      expect(find.byType(CatLogo), findsOneWidget);
-      expect(find.text(l10n.catCardConnectLooking), findsOneWidget);
-      expect(find.text(l10n.catCardConnectUsbHint), findsOneWidget);
-      expect(find.byType(SnackBar), findsNothing);
-      expect(find.widgetWithText(FilledButton, l10n.actionClose), findsNothing);
-
-      completeOpen.complete();
-      await tester.pumpAndSettle();
-      expect(find.text(l10n.catCardConnectLooking), findsNothing);
-      expect(find.text(l10n.catCardConnectNotFound), findsOneWidget);
-      expect(find.byType(SnackBar), findsNothing);
-      expect(
-        identical(service.catcard.statusListener, previousListener),
-        isTrue,
-      );
-      final close = find.widgetWithText(FilledButton, l10n.actionClose);
-      expect(
-        tester.widget<FilledButton>(close).style?.backgroundColor?.resolve({}),
-        TibaneColors.orange,
-      );
-      await tester.tap(close);
-      await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byType(AddHardwareWalletScreen), findsOneWidget);
+      expect(find.text('CatCard'), findsOneWidget);
+      expect(find.text('Ledger'), findsOneWidget);
+      expect(find.text(l10n.hwAirgapTitle), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
 
-  testWidgets('CatCard modal keeps the code comparison and closes on success', (
+  testWidgets('CatCard pairing asks the person to compare the code', (
     tester,
   ) async {
-    final service = await _open(
-      tester,
-      navigatorKey: GlobalKey<NavigatorState>(),
-    );
-    final previousListener = service.catcard.statusListener;
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final service = await _open(tester, navigatorKey: navigatorKey);
     final l10n = AppLocalizations.of(
       tester.element(find.byType(AccountSwitcherSheet)),
     );
-    service.connectOverride = () async {
-      service.catcard.statusListener?.call('Pairing with the CatCard…');
-      return service.catcard.codeConfirmer!('123456');
-    };
-    final connect = find.widgetWithText(
-      OutlinedButton,
-      l10n.accountSwitcherConnectCatCard,
+    final answer = service.hardware.confirmCatCardPairing!(
+      CatCardPairing.fromJson(const {'id': 'p1', 'code': '123 456'}),
     );
-    await tester.ensureVisible(connect);
-    await tester.tap(connect);
     await tester.pumpAndSettle();
     expect(find.text(l10n.catCardPairTitle), findsOneWidget);
-    expect(find.text('123456'), findsOneWidget);
-    expect(find.byType(SnackBar), findsNothing);
+    expect(find.text('123 456'), findsOneWidget);
 
     await tester.tap(find.text(l10n.catCardPairSame));
     await tester.pumpAndSettle();
-    expect(find.text('123456'), findsNothing);
-    expect(find.byType(AlertDialog), findsNothing);
-    expect(identical(service.catcard.statusListener, previousListener), isTrue);
+    expect(await answer, isTrue);
+    expect(find.text('123 456'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

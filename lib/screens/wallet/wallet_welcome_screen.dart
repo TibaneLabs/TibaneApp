@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/l10n.dart';
 import '../../theme/tibane_theme.dart';
+import 'add_hardware_wallet_screen.dart';
 import 'inapp_import_screen.dart';
 import 'wallet_create_options_screen.dart';
 
@@ -88,6 +89,20 @@ class WalletWelcomeScreen extends StatelessWidget {
                       l10n.inappImportTitle,
                       textAlign: TextAlign.center,
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    key: const Key('wallet-welcome-hardware'),
+                    onPressed: () =>
+                        _open(context, const AddHardwareWalletScreen()),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: TibaneColors.orange,
+                      side: const BorderSide(color: TibaneColors.orange),
+                      minimumSize: const Size.fromHeight(52),
+                      shape: const StadiumBorder(),
+                    ),
+                    icon: const Icon(Icons.usb),
+                    label: Text(l10n.hwAddTitle, textAlign: TextAlign.center),
                   ),
                 ],
               ),

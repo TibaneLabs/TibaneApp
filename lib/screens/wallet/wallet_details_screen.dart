@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../l10n/l10n.dart';
 import '../../services/wallet/unified_account.dart';
+import '../../services/wallet/hardware_wallet.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -90,6 +91,9 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
 
   bool get _isSingleShareImport => _wallet?.keys.length == 1;
 
+  /// CatCard / Ledger / air-gapped: no shares, password or backup here.
+  bool get _isHardware => isHardwareWallet(_wallet);
+
   @override
   void initState() {
     super.initState();
@@ -113,7 +117,9 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       final wallet = await client.wallets.get(id);
       await ws.refreshAccounts();
       final isActive = id == ws.libwallet.walletId;
-      final hasShareHere = await ws.libwallet.hasLocalDeviceShare(id);
+      final hasShareHere =
+          isHardwareWallet(wallet) ||
+          await ws.libwallet.hasLocalDeviceShare(id);
       if (!mounted) return;
       setState(() {
         _wallet = wallet;
@@ -353,12 +359,21 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                 children: [
                   _HeaderCard(wallet: _wallet!, onEdit: _rename),
                   const SizedBox(height: 20),
-                  _SharesCard(wallet: _wallet!),
+                  if (_isHardware)
+                    Text(
+                      l10n.hwWalletDetailsNote,
+                      style: const TextStyle(
+                        color: TibaneColors.textMuted,
+                        height: 1.4,
+                      ),
+                    )
+                  else
+                    _SharesCard(wallet: _wallet!),
                   const SizedBox(height: 20),
                   _AccountsCard(accounts: _accounts),
                   const SizedBox(height: 20),
                   ..._buildUseSection(),
-                  if (!_isSingleShareImport) ...[
+                  if (!_isSingleShareImport && !_isHardware) ...[
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
@@ -389,7 +404,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                     const SizedBox(height: 12),
                   ],
                   _ActionsRow(
-                    onBackup: _isSingleShareImport || _removing
+                    onBackup: _isSingleShareImport || _isHardware || _removing
                         ? null
                         : _backup,
                     onRemove: _removing ? null : _remove,
@@ -420,6 +435,7 @@ class _HeaderCard extends StatelessWidget {
     final sigAlgo = wallet.curve == 'ed25519'
         ? 'EdDSA (Solana)'
         : 'ECDSA (EVM/Bitcoin)';
+    final hardware = hardwareKindOf(wallet);
     return TibaneCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -447,7 +463,13 @@ class _HeaderCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            isSingleShareImport
+            hardware != null
+                ? '${l10n.hwWalletBadge} · ${switch (hardware) {
+                    HardwareKind.catcard => 'CatCard',
+                    HardwareKind.ledger => 'Ledger',
+                    HardwareKind.airgap => l10n.hwAirgapTitle,
+                  }}'
+                : isSingleShareImport
                 ? isPasswordProtected
                       ? l10n.walletDetailsImportedInfo(sigAlgo)
                       : l10n.walletDetailsImportedDeviceInfo(sigAlgo)

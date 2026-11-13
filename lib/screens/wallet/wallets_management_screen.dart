@@ -7,6 +7,7 @@ import '../../services/wallet/logical_wallet.dart';
 import '../../services/wallet/unified_account.dart';
 import '../../services/wallet/wallet_export_format.dart'
     show isNormalMnemonicWallet;
+import '../../services/wallet/hardware_wallet.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -232,7 +233,10 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
                 group: groups[i],
                 active: groups[i].wallets.any((w) => w.id == activeId),
                 usableHere: groups[i].wallets.every(
-                  (w) => isNormalMnemonicWallet(w) || _withShare.contains(w.id),
+                  (w) =>
+                      isNormalMnemonicWallet(w) ||
+                      isHardwareWallet(w) ||
+                      _withShare.contains(w.id),
                 ),
                 onTap: () => _openWalletGroup(groups[i]),
               ),

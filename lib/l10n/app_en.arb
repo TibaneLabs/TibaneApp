@@ -163,7 +163,11 @@
   "sendChooseAccount": "Choose an account",
   "sendNoAccountsForNetwork": "No accounts available on {network}.",
   "@sendNoAccountsForNetwork": {
-    "placeholders": {"network": {"type": "String"}}
+    "placeholders": {
+      "network": {
+        "type": "String"
+      }
+    }
   },
   "@sendRecipientLabel": {
     "description": "Label for the recipient input field."
@@ -650,8 +654,20 @@
   "mnemonicExtraPasswordTitle": "Advanced",
   "mnemonicMpcUnavailable": "Importing a Solana recovery phrase as an MPC wallet is not supported in this version yet.",
   "mnemonicExtraPasswordHint": "Some wallets protect the recovery phrase with an extra password. Enter the original one, or leave blank if you never set one. A different password opens different addresses.",
-  "@mnemonicWordCount": {"placeholders": {"count": {"type": "int"}}},
-  "@mnemonicWord": {"placeholders": {"number": {"type": "int"}}},
+  "@mnemonicWordCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@mnemonicWord": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
   "mnemonicFieldLabel": "Mnemonic (12 / 15 / 18 / 21 / 24 words)",
   "mnemonicPassphraseLabel": "Extra recovery password (optional)",
   "mnemonicWalletTypeLabel": "Network",
@@ -967,12 +983,16 @@
   "walletDetailsImportedDeviceInfo": "Imported account · Device protected · {sigAlgo}",
   "@walletDetailsImportedDeviceInfo": {
     "placeholders": {
-      "sigAlgo": {"type": "String"}
+      "sigAlgo": {
+        "type": "String"
+      }
     }
   },
   "@walletDetailsImportedInfo": {
     "placeholders": {
-      "sigAlgo": {"type": "String"}
+      "sigAlgo": {
+        "type": "String"
+      }
     }
   },
   "@walletDetailsWalletInfo": {
@@ -1043,8 +1063,12 @@
   "dashboardPnl24hSemantics": "24-hour P&L: {percent}, {amount}",
   "@dashboardPnl24hSemantics": {
     "placeholders": {
-      "percent": {"type": "String"},
-      "amount": {"type": "String"}
+      "percent": {
+        "type": "String"
+      },
+      "amount": {
+        "type": "String"
+      }
     }
   },
   "dashboardNoTokens": "No tokens yet",
@@ -1335,12 +1359,6 @@
   "accountSwitcherNoWalletApp": "No compatible wallet app is installed.",
   "accountSwitcherCopyAddress": "Copy address",
   "accountSwitcherDisconnect": "Disconnect external",
-  "accountSwitcherConnectCatCard": "Connect CatCard",
-  "catCardConnectLooking": "Looking for the CatCard...",
-  "catCardConnectUsbHint": "Connect your CatCard via USB",
-  "catCardConnectWorking": "Connecting to CatCard...",
-  "catCardConnectNotFound": "No CatCard is plugged in",
-  "catCardConnectFailed": "Couldn't connect to CatCard",
   "catCardPairTitle": "Pair with your CatCard",
   "catCardPairBody": "Check that the CatCard shows exactly this code. If it differs, something sits between the phone and the device: tap Different code.",
   "catCardPairSame": "Same code",
@@ -2342,5 +2360,95 @@
   "activityDate": "Date",
   "activityConfirmed": "Confirmed on-chain",
   "activityFailed": "Failed",
-  "activityUnavailable": "Full token movements are unavailable. Try again to load the on-chain details."
+  "activityUnavailable": "Full token movements are unavailable. Try again to load the on-chain details.",
+  "hwAddTitle": "Add hardware wallet",
+  "hwAddBody": "Your keys stay on the device. The phone keeps only public keys, and you approve every transaction on the device.",
+  "hwCatCardSubtitle": "Over USB-C",
+  "hwLedgerSubtitle": "Over USB-C or Bluetooth",
+  "hwAirgapTitle": "Air-gapped signer",
+  "hwAirgapSubtitle": "Keystone, Coldcard, Passport and others, over QR codes",
+  "hwCatCardSteps": "Plug the CatCard into the phone and unlock it. You will compare a pairing code, then pick on the CatCard which account to share.",
+  "hwCatCardDevWarning": "CatCard firmware is still in development: don't keep significant funds on it yet.",
+  "hwCatCardStart": "Connect CatCard",
+  "hwCatCardShare": "Pick the account to share on your CatCard…",
+  "hwLedgerSteps": "Connect your Ledger by USB-C, or turn on Bluetooth on a Nano X, Stax or Flex, then unlock it.",
+  "hwLedgerChains": "Accounts to add",
+  "hwLedgerChainsHint": "Each chain's app must be installed on the Ledger (with Ledger Live). They are opened one at a time: approve on the Ledger if it asks.",
+  "hwLedgerAdd": "Add accounts",
+  "hwLedgerConnectTitle": "Connect a Ledger",
+  "hwLedgerScanning": "Looking for Ledger devices…",
+  "hwLedgerNoneFound": "No Ledger found. Unlock it; for Bluetooth, keep it close with Bluetooth on.",
+  "hwLedgerSearchAgain": "Search again",
+  "hwLedgerBluetoothOff": "Bluetooth is off or not allowed for Tibane.",
+  "hwAirgapSteps": "On your signer, open the screen that connects a software wallet (on Keystone: Connect Software Wallet), then scan the QR code it shows.",
+  "hwAirgapScan": "Scan QR code",
+  "hwScanHint": "Hold the QR code steady in the frame. Animated codes take a few seconds.",
+  "hwScanProgress": "Reading… {percent}%",
+  "@hwScanProgress": {
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "hwAccountsFound": "{count, plural, =1{1 account found} other{{count} accounts found}}",
+  "@hwAccountsFound": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "hwWalletName": "Wallet name",
+  "hwAdded": "Hardware wallet added",
+  "hwNoSupportedAccounts": "The device shared no Solana, Ethereum or Bitcoin account.",
+  "hwAirgapSignTitle": "Sign on your signer",
+  "hwAirgapSignBody": "Scan this code with your signer, check the transaction on its screen and sign. Then scan the code the signer shows.",
+  "hwAirgapSignScan": "Scan signature",
+  "hwAirgapSignWrong": "That isn't the signature for this request: {error}",
+  "@hwAirgapSignWrong": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "hwStatusCatcardQueued": "Your CatCard has a request waiting: go back to its main menu.",
+  "hwStatusCatcardDeciding": "Confirm on your CatCard.",
+  "hwStatusLedgerReview": "Review and approve on your Ledger.",
+  "hwStatusLedgerOpening": "Opening the {app} app on your Ledger…",
+  "@hwStatusLedgerOpening": {
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "hwErrCatcardMissing": "Plug in your CatCard and unlock it.",
+  "hwErrLedgerMissing": "Connect your Ledger and unlock it.",
+  "hwErrLedgerApp": "Open the {app} app on your Ledger (install it with Ledger Live if it's missing).",
+  "@hwErrLedgerApp": {
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "hwErrDeclined": "Declined on the device.",
+  "hwErrUnsupported": "This device can't sign this yet.",
+  "hwErrUsbPermission": "USB access to the device was not allowed.",
+  "hwErrGeneric": "Hardware wallet error: {error}",
+  "@hwErrGeneric": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "hwVerifyOnDevice": "Verify on device",
+  "hwVerifyCompare": "Compare the address with the one on your device.",
+  "hwVerifyOk": "The device confirmed this address.",
+  "hwVerifyMismatch": "The device shows a different address: don't use this one.",
+  "hwWalletBadge": "Hardware",
+  "hwWalletDetailsNote": "This wallet's keys are on your hardware device. Backups, passwords and recovery phrases don't apply: to restore it, add the device again."
 }

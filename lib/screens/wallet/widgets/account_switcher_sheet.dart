@@ -8,6 +8,7 @@ import 'package:libwallet/libwallet.dart' show SigningKey;
 import 'package:provider/provider.dart';
 
 import '../../../l10n/l10n.dart';
+import '../add_hardware_wallet_screen.dart';
 import '../../../services/wallet/logical_wallet.dart';
 import '../../../services/wallet/unified_account.dart';
 import '../../../services/wallet_service.dart';
@@ -18,7 +19,6 @@ import '../../../utils/context_extensions.dart';
 import '../create_account_screen.dart';
 import '../inapp_import_private_key_screen.dart';
 import 'account_switcher_view_model.dart';
-import 'catcard_pairing_sheet.dart';
 import 'sign_sheet.dart';
 
 enum _AddAccountChoice { create, importPrivateKey }
@@ -178,7 +178,6 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
         final current = wallet.currentAccount;
         final target = addAccountTarget(accounts, current);
         final showMwaConnect = Platform.isAndroid && !wallet.mwa.isConnected;
-        final showCatCardConnect = !wallet.catcard.isConnected;
         final groups = buildAccountGroups(
           accounts: wallet.accounts,
           wallets: wallet.accountsService.walletsById.values,
@@ -187,9 +186,9 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
           walletGroups: wallet.accountsService.walletGroups,
         );
         _initializeExpansion(groups, current);
-        final mwaAccounts = accounts
-            .where((account) => account.isExternal)
-            .toList();
+        // Hardware accounts are libwallet wallets: they list in their wallet
+        // group, not here.
+        final mwaAccounts = accounts.where((account) => account.isMwa).toList();
         return SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -323,37 +322,22 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
                             }
                           },
                         ),
-                      if (showCatCardConnect) ...[
-                        const SizedBox(height: 8),
-                        OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: TibaneColors.orange,
-                            side: const BorderSide(color: TibaneColors.orange),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
+                      _ActionTile(
+                        icon: Icons.usb,
+                        label: l10n.hwAddTitle,
+                        onTap: () {
+                          final navigator = Navigator.of(context);
+                          navigator.pop();
+                          unawaited(
+                            navigator.push(
+                              MaterialPageRoute(
+                                builder: (_) => const AddHardwareWalletScreen(),
+                              ),
                             ),
-                            minimumSize: const Size(0, 48),
-                          ),
-                          onPressed: wallet.catcard.isConnecting
-                              ? null
-                              : () {
-                                  final navigator = Navigator.of(context);
-                                  navigator.pop();
-                                  unawaited(
-                                    showCatCardConnectDialog(
-                                      navigator.context,
-                                      wallet,
-                                    ),
-                                  );
-                                },
-                          child: Text(
-                            l10n.accountSwitcherConnectCatCard,
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ],
-                      if (current?.isExternal ?? false)
+                          );
+                        },
+                      ),
+                      if (current?.isMwa ?? false)
                         _ActionTile(
                           icon: Icons.logout,
                           label: l10n.accountSwitcherDisconnect,

@@ -6,9 +6,12 @@ import 'package:libwallet/libwallet.dart' show SigningKey;
 import 'package:provider/provider.dart';
 
 import '../../../l10n/l10n.dart';
+import '../../../services/hardware/hardware_wallet_service.dart';
+import '../../../services/wallet/hardware_wallet.dart';
 import '../../../services/wallet/signing.dart';
 import '../../../services/wallet_service.dart';
 import '../inapp_unlock_screen.dart';
+import 'hardware_status.dart';
 import 'sign_sheet.dart';
 import '../../../utils/context_extensions.dart';
 
@@ -71,6 +74,32 @@ Future<List<SigningKey>?> collectSigningKeys(
   if (wallet == null) {
     _toast(context, l10n.authSignNoWallet);
     return null;
+  }
+  final hardware = hardwareKindOf(wallet);
+  if (hardware != null) {
+    // A hardware wallet holds no keys here: libwallet has the device sign
+    // when the signing call names no Keys. Get the device ready first.
+    final service = context.read<WalletService>();
+    try {
+      await service.hardware.prepareToSign(
+        hardware,
+        service.currentAccount?.chain,
+      );
+    } on HardwareWalletException catch (e) {
+      if (context.mounted) _toast(context, hardwareErrorText(context, e));
+      return null;
+    } catch (e) {
+      if (context.mounted) _toast(context, hardwareErrorText(context, e));
+      return null;
+    }
+    if (!context.mounted) return null;
+    if (sourceContext != lw.signingContext) {
+      _toast(context, l10n.walletOperationChanged);
+      return null;
+    }
+    final none = <SigningKey>[];
+    lw.registerSigningAuthorization(none, sourceContext);
+    return none;
   }
   if (!canAssembleThreshold(wallet)) {
     _promptSetUp(context, wallet.id, l10n.authSignNotSetUp);

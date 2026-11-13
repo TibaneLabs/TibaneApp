@@ -30,8 +30,10 @@
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Tibane uses Face ID to unlock the app and authorize sensitive wallet actions on this device.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Tibane uses Bluetooth only to connect to a Ledger hardware wallet that you choose, so it can read your accounts and ask the Ledger to sign. Bluetooth is not used otherwise.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Tibane needs camera access only when you choose to scan a device-transfer QR code to move a wallet from another device. The camera is not used otherwise.</string>
+	<string>Tibane uses the camera only when you choose to scan a QR code: a device-transfer code to move a wallet from another device, or the codes an air-gapped hardware wallet shows. The camera is not used otherwise.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Tibane needs access to your photo library only when you choose to import a wallet backup that was saved there. The app does not read photos otherwise.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

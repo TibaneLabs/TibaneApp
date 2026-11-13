@@ -5,10 +5,12 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../l10n/l10n.dart';
+import '../../services/wallet/hardware_wallet.dart';
 import '../../services/wallet/unified_account.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import 'btc_addresses_screen.dart';
+import 'widgets/hardware_status.dart';
 import '../../utils/context_extensions.dart';
 
 class ReceiveScreen extends StatefulWidget {
@@ -206,11 +208,109 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                     ),
                   ),
                 ),
+                if (_verifiable(wallet.currentAccount)) ...[
+                  const SizedBox(height: 16),
+                  _VerifyOnDeviceButton(
+                    account: wallet.currentAccount!,
+                    address: addr,
+                  ),
+                ],
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A CatCard or Ledger can show the account's address on its own screen.
+bool _verifiable(UnifiedAccount? account) {
+  final kind = account?.hardware;
+  return kind != null &&
+      hardwareCanShowAddress(kind) &&
+      account!.accountId != null;
+}
+
+/// "Verify on device": the device displays the address it derives so the
+/// person can check this screen shows the device's own address.
+class _VerifyOnDeviceButton extends StatefulWidget {
+  const _VerifyOnDeviceButton({required this.account, required this.address});
+
+  final UnifiedAccount account;
+  final String address;
+
+  @override
+  State<_VerifyOnDeviceButton> createState() => _VerifyOnDeviceButtonState();
+}
+
+class _VerifyOnDeviceButtonState extends State<_VerifyOnDeviceButton> {
+  bool _busy = false;
+  String? _result;
+  bool _ok = false;
+
+  Future<void> _verify() async {
+    final l10n = context.l10n;
+    final hw = context.read<WalletService>().hardware;
+    setState(() {
+      _busy = true;
+      _result = l10n.hwVerifyCompare;
+      _ok = false;
+    });
+    try {
+      final shown = await hw.showAddressOnDevice(
+        widget.account.hardware!,
+        widget.account.accountId!,
+        widget.account.chain,
+      );
+      if (!mounted) return;
+      final same = shown.toLowerCase() == widget.address.toLowerCase();
+      setState(() {
+        _ok = same;
+        _result = same ? l10n.hwVerifyOk : l10n.hwVerifyMismatch;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _ok = false;
+        _result = hardwareErrorText(context, e);
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _verify,
+          icon: _busy
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.verified_user_outlined, size: 18),
+          label: Text(context.l10n.hwVerifyOnDevice),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: TibaneColors.orange,
+            side: const BorderSide(color: TibaneColors.orange),
+          ),
+        ),
+        if (_result != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _result!,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _busy || _ok
+                  ? TibaneColors.textMuted
+                  : TibaneColors.orange,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

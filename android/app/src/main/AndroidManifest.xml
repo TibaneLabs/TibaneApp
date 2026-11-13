@@ -5,6 +5,18 @@
          USB host (CatCardUsb.kt). Optional, so phones without host mode still
          install. -->
     <uses-feature android:name="android.hardware.usb.host" android:required="false"/>
+    <!-- Ledger over Bluetooth LE (flutter_blue_plus): scanning for and connecting
+         to a Ledger the user picks. Scan results are never used for location.
+         Android 11 and older need the legacy permissions (and location, which
+         the OS required for any BLE scan). Optional, so phones without BLE
+         still install. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30"/>
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false"/>
     <application
         android:label="Tibane"
         android:name="${applicationName}"
@@ -41,7 +53,7 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="tibane" android:host="pair"/>
             </intent-filter>
-            <!-- Plugging a CatCard in offers to open the app; the matching
+            <!-- Plugging a CatCard or a Ledger in offers to open the app; the matching
                  device gets its USB permission remembered (device_filter.xml). -->
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"/>

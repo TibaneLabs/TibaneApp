@@ -162,7 +162,7 @@ void main() {
           externalSolana: true,
         ),
         'https://solscan.io/account/$_owner',
-        reason: 'CatCard and MWA must ignore the inactive in-app network',
+        reason: 'MWA must ignore the inactive in-app network',
       );
     },
   );

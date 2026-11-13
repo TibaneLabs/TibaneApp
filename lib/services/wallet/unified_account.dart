@@ -1,9 +1,12 @@
 import 'package:libwallet/libwallet.dart'
     show Account, Network, NetworkType, Wallet;
+import 'hardware_wallet.dart';
 import 'wallet_export_format.dart' show isNormalMnemonicWallet;
 
-/// Which backend owns / signs for an account.
-enum AccountBackend { inapp, mwa, catcard }
+/// Which backend owns / signs for an account. Hardware wallets (CatCard,
+/// Ledger, air-gapped) are libwallet wallets, so their accounts are [inapp]
+/// with [UnifiedAccount.hardware] set.
+enum AccountBackend { inapp, mwa }
 
 /// One app-level account spanning both backends (in-app MPC + external MWA/Seed
 /// Vault) and every chain — the unit the account switcher and `WalletService`'s
@@ -46,6 +49,10 @@ class UnifiedAccount {
   final String? networkSymbol;
   final bool isMainWalletContext;
 
+  /// Set when the account lives on a hardware signer: the phone holds only
+  /// its public key and the device signs.
+  final HardwareKind? hardware;
+
   const UnifiedAccount({
     required this.backend,
     required this.chain,
@@ -64,27 +71,24 @@ class UnifiedAccount {
     this.networkName,
     this.networkSymbol,
     this.isMainWalletContext = false,
+    this.hardware,
   });
 
   bool get isInApp => backend == AccountBackend.inapp;
   bool get isMwa => backend == AccountBackend.mwa;
-  bool get isCatCard => backend == AccountBackend.catcard;
 
-  /// Signed outside the app: Seed Vault / MWA, or a CatCard over USB.
-  bool get isExternal => isMwa || isCatCard;
+  /// On a hardware signer (CatCard, Ledger, air-gapped).
+  bool get isHardware => hardware != null;
+
+  /// Signed outside the app: Seed Vault / MWA, or a hardware wallet.
+  bool get isExternal => isMwa || isHardware;
   bool get isSolana => chain == 'solana';
 
   bool get isVirtual => idOverride != null;
 
   /// Stable identity: in-app → `accountId`; virtual in-app contexts can
   /// override this; MWA → `"mwa:<address>"`.
-  String get id =>
-      idOverride ??
-      (isInApp
-          ? accountId!
-          : isCatCard
-          ? 'catcard:$address'
-          : 'mwa:$address');
+  String get id => idOverride ?? (isInApp ? accountId! : 'mwa:$address');
 
   @override
   String toString() => 'UnifiedAccount($id, $backend, $chain, "$label")';
@@ -92,9 +96,6 @@ class UnifiedAccount {
 
 /// Label shown for the external Seed Vault account.
 const String mwaAccountLabel = 'External (Seed Vault)';
-
-/// Label shown for the CatCard hardware-wallet account.
-const String catCardAccountLabel = 'CatCard (USB)';
 
 class BitcoinNetworkContext {
   final String chain;
@@ -223,6 +224,11 @@ bool isUsableAccount(Account account, Wallet? wallet) {
   if (account.type == 'ethereum' && !account.address.startsWith('0x')) {
     return false;
   }
+  // A hardware wallet mixes curves (each account records its own), so the
+  // curve check below does not apply; keep the chains the app has screens for.
+  if (isHardwareWallet(wallet)) {
+    return kHardwareAccountTypes.contains(account.type);
+  }
   final curve = wallet.curve;
   if (account.type == 'bitcoin' && curve == 'secp256k1') return true;
   if (!allowedAccountTypesForCurve(curve).contains(account.type)) {
@@ -245,7 +251,6 @@ List<UnifiedAccount> buildUnifiedAccounts({
   required List<Account> inappAccounts,
   required Map<String, Wallet> walletsById,
   String? mwaAddress,
-  String? catCardAddress,
   String? currentAccountId,
   NetworkType? currentNetworkType,
   String? currentNetworkChainId,
@@ -274,6 +279,38 @@ List<UnifiedAccount> buildUnifiedAccounts({
     // Skip phantom accounts (curve/type mismatch, non-0x EVM address, or
     // "N/A" — see [isUsableAccount]); they can't be displayed or transacted on.
     if (!isUsableAccount(a, w) || w == null) continue;
+    final hardware = hardwareKindOf(w);
+    if (hardware != null) {
+      // A hardware wallet's Bitcoin account is Bitcoin only (no BCH/DOGE/LTC
+      // contexts: the device's keys are for the paths it shared), and it is
+      // shown as its own account instead of backing an EVM one.
+      out.add(
+        UnifiedAccount(
+          backend: AccountBackend.inapp,
+          chain: a.type,
+          address: a.type == 'bitcoin'
+              ? (bitcoinAddressesByAccountId[a.id] ?? a.address)
+              : a.address,
+          label: _accountLabel(
+            walletName: w.name,
+            accountName: a.name,
+            accountIndex: a.index,
+            fallbackChain: a.type,
+          ),
+          walletName: w.name,
+          accountName: _displayAccountName(a.name, a.type, a.index),
+          accountIndex: a.index,
+          createdAt: a.created,
+          walletId: a.wallet,
+          accountId: a.id,
+          curve: a.type == 'solana' ? 'ed25519' : 'secp256k1',
+          networkChainId: a.type == 'bitcoin' ? 'bitcoin' : null,
+          isMainWalletContext: a.index == 0,
+          hardware: hardware,
+        ),
+      );
+      continue;
+    }
     final preferredChain = preferredChainsByAccountId[a.id];
     final walletName = w.name;
     final accountName = _displayAccountName(a.name, a.type, a.index);
@@ -381,17 +418,6 @@ List<UnifiedAccount> buildUnifiedAccounts({
       ),
     );
   }
-  if (catCardAddress != null && catCardAddress.isNotEmpty) {
-    out.add(
-      UnifiedAccount(
-        backend: AccountBackend.catcard,
-        chain: 'solana',
-        address: catCardAddress,
-        label: catCardAccountLabel,
-        accountName: catCardAccountLabel,
-      ),
-    );
-  }
   return out;
 }
 
@@ -469,7 +495,6 @@ UnifiedAccount? resolveCurrentAccount({
   required List<UnifiedAccount> accounts,
   required String? savedId,
   required bool preferMwa,
-  bool preferCatCard = false,
   required String? activeInAppAccountId,
   NetworkType? activeNetworkType,
   String? activeNetworkChainId,
@@ -482,10 +507,6 @@ UnifiedAccount? resolveCurrentAccount({
   if (preferMwa) {
     for (final a in accounts) {
       if (a.isMwa) return a;
-    }
-  } else if (preferCatCard) {
-    for (final a in accounts) {
-      if (a.isCatCard) return a;
     }
   } else {
     if (activeNetworkType != null) {
@@ -532,9 +553,13 @@ UnifiedAccount? addAccountTarget(
   List<UnifiedAccount> accounts,
   UnifiedAccount? current,
 ) {
-  if (current != null && current.isInApp) return current;
+  // A hardware wallet's accounts are the keys the device shared; the app
+  // cannot derive more on it.
+  if (current != null && current.isInApp && !current.isHardware) {
+    return current;
+  }
   for (final a in accounts) {
-    if (a.isInApp) return a;
+    if (a.isInApp && !a.isHardware) return a;
   }
   return null;
 }

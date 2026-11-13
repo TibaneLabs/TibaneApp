@@ -24,6 +24,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     private var pendingResult: MethodChannel.Result? = null
     private var catCard: CatCardUsb? = null
+    private var ledger: LedgerUsb? = null
     private var pendingScenario: LocalAssociationScenario? = null
     private var pendingAction: String? = null
     private var pendingArgs: Map<String, Any?>? = null
@@ -33,6 +34,8 @@ class MainActivity : FlutterFragmentActivity() {
 
         // CatCard hardware wallet over USB-C (CCID reader); see CatCardUsb.kt.
         catCard = CatCardUsb(this).also { it.register(flutterEngine.dartExecutor.binaryMessenger) }
+        // Ledger over USB-OTG (HID); see LedgerUsb.kt. Bluetooth goes through flutter_blue_plus.
+        ledger = LedgerUsb(this).also { it.register(flutterEngine.dartExecutor.binaryMessenger) }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -363,6 +366,8 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onDestroy() {
         catCard?.dispose()
         catCard = null
+        ledger?.dispose()
+        ledger = null
         super.onDestroy()
     }
 }

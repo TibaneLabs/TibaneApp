@@ -54,7 +54,7 @@ void main() {
     networks = NetworkApi(local);
     accounts = AccountApi(local);
     transactions = TransactionApi(local);
-    expect(libwalletPackageVersion, '0.5.8');
+    expect(libwalletPackageVersion, '0.5.9');
     expect(await InfoApi(local).version(), libwalletPackageVersion);
     for (final network in await networks.list()) {
       await networks.update(network.id, rpc: local.rpc);

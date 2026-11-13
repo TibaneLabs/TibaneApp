@@ -26,7 +26,10 @@ class _LocalRpc implements Transport {
 void main() {
   test('official native backfill loads a swap-shaped Solana transaction', () async {
     const owner = '11111111111111111111111111111111';
-    const signature = 'fixture-confirmed-swap';
+    // libwallet 0.5.9 keeps only rows whose id is a real Solana signature
+    // (base58 of 64 bytes).
+    const signature =
+        '4S55ApgNWn8YKQL5J2uuxtfZrYXQZqBs8BUJTqGv3us4cAefggxxMLavbor7u47x4BfUhDRkfFBpW2rJTU6YMxux';
     final directory = await Directory.systemTemp.createTemp('tibane-history-');
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final methods = <String>[];

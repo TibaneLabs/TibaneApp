@@ -3,4 +3,7 @@
      in offers to open the app, and the USB permission is remembered. -->
 <resources>
     <usb-device vendor-id="14834" product-id="1025" />
+    <!-- Any Ledger (vendor id 0x2C97; the product id varies by model and by
+         the interfaces enabled, so match on the vendor only). -->
+    <usb-device vendor-id="11415" />
 </resources>

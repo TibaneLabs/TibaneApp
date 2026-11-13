@@ -5,9 +5,9 @@ import 'package:libwallet/libwallet.dart'
     show Account, AddressFormat, Wallet, SigningKey;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../catcard/catcard_wallet_backend.dart';
 import 'libwallet_backend.dart';
 import 'mwa_wallet_backend.dart';
+import 'hardware_wallet.dart';
 import 'unified_account.dart';
 import 'wallet_group_store.dart';
 import 'wallet_export_format.dart' show isNormalMnemonicWallet;
@@ -29,12 +29,10 @@ import 'wallet_export_format.dart' show isNormalMnemonicWallet;
 /// [WalletService], which drives [refresh]/[setCurrent] at the right moments
 /// and reconciles kind + balances afterwards.
 class AccountsService extends ChangeNotifier {
-  AccountsService(this._libwallet, this._mwa, {CatCardWalletBackend? catcard})
-    : _catcard = catcard;
+  AccountsService(this._libwallet, this._mwa);
 
   final LibwalletBackend _libwallet;
   final MwaWalletBackend _mwa;
-  final CatCardWalletBackend? _catcard;
 
   static const _prefsCurrentAccountId = 'current_account_id';
   static const _prefsAccountPreferredChains = 'account_preferred_chains';
@@ -83,10 +81,7 @@ class AccountsService extends ChangeNotifier {
   /// wallets) + the connected MWA account, dropping phantom accounts, and
   /// resolve [current]. [preferMwa] mirrors WalletService's active backend so
   /// the resolved current matches the signer. Best-effort.
-  Future<void> refresh({
-    required bool preferMwa,
-    bool preferCatCard = false,
-  }) async {
+  Future<void> refresh({required bool preferMwa}) async {
     try {
       final client = await _libwallet.ensureClient();
       final prefs = await SharedPreferences.getInstance();
@@ -171,14 +166,12 @@ class AccountsService extends ChangeNotifier {
         prefs.getString(_prefsAccountPreferredChains),
       );
       final mwaAddr = _mwa.isConnected ? _mwa.publicKey : null;
-      final catAddr = (_catcard?.isConnected ?? false)
-          ? _catcard!.publicKey
-          : null;
+      final hardwareBitcoin = await _resolveHardwareBitcoin(filtered, wallets);
       _accounts = buildUnifiedAccounts(
         inappAccounts: filtered,
         walletsById: wallets,
         mwaAddress: mwaAddr,
-        catCardAddress: catAddr,
+        bitcoinAddressesByAccountId: hardwareBitcoin,
         currentAccountId: _libwallet.accountId,
         currentNetworkType: _libwallet.currentNetwork?.type,
         currentNetworkChainId: _libwallet.currentNetwork?.chainId,
@@ -192,7 +185,6 @@ class AccountsService extends ChangeNotifier {
         _accounts,
         prefs.getString(_prefsCurrentAccountId),
         preferMwa: preferMwa,
-        preferCatCard: preferCatCard,
       );
       notifyListeners();
     } catch (e) {
@@ -206,16 +198,65 @@ class AccountsService extends ChangeNotifier {
     List<UnifiedAccount> accounts,
     String? savedId, {
     required bool preferMwa,
-    bool preferCatCard = false,
   }) => resolveCurrentAccount(
     accounts: accounts,
     savedId: savedId,
     preferMwa: preferMwa,
-    preferCatCard: preferCatCard,
     activeInAppAccountId: _libwallet.accountId,
     activeNetworkType: _libwallet.currentNetwork?.type,
     activeNetworkChainId: _libwallet.currentNetwork?.chainId,
   );
+
+  /// The receive address of each hardware wallet's Bitcoin account on Bitcoin
+  /// mainnet. libwallet renders an account's address for the current network,
+  /// so it is asked for explicitly (as for the software Bitcoin contexts).
+  Future<Map<String, String>> _resolveHardwareBitcoin(
+    List<Account> accounts,
+    Map<String, Wallet> walletsById,
+  ) async {
+    final candidates = accounts
+        .where(
+          (a) => a.type == 'bitcoin' && isHardwareWallet(walletsById[a.wallet]),
+        )
+        .toList();
+    if (candidates.isEmpty) return const {};
+    String? networkId;
+    try {
+      final networks = await _libwallet.listNetworks();
+      networkId = bitcoinContextsFromNetworks(
+        networks,
+      ).where((c) => c.chain == 'bitcoin').firstOrNull?.networkId;
+    } catch (e) {
+      debugPrint('AccountsService: could not list networks: $e');
+    }
+    if (networkId == null) return const {};
+    final client = await _libwallet.ensureClient();
+    final out = <String, String>{};
+    for (final account in candidates) {
+      final cacheKey = '$networkId:${account.id}';
+      final cached = _bitcoinAddressCache[cacheKey];
+      if (cached != null && cached.isNotEmpty) {
+        out[account.id] = cached;
+        continue;
+      }
+      try {
+        final formats = await client.accounts.addressFormats(
+          account.id,
+          network: networkId,
+        );
+        final address = _pickDefaultBitcoinFamilyAddress(formats.formats);
+        if (address != null && address.isNotEmpty) {
+          out[account.id] = address;
+          _bitcoinAddressCache[cacheKey] = address;
+        }
+      } catch (e) {
+        debugPrint(
+          'AccountsService: no Bitcoin address for hardware ${account.id}: $e',
+        );
+      }
+    }
+    return out;
+  }
 
   Future<_BitcoinFamilyResolution> _resolveBitcoinFamily(
     List<Account> accounts,

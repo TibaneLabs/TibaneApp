@@ -579,6 +579,20 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   // single engine.
   Future<LibwalletClient>? _clientInit;
 
+  final List<void Function(LibwalletClient)> _clientReadyHooks = [];
+
+  /// Run [hook] with the libwallet client as soon as it exists (now, when it
+  /// already does). Used to attach event relays — hardware-wallet bridges —
+  /// that must be in place before any signing call reaches the device.
+  void onClientReady(void Function(LibwalletClient client) hook) {
+    final existing = _client;
+    if (existing != null) {
+      hook(existing);
+    } else {
+      _clientReadyHooks.add(hook);
+    }
+  }
+
   Future<LibwalletClient> _getClient() {
     final existing = _client;
     if (existing != null) return Future.value(existing);
@@ -605,6 +619,14 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         debugPrint('[libwallet:${e.level}] ${e.message}');
       });
       _client = client;
+      for (final hook in List.of(_clientReadyHooks)) {
+        try {
+          hook(client);
+        } catch (e) {
+          debugPrint('libwallet client hook failed: $e');
+        }
+      }
+      _clientReadyHooks.clear();
       return client;
     } catch (e) {
       // Let a later call retry a failed initialization instead of caching

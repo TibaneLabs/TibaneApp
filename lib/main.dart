@@ -18,7 +18,7 @@ import 'screens/swap_screen.dart';
 import 'screens/wallet/biometric_migration_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
 import 'screens/wallet/activity_screen.dart';
-import 'screens/wallet/widgets/catcard_pairing_sheet.dart';
+import 'screens/wallet/widgets/hardware_status.dart';
 import 'services/balances_store.dart';
 import 'services/app_lock_controller.dart';
 import 'services/browser_preferences.dart';
@@ -140,8 +140,9 @@ class TibaneApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) {
             final wallet = WalletService();
-            // CatCard pairing sheet + progress, reachable from any screen.
-            installCatCardUi(wallet, rootNavigatorKey);
+            // Hardware wallets: CatCard pairing, Ledger picker, air-gapped QR
+            // requests and device prompts, reachable from any screen.
+            installHardwareWalletUi(wallet, rootNavigatorKey);
             unawaited(wallet.tryRestore());
             return wallet;
           },
