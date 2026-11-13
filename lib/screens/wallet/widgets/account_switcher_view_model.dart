@@ -152,7 +152,7 @@ List<String> creationChains(LogicalWallet group) => group.chains
     .where(
       (chain) =>
           (chain == 'solana' || chain == 'ethereum') &&
-          group.walletForChain(chain) != null,
+          group.walletForChain(chain, forDerivation: true) != null,
     )
     .toList();
 

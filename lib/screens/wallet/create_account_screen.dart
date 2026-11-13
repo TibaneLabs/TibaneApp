@@ -106,7 +106,10 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
 
   void _submit() {
     final name = _nameCtrl.text.trim();
-    final walletForChain = _selectedGroup.walletForChain(_selectedChain);
+    final walletForChain = _selectedGroup.walletForChain(
+      _selectedChain,
+      forDerivation: true,
+    );
     if (name.isEmpty || walletForChain == null) {
       Navigator.pop(context);
       return;

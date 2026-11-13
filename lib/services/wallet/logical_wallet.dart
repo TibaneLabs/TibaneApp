@@ -3,6 +3,9 @@ import 'wallet_export_format.dart' show isNormalMnemonicWallet;
 
 enum WalletContentsKind { native, added, imported }
 
+bool supportsDerivedAccounts(Wallet wallet) =>
+    isNormalMnemonicWallet(wallet) || wallet.threshold > 0;
+
 /// User-facing origin for a technical wallet contained in a logical wallet.
 /// Imported private keys are represented by a single-share wallet, while
 /// older additional-account flows may be attached as their own wallet.
@@ -48,7 +51,7 @@ class LogicalWallet {
     return out;
   }
 
-  Wallet? walletForChain(String chain) {
+  Wallet? walletForChain(String chain, {bool forDerivation = false}) {
     final curve = switch (chain) {
       'solana' => 'ed25519',
       'ethereum' ||
@@ -60,7 +63,10 @@ class LogicalWallet {
     };
     if (curve == null) return null;
     for (final wallet in wallets) {
-      if (wallet.curve == curve) return wallet;
+      if (wallet.curve == curve &&
+          (!forDerivation || supportsDerivedAccounts(wallet))) {
+        return wallet;
+      }
     }
     return null;
   }
