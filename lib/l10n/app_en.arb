@@ -1352,7 +1352,7 @@
     }
   },
   "accountSwitcherEmpty": "No accounts yet",
-  "accountSwitcherAddAccount": "Add account",
+  "accountSwitcherAddAccount": "Add New",
   "accountSwitcherExternalAccounts": "External accounts",
   "accountSwitcherAdditionalHeader": "Added accounts",
   "accountSwitcherConnectExternal": "Connect external (Seed Vault)",
@@ -1368,6 +1368,9 @@
   "accountSwitcherAccountName": "Account name",
   "accountSwitcherChain": "Chain",
   "accountAddChoiceTitle": "Add account",
+  "accountAddStandaloneBody": "A private key imports one account. Create a wallet to add derived accounts, or import another account separately.",
+  "accountAddCreateWalletSubtitle": "Set up a new wallet with a recovery phrase or MPC protection.",
+  "accountAddImportAnotherTitle": "Import Another Account",
   "accountAddChoiceBody": "Choose whether to create a new account or import an existing Solana or Ethereum account.",
   "accountAddCreateTitle": "Create New Account",
   "accountAddCreateSubtitle": "Create a new Solana or Ethereum account in one of your Tibane wallets.",

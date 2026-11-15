@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:libwallet/libwallet.dart' show Wallet;
+import 'package:libwallet/libwallet.dart' show Wallet, WalletKey;
 import 'package:tibaneapp/screens/wallet/widgets/account_switcher_view_model.dart';
 import 'package:tibaneapp/services/wallet/logical_wallet.dart';
 import 'package:tibaneapp/services/wallet/unified_account.dart';
@@ -29,17 +29,21 @@ Wallet _wallet({
   String curve = 'ed25519',
   String? name,
   DateTime? created,
+  int threshold = 1,
+  String protocol = '',
+  List<WalletKey> keys = const [],
 }) => Wallet(
   id: id,
   name: name ?? 'W-$id',
   curve: curve,
-  threshold: 1,
+  threshold: threshold,
+  protocol: protocol,
   gen: 0,
   pubkey: '',
   chaincode: '',
   created: created ?? DateTime(2020),
   modified: created ?? DateTime(2020),
-  keys: const [],
+  keys: keys,
 );
 
 void main() {
@@ -75,6 +79,31 @@ void main() {
         _wallet(id: 'evm', curve: 'secp256k1'),
       ]);
       expect(creationChains(group), ['solana', 'ethereum']);
+    });
+
+    test('private keys are never selected as derivation roots', () {
+      final imported = _wallet(id: 'imported', threshold: 0);
+      final seed = _wallet(
+        id: 'seed',
+        created: DateTime(2021),
+        threshold: 0,
+        protocol: 'mnemonic',
+        keys: const [
+          WalletKey(
+            id: 'key',
+            wallet: 'seed',
+            type: 'Password',
+            key: '',
+            gen: 0,
+          ),
+        ],
+      );
+      final importedOnly = LogicalWallet([imported]);
+      expect(creationChains(importedOnly), isEmpty);
+      expect(importedOnly.walletForChain('solana'), imported);
+      final mixed = LogicalWallet([imported, seed]);
+      expect(creationChains(mixed), ['solana']);
+      expect(mixed.walletForChain('solana', forDerivation: true), seed);
     });
   });
 

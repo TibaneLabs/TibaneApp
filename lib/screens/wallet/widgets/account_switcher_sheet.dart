@@ -18,10 +18,11 @@ import '../../../widgets/wallet_error_display.dart';
 import '../../../utils/context_extensions.dart';
 import '../create_account_screen.dart';
 import '../inapp_import_private_key_screen.dart';
+import '../wallet_create_options_screen.dart';
 import 'account_switcher_view_model.dart';
 import 'sign_sheet.dart';
 
-enum _AddAccountChoice { create, importPrivateKey }
+enum _AddAccountChoice { create, createWallet, importPrivateKey }
 
 /// Open the account switcher (Atonline-parity §4.1/§4.2, Phase 4b-2): the unified
 /// list of in-app accounts (across all wallets) + the connected MWA account,
@@ -373,16 +374,31 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
       context.showSnackBar(SnackBar(content: Text(l10n.accountsEmptyTitle)));
       return;
     }
+    final groups = allGroups
+        .where((group) => creationChains(group).isNotEmpty)
+        .toList();
     final choice = await showDialog<_AddAccountChoice>(
       context: context,
-      builder: (_) => const _AddAccountChoiceDialog(),
+      builder: (_) => _AddAccountChoiceDialog(canDerive: groups.isNotEmpty),
     );
     if (choice == null || !context.mounted) return;
+    if (choice == _AddAccountChoice.createWallet) {
+      final created = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(builder: (_) => const WalletCreateOptionsScreen()),
+      );
+      if (created == true && context.mounted) {
+        await wallet.refreshAccounts();
+        if (context.mounted) Navigator.of(context).pop();
+      }
+      return;
+    }
     if (choice == _AddAccountChoice.importPrivateKey) {
       final imported = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
-          builder: (_) =>
-              InAppImportPrivateKeyScreen(groups: allGroups, target: target),
+          builder: (_) => InAppImportPrivateKeyScreen(
+            groups: groups.isEmpty ? const [] : allGroups,
+            target: target,
+          ),
         ),
       );
       if (imported == true && context.mounted) {
@@ -392,9 +408,6 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
       return;
     }
 
-    final groups = allGroups
-        .where((group) => creationChains(group).isNotEmpty)
-        .toList();
     if (groups.isEmpty) {
       context.showSnackBar(SnackBar(content: Text(l10n.accountsEmptyTitle)));
       return;
@@ -410,10 +423,14 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
     if (!context.mounted) return;
     List<SigningKey>? keys;
     final targetWallet = wallet.accountsService.walletsById[result.walletId];
-    if (targetWallet?.protocol == 'mnemonic') {
+    if (targetWallet == null || !supportsDerivedAccounts(targetWallet)) {
+      showWalletError(context, l10n.accountSwitcherAddFailed);
+      return;
+    }
+    if (targetWallet.protocol == 'mnemonic') {
       keys = await showSignSheet(
         context,
-        wallet: targetWallet!,
+        wallet: targetWallet,
         normalBiometrics: wallet.libwallet.normalWalletBiometrics,
         readStoreKey: (_, _) async => null,
         title: l10n.accountAddCreateTitle,
@@ -442,41 +459,50 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
 }
 
 class _AddAccountChoiceDialog extends StatelessWidget {
-  const _AddAccountChoiceDialog();
+  const _AddAccountChoiceDialog({required this.canDerive});
+
+  final bool canDerive;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return AlertDialog(
       backgroundColor: TibaneColors.card,
-      title: Text(l10n.accountAddChoiceTitle),
+      scrollable: true,
+      title: Text(l10n.accountSwitcherAddAccount),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            l10n.accountAddChoiceBody,
-            style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
-          ),
-          const SizedBox(height: 16),
           _ChoiceTile(
             icon: Icons.add_circle_outline,
-            title: l10n.accountAddCreateTitle,
-            subtitle: l10n.accountAddCreateSubtitle,
-            onTap: () => Navigator.pop(context, _AddAccountChoice.create),
+            title: canDerive
+                ? l10n.accountAddCreateTitle
+                : l10n.inappCreateButton,
+            onTap: () => Navigator.pop(
+              context,
+              canDerive
+                  ? _AddAccountChoice.create
+                  : _AddAccountChoice.createWallet,
+            ),
           ),
           const SizedBox(height: 10),
           _ChoiceTile(
             icon: Icons.key_outlined,
-            title: l10n.accountAddImportTitle,
-            subtitle: l10n.accountAddImportSubtitle,
+            title: canDerive
+                ? l10n.accountAddImportTitle
+                : l10n.accountAddImportAnotherTitle,
             onTap: () =>
                 Navigator.pop(context, _AddAccountChoice.importPrivateKey),
           ),
         ],
       ),
       actions: [
-        TextButton(
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: TibaneColors.textDim,
+            foregroundColor: TibaneColors.text,
+          ),
           onPressed: () => Navigator.pop(context),
           child: Text(l10n.actionCancel),
         ),
@@ -488,18 +514,17 @@ class _AddAccountChoiceDialog extends StatelessWidget {
 class _ChoiceTile extends StatelessWidget {
   final IconData icon;
   final String title;
-  final String subtitle;
   final VoidCallback onTap;
 
   const _ChoiceTile({
     required this.icon,
     required this.title,
-    required this.subtitle,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final titleStyle = DefaultTextStyle.of(context).style;
     return Material(
       color: TibaneColors.darker,
       borderRadius: BorderRadius.circular(8),
@@ -513,27 +538,13 @@ class _ChoiceTile extends StatelessWidget {
               Icon(icon, color: TibaneColors.orange, size: 22),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: TibaneColors.text,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        color: TibaneColors.textMuted,
-                        fontSize: 12,
-                        height: 1.3,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  title,
+                  style: titleStyle.copyWith(
+                    fontSize: (titleStyle.fontSize ?? 14) * 1.15,
+                    color: TibaneColors.text,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               const Icon(

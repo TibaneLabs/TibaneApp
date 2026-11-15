@@ -2387,6 +2387,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   }) async {
     try {
       final client = await ensureClient();
+      if (!supportsDerivedAccounts(await client.wallets.get(walletId))) {
+        throw StateError('Wallet does not support derived accounts');
+      }
       final acct = await client.accounts.create(
         name: name,
         wallet: walletId,
