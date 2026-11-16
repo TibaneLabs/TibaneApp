@@ -8,11 +8,11 @@ import 'package:libwallet/libwallet.dart';
 import 'package:provider/provider.dart';
 import 'package:tibaneapp/l10n/gen/app_localizations.dart';
 import 'package:tibaneapp/screens/wallet/export_private_key_screen.dart';
+import 'package:tibaneapp/services/app_lock_controller.dart';
 import 'package:tibaneapp/services/wallet/libwallet_backend.dart';
 import 'package:tibaneapp/services/wallet/unified_account.dart';
 import 'package:tibaneapp/services/wallet_service.dart';
 import 'package:tibaneapp/theme/tibane_theme.dart';
-import 'package:tibaneapp/widgets/gradient_button.dart';
 
 const _fixture = 'PUBLIC-FIXTURE-NOT-A-REAL-PRIVATE-KEY';
 const _account = UnifiedAccount(
@@ -133,10 +133,28 @@ class _WalletService extends WalletService {
   LibwalletBackend get libwallet => backend;
 }
 
+class _Authenticator implements AppLockAuthenticator {
+  bool approved = true;
+  bool unavailable = false;
+  Completer<bool>? gate;
+  final calls = <AppLockAuthentication>[];
+
+  @override
+  Future<bool> authenticate(String reason, AppLockAuthentication policy) async {
+    calls.add(policy);
+    if (unavailable) throw PlatformException(code: 'unavailable');
+    return gate == null ? approved : await gate!.future;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 Future<_Backend> _pump(
   WidgetTester tester, {
   String language = 'en',
   int threshold = 0,
+  _Authenticator? authenticator,
 }) async {
   tester.view.physicalSize = const Size(750, 1334);
   tester.view.devicePixelRatio = 2;
@@ -157,7 +175,10 @@ Future<_Backend> _pump(
         theme: TibaneTheme.darkTheme,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        home: const ExportPrivateKeyScreen(account: _account),
+        home: ExportPrivateKeyScreen(
+          account: _account,
+          authenticator: authenticator ?? _Authenticator(),
+        ),
       ),
     ),
   );
@@ -172,13 +193,6 @@ Future<void> _authorize(WidgetTester tester) async {
   await tester.ensureVisible(reveal);
   await tester.tap(reveal);
   await tester.pumpAndSettle();
-  final l10n = AppLocalizations.of(
-    tester.element(find.byType(ExportPrivateKeyScreen)),
-  );
-  await tester.tap(find.text(l10n.signSheetKeyDevice));
-  await tester.pumpAndSettle();
-  await tester.tap(find.byType(GradientButton));
-  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -187,7 +201,12 @@ void main() {
     testWidgets('consent and authorization precede reveal in $language', (
       tester,
     ) async {
-      final backend = await _pump(tester, language: language);
+      final auth = _Authenticator();
+      final backend = await _pump(
+        tester,
+        language: language,
+        authenticator: auth,
+      );
       final button = tester.widget<FilledButton>(
         find.byKey(const Key('private-key-export-reveal')),
       );
@@ -195,6 +214,8 @@ void main() {
       expect(backend.transport.exports, 0);
       expect(find.text(_fixture), findsNothing);
       await _authorize(tester);
+      expect(auth.calls, [AppLockAuthentication.deviceOwner]);
+      expect(find.byType(BottomSheet), findsNothing);
       expect(find.text(_fixture), findsOneWidget);
       expect(backend.readWalletId, 'selected-wallet');
       expect(backend.walletId, 'different-active-wallet');
@@ -233,8 +254,46 @@ void main() {
             .value,
         isFalse,
       );
+      await _authorize(tester);
+      expect(auth.calls, List.filled(2, AppLockAuthentication.deviceOwner));
     });
   }
+
+  for (final unavailable in [false, true]) {
+    testWidgets(
+      'failed device authentication does not read or export the key: $unavailable',
+      (tester) async {
+        final auth = _Authenticator()
+          ..approved = false
+          ..unavailable = unavailable;
+        final backend = await _pump(tester, authenticator: auth);
+        await _authorize(tester);
+        expect(auth.calls, [AppLockAuthentication.deviceOwner]);
+        expect(backend.readWalletId, isNull);
+        expect(backend.transport.exports, 0);
+        expect(find.text(_fixture), findsNothing);
+      },
+    );
+  }
+
+  testWidgets('backgrounding invalidates a pending native export', (
+    tester,
+  ) async {
+    final backend = await _pump(tester);
+    final gate = backend.transport.gate = Completer<void>();
+    await tester.tap(find.byKey(const Key('private-key-export-agree')));
+    await tester.pump();
+    final reveal = find.byKey(const Key('private-key-export-reveal'));
+    await tester.ensureVisible(reveal);
+    await tester.tap(reveal);
+    await tester.pump();
+    expect(backend.transport.exports, 1);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text(_fixture), findsNothing);
+  });
 
   testWidgets('MPC accounts cannot reach native export', (tester) async {
     final backend = await _pump(tester, threshold: 1);

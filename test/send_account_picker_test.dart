@@ -45,10 +45,10 @@ UnifiedAccount account(
   networkChainId: networkChainId,
 );
 
-Wallet wallet(String id, String name) => Wallet(
+Wallet wallet(String id, String name, {String curve = 'ed25519'}) => Wallet(
   id: id,
   name: name,
-  curve: 'ed25519',
+  curve: curve,
   threshold: 1,
   gen: 0,
   pubkey: '',
@@ -316,6 +316,57 @@ void main() {
     expect(selected, same(imported));
     expect(selected!.address, imported.address);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shows another wallet by its sidebar name on EVM', (
+    tester,
+  ) async {
+    final sender = account('sender', 'ethereum', address: '0x1234');
+    final recipient = account(
+      'recipient',
+      'ethereum',
+      wallet: 'secondary-evm',
+      address: '0x5678',
+    );
+    final solana = account(
+      'secondary-solana-account',
+      'solana',
+      wallet: 'secondary-solana',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: SendAccountPicker(
+            network: network(NetworkType.evm, '1', 'ETH'),
+            accounts: [sender, recipient, solana],
+            wallets: [
+              wallet('main', 'Main wallet', curve: 'secp256k1'),
+              wallet('secondary-solana', 'Second wallet'),
+              wallet('secondary-evm', 'Technical name', curve: 'secp256k1'),
+            ],
+            walletGroups: const {
+              'secondary-evm': 'secondary',
+              'secondary-solana': 'secondary',
+            },
+            senderAccountId: sender.id,
+            senderAddress: sender.address,
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Second wallet'), findsOneWidget);
+    expect(find.text('Technical name'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('send-recipient-recipient')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('send-recipient-sender')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('send-recipient-secondary-solana-account')),
+      findsNothing,
+    );
   });
 
   for (final locale in ['en', 'pt', 'fr', 'ja']) {

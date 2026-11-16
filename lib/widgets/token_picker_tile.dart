@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../l10n/l10n.dart';
 import '../theme/tibane_theme.dart';
 import 'tibane_card.dart';
 import 'token_icon.dart';
@@ -12,6 +14,7 @@ class TokenPickerTile extends StatelessWidget {
   final String? imageUrl;
   final Widget? trailing;
   final bool framed;
+  final bool verified;
   final VoidCallback onTap;
 
   const TokenPickerTile({
@@ -22,6 +25,7 @@ class TokenPickerTile extends StatelessWidget {
     this.imageUrl,
     this.trailing,
     this.framed = false,
+    this.verified = false,
     required this.onTap,
   });
 
@@ -40,14 +44,24 @@ class TokenPickerTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                name,
-                style: const TextStyle(
-                  color: TibaneColors.text,
-                  fontSize: 17.5,
-                  fontWeight: FontWeight.w600,
-                ),
-                overflow: TextOverflow.ellipsis,
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      name,
+                      style: const TextStyle(
+                        color: TibaneColors.text,
+                        fontSize: 17.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (verified) ...[
+                    const SizedBox(width: 4),
+                    const VerifiedTokenBadge(),
+                  ],
+                ],
               ),
               if (symbol != null)
                 Text(
@@ -82,4 +96,33 @@ class TokenPickerTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class VerifiedTokenBadge extends StatelessWidget {
+  const VerifiedTokenBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: context.l10n.tokenVerified,
+    child: SvgPicture.asset(
+      'assets/icons/verified-orange.svg',
+      colorMapper: const _VerifiedBadgeColors(),
+      width: 16,
+      height: 16,
+    ),
+  );
+}
+
+class _VerifiedBadgeColors extends ColorMapper {
+  const _VerifiedBadgeColors();
+
+  @override
+  Color substitute(
+    String? id,
+    String elementName,
+    String attributeName,
+    Color color,
+  ) => elementName == 'path' && attributeName == 'fill'
+      ? TibaneColors.orange
+      : color;
 }

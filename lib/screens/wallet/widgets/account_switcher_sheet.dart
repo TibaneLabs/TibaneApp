@@ -176,11 +176,16 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
     return Consumer<WalletService>(
       builder: (context, wallet, _) {
         final accounts = wallet.accounts;
+        final visibleAccounts = accounts
+            .where(
+              (account) => !wallet.accountsService.isHiddenInSidebar(account),
+            )
+            .toList();
         final current = wallet.currentAccount;
         final target = addAccountTarget(accounts, current);
         final showMwaConnect = Platform.isAndroid && !wallet.mwa.isConnected;
         final groups = buildAccountGroups(
-          accounts: wallet.accounts,
+          accounts: visibleAccounts,
           wallets: wallet.accountsService.walletsById.values,
           unnamedLabel: l10n.walletsMgmtUnnamed,
           attachedWalletParents: wallet.accountsService.attachedWalletParents,
@@ -285,7 +290,7 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
                           ),
                         const SizedBox(height: 10),
                       ],
-                      if (accounts.isEmpty)
+                      if (visibleAccounts.isEmpty)
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           child: Text(
@@ -377,9 +382,16 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
     final groups = allGroups
         .where((group) => creationChains(group).isNotEmpty)
         .toList();
+    final targetWalletId = target.walletId;
+    final selectedWallet = wallet.accountsService.walletsById[targetWalletId];
+    final canDerive =
+        targetWalletId != null &&
+        selectedWallet != null &&
+        supportsDerivedAccounts(selectedWallet) &&
+        groups.any((group) => group.containsWallet(targetWalletId));
     final choice = await showDialog<_AddAccountChoice>(
       context: context,
-      builder: (_) => _AddAccountChoiceDialog(canDerive: groups.isNotEmpty),
+      builder: (_) => _AddAccountChoiceDialog(canDerive: canDerive),
     );
     if (choice == null || !context.mounted) return;
     if (choice == _AddAccountChoice.createWallet) {
@@ -408,7 +420,7 @@ class _AccountSwitcherSheetState extends State<AccountSwitcherSheet> {
       return;
     }
 
-    if (groups.isEmpty) {
+    if (!canDerive) {
       context.showSnackBar(SnackBar(content: Text(l10n.accountsEmptyTitle)));
       return;
     }
@@ -596,7 +608,7 @@ class _WalletSectionHeader extends StatelessWidget {
                 child: Text(
                   text,
                   style: monoStyle(
-                    fontSize: 16,
+                    fontSize: 18.4,
                     color: TibaneColors.text,
                   ).copyWith(fontWeight: FontWeight.w700),
                 ),
@@ -894,26 +906,32 @@ class _PrimaryActionTile extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
           onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: TibaneColors.black, size: 19),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: TibaneColors.black,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
+          child: Ink(
+            decoration: BoxDecoration(
+              gradient: TibaneColors.primaryButtonGradient,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, color: TibaneColors.black, size: 19),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: TibaneColors.black,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

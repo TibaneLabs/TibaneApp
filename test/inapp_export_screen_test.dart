@@ -385,7 +385,12 @@ void main() {
       tester,
     ) async {
       final transport = _Transport();
-      final l10n = await _pump(tester, transport, language: language);
+      final l10n = await _pump(
+        tester,
+        transport,
+        language: language,
+        walletIds: {'native-sol', 'native-eth', 'imported'},
+      );
       expect(find.text('Main wallet'), findsOneWidget);
       expect(find.text(l10n.exportBackupScopeNotice), findsOneWidget);
       await _export(tester, l10n);

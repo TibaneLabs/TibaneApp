@@ -88,6 +88,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
   late final _jupiter = widget.jupiter ?? JupiterService();
   final _amountController = TextEditingController();
+  final _amountFocus = FocusNode();
   WalletService? _wallet;
 
   // Holdings (input tokens)
@@ -107,6 +108,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   // Quote — one of these is non-null when a quote is ready
   SwapQuote? _jupiterQuote; // MWA path
   lw.SwapQuote? _lwQuote; // in-app path
+  bool _lwQuoteUsesTokenMax = false;
   bool _hasQuote = false;
   double? _quoteOutUi;
   bool _loadingQuote = false;
@@ -116,6 +118,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   // Swap execution
   bool _swapping = false;
   bool _reviewingSwap = false;
+  bool _confirmationUnavailable = false;
   String? _error;
 
   // Output token metadata cache (for decimals)
@@ -130,6 +133,8 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   // The user can raise it for illiquid pairs via the slippage selector.
   int _slippageBps = 100;
   static const _slippagePresets = <int>[50, 100, 300];
+  static const _quoteTimeout = Duration(seconds: 15);
+  static const _tokenMaxQuoteTimeout = Duration(seconds: 6);
 
   // The displayed holding is the full balance. Cache the backend's spendable
   // maximum separately: it accounts for fees and output-account rent.
@@ -158,6 +163,39 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   String? _lastCheckedNetworkId;
 
   bool _quoteDetailsExpanded = false;
+  Set<String> _verifiedMints = const {};
+
+  Future<void> _loadVerifiedMints() async {
+    final backend = _wallet?.libwallet;
+    if (backend == null) return;
+    final scope = _accountContext;
+    final mints = await backend.verifiedCuratedTokenAddresses();
+    if (mounted && scope == _accountContext) {
+      setState(() => _verifiedMints = mints);
+    }
+  }
+
+  bool _isVerifiedMint(String mint) => _isSolana
+      ? _verifiedMints.contains(mint)
+      : _verifiedMints.any(
+          (address) => address.toLowerCase() == mint.toLowerCase(),
+        );
+
+  Widget _selectedTokenLabel(String symbol, String mint) => Row(
+    children: [
+      Flexible(
+        child: Text(
+          symbol,
+          style: _selectedTokenStyle,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      if (_isVerifiedMint(mint)) ...[
+        const SizedBox(width: 4),
+        const VerifiedTokenBadge(),
+      ],
+    ],
+  );
 
   @override
   void initState() {
@@ -206,6 +244,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     wallet.libwallet.balanceTick.addListener(_onBalanceTick);
     wallet.swapCommittedTick.addListener(_onBalanceTick);
     _lastAccountContext = _accountContext;
+    unawaited(_loadVerifiedMints());
     if (wallet.isConnected) {
       _walletWasConnected = true;
       _loadHoldings();
@@ -241,6 +280,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       _holdingsRequest++;
       setState(() {
         _holdings = [];
+        _verifiedMints = const {};
         _selectedInput = null;
         _outputHolding = null;
         _jupiterQuote = null;
@@ -256,6 +296,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         _amountController.clear();
       });
       if (wallet.isConnected) _loadHoldings();
+      unawaited(_loadVerifiedMints());
     }
     // Re-check swap availability whenever the active network changes.
     final netId = wallet.libwallet.currentNetwork?.id;
@@ -287,6 +328,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     _wallet?.removeListener(_onWalletChanged);
     _wallet?.libwallet.balanceTick.removeListener(_onBalanceTick);
     _wallet?.swapCommittedTick.removeListener(_onBalanceTick);
+    _amountFocus.dispose();
     _amountController.dispose();
     _quoteDebounce?.cancel();
     if (widget.jupiter == null) _jupiter.dispose();
@@ -300,6 +342,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     setState(() {
       if (_amountPreset?.text != _amountController.text) _amountPreset = null;
       _loadingMax = false;
+      _loadingQuote = false;
       _jupiterQuote = null;
       _lwQuote = null;
       _hasQuote = false;
@@ -665,6 +708,10 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     setState(() {
       _loadingQuote = true;
       _quoteError = null;
+      _hasQuote = false;
+      _lwQuote = null;
+      _jupiterQuote = null;
+      _quoteOutUi = null;
     });
 
     try {
@@ -677,7 +724,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       logError('[swap._fetchQuote] error: $e');
       if (!mounted || request != _quoteRequest) return;
       setState(() {
-        _quoteError = walletErrorMessageForContext(context, e);
+        _quoteError = e is TimeoutException
+            ? context.l10n.walletErrorSwapQuoteUnavailable
+            : walletErrorMessageForContext(context, e);
         _loadingQuote = false;
       });
     }
@@ -688,13 +737,15 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     BigInt rawAmount,
     int request,
   ) async {
-    final quote = await _jupiter.fetchQuote(
-      inputMint: _selectedInput!.mint,
-      outputMint: _selectedOutput!.mint,
-      amount: rawAmount,
-      taker: wallet.publicKey!,
-      outputDecimals: _outputDecimals,
-    );
+    final quote = await _jupiter
+        .fetchQuote(
+          inputMint: _selectedInput!.mint,
+          outputMint: _selectedOutput!.mint,
+          amount: rawAmount,
+          taker: wallet.publicKey!,
+          outputDecimals: _outputDecimals,
+        )
+        .timeout(_quoteTimeout);
     if (!mounted || request != _quoteRequest) return;
     setState(() {
       _jupiterQuote = quote;
@@ -710,54 +761,89 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     BigInt rawAmount,
     int request,
   ) async {
-    final inputMint = _selectedInput!.mint;
+    final input = _selectedInput!;
+    final inputMint = input.mint;
     final outputMint = _selectedOutput!.mint;
-    final client = await wallet.libwallet.ensureClient();
-    if (!mounted || request != _quoteRequest) return;
-    final inTokenAddr = swapTokenAddress(inputMint, nativeMint: _nativeMint);
-    final outTokenAddr = swapTokenAddress(outputMint, nativeMint: _nativeMint);
-    // libwallet 0.4.31 dropped the silent Jupiter→dFlow fallback from
-    // swap.quote(). Use swap.quotes() so we get an attempt from every
-    // provider and pick the one with the highest output. If none
-    // succeed we surface the first error's message.
-    final attempts = await client.swap.quotes(
-      tokenIn: SwapTokenRef(
-        address: inTokenAddr,
-        decimals: _selectedInput!.decimals,
-      ),
-      tokenOut: SwapTokenRef(address: outTokenAddr, decimals: _outputDecimals),
-      // A whole token balance goes as "MAX": libwallet then closes the
-      // emptied Solana token account after the swap and returns its rent
-      // (0.5.10). Native balances keep the exact amount (maxSpendable
-      // already left the fee and rent aside).
-      amountIn: inputMint != _nativeMint && rawAmount == _selectedInput!.balance
-          ? 'MAX'
-          : rawAmount.toString(),
-      slippageBps: _slippageBps,
+    final tokenMax = _isSolanaTokenMax(rawAmount);
+    final tokenIn = SwapTokenRef(
+      address: swapTokenAddress(inputMint, nativeMint: _nativeMint),
+      decimals: input.decimals,
     );
-    if (!mounted || request != _quoteRequest) return;
-    lw.QuoteAttempt? best;
-    for (final a in attempts) {
-      if (!a.isOk) continue;
-      if (best == null ||
-          a.quote!.amountOut.toDouble() > best.quote!.amountOut.toDouble()) {
-        best = a;
+    final tokenOut = SwapTokenRef(
+      address: swapTokenAddress(outputMint, nativeMint: _nativeMint),
+      decimals: _outputDecimals,
+    );
+    final from = wallet.libwallet.accountId ?? wallet.publicKey;
+    final network = wallet.libwallet.currentNetwork?.id;
+    final slippage = _slippageBps;
+    final client = await wallet.libwallet.ensureClient().timeout(_quoteTimeout);
+    bool isCurrent() => mounted && request == _quoteRequest;
+    if (!isCurrent()) return;
+
+    Future<lw.SwapQuote> bestQuote(String amount, Duration timeout) async {
+      final attempts = await client.swap
+          .quotes(
+            tokenIn: tokenIn,
+            tokenOut: tokenOut,
+            amountIn: amount,
+            from: from,
+            network: network,
+            slippageBps: slippage,
+          )
+          .timeout(timeout);
+      lw.SwapQuote? best;
+      lw.SwapError? failure;
+      for (final attempt in attempts) {
+        final quote = attempt.quote;
+        if (quote == null) {
+          failure ??= attempt.error;
+          continue;
+        }
+        if (!quote.isExecutable) {
+          failure ??= lw.SwapError(
+            code: quote.status,
+            message: quote.statusMessage,
+          );
+          continue;
+        }
+        if (tokenMax &&
+            parseTokenAmount(quote.amountIn.toString(), input.decimals) !=
+                rawAmount) {
+          failure ??= const lw.SwapError(
+            code: 'balance_changed',
+            message: 'The quote did not match the selected amount',
+          );
+          continue;
+        }
+        if (best == null ||
+            quote.amountOut.toDouble() > best.amountOut.toDouble()) {
+          best = quote;
+        }
       }
+      return best ??
+          (throw failure ??
+              const lw.SwapError(
+                code: 'no_route',
+                message: 'No quote available',
+              ));
     }
-    if (best == null) {
-      // Every provider failed. Bubble up the most useful message.
-      final firstErr = attempts.firstWhere(
-        (a) => a.error != null,
-        orElse: () => attempts.isNotEmpty
-            ? attempts.first
-            : const lw.QuoteAttempt(provider: '', providerLabel: ''),
-      );
-      throw firstErr.error ??
-          const lw.SwapError(code: 'no_route', message: 'No quote available');
+
+    var usedTokenMax = false;
+    late final lw.SwapQuote quote;
+    try {
+      quote = await bestQuote(rawAmount.toString(), _quoteTimeout);
+    } catch (_) {
+      if (!tokenMax) rethrow;
+      if (!isCurrent()) return;
+      // Only ask the SDK to resolve MAX when the exact balance cannot be quoted.
+      // The SDK only guarantees account closing for symbolic MAX quotes.
+      quote = await bestQuote('MAX', _tokenMaxQuoteTimeout);
+      usedTokenMax = true;
     }
-    final quote = best.quote!;
+    if (!isCurrent()) return;
     setState(() {
       _lwQuote = quote;
+      _lwQuoteUsesTokenMax = usedTokenMax;
       _jupiterQuote = null;
       _hasQuote = true;
       _quoteOutUi = quote.amountOut.toDouble();
@@ -765,9 +851,19 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     });
   }
 
+  bool _isSolanaTokenMax(BigInt rawAmount) =>
+      _isSolana &&
+      _selectedInput?.mint != _nativeMint &&
+      _selectedInput?.mint != wsolMint &&
+      _selectedInput?.balance == rawAmount &&
+      _amountPreset?.percent == 100 &&
+      _amountPreset?.text == _amountController.text &&
+      _amountPreset?.maxPair == _swapPairKey;
+
   Future<void> _setPercent(int percent) async {
     final input = _selectedInput;
     if (input == null) return;
+    _amountFocus.unfocus();
     final request = ++_amountRequest;
     final pair = _swapPairKey;
     final output = _selectedOutput;
@@ -792,7 +888,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         _quoteOutUi = null;
       });
       try {
-        final client = await wallet.libwallet.ensureClient();
+        final client = await wallet.libwallet.ensureClient().timeout(
+          _quoteTimeout,
+        );
         if (!isCurrent()) return;
         final quote = await client.swap
             .maxSpendable(
@@ -812,7 +910,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
               network: wallet.libwallet.currentNetwork?.id,
               slippageBps: _slippageBps,
             )
-            .timeout(const Duration(seconds: 10));
+            .timeout(_quoteTimeout);
         if (!isCurrent()) return;
         if (!quote.isExecutable && quote.status != 'no_route') {
           setState(
@@ -869,39 +967,46 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       _amountPreset = (
         percent: percent,
         text: text,
-        maxPair: percent == 100 && input.mint == _nativeMint ? pair : null,
+        maxPair: percent == 100 ? pair : null,
       );
       if (maxQuote != null) {
         _quoteDebounce?.cancel();
         _lwQuote = maxQuote;
+        _lwQuoteUsesTokenMax = false;
         _jupiterQuote = null;
         _hasQuote = true;
         _quoteOutUi = maxQuote.amountOut.toDouble();
         _loadingQuote = false;
       }
     });
+    if (percent == 100 &&
+        maxQuote == null &&
+        _selectedOutput != null &&
+        raw > BigInt.zero) {
+      _quoteDebounce?.cancel();
+      await _fetchQuote();
+    }
   }
 
   Future<void> _executeSwap() async {
     if (_reviewingSwap) return;
-    _reviewingSwap = true;
+    _amountFocus.unfocus();
+    setState(() => _reviewingSwap = true);
     try {
       await _reviewAndExecuteSwap();
     } finally {
-      _reviewingSwap = false;
+      if (mounted) setState(() => _reviewingSwap = false);
     }
   }
 
   Future<void> _reviewAndExecuteSwap() async {
-    if (!_hasQuote || _swapping) return;
+    if (!_hasQuote || _swapping || _confirmationUnavailable) return;
     final wallet = context.read<WalletService>();
     if (!wallet.isConnected) return;
     final accountContext = _accountContext;
     final pair = _swapPairKey;
     bool isCurrent() =>
         mounted && accountContext == _accountContext && pair == _swapPairKey;
-    final l10n = context.l10n;
-
     // Snapshot the trade before clearing state on success so the review +
     // success screens have names, amounts, and logos to display.
     final inputSymbol = _selectedInput?.symbol ?? '';
@@ -912,6 +1017,16 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     final outputMint = _selectedOutput?.mint;
     final inputImageUrl = _selectedInput?.imageUrl;
     final outputImageUrl = _outputImageUrl ?? _selectedOutput?.imageUrl;
+    final quoteRequest = _quoteRequest;
+    final reviewedRaw = parseTokenAmount(
+      _amountController.text,
+      _selectedInput?.decimals ?? 0,
+    );
+    final closeTokenAccount =
+        _lwQuote != null &&
+        _lwQuoteUsesTokenMax &&
+        reviewedRaw != null &&
+        _isSolanaTokenMax(reviewedRaw);
 
     // Review the trade before asking the user to authorize the signature.
     final approved = await _showSwapReviewSheet(
@@ -923,12 +1038,19 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       inputImageUrl: inputImageUrl,
       outputMint: outputMint ?? '',
       outputImageUrl: outputImageUrl,
+      closeTokenAccount: closeTokenAccount,
     );
-    if (approved != true || !mounted || !isCurrent() || !_hasQuote) return;
+    if (approved != true ||
+        !mounted ||
+        !isCurrent() ||
+        !_hasQuote ||
+        quoteRequest != _quoteRequest) {
+      return;
+    }
 
     final auth = await authorizeBatch(context, transactionReviewed: true);
     if (auth == null) return;
-    if (!isCurrent() || !_hasQuote) return;
+    if (!isCurrent() || !_hasQuote || quoteRequest != _quoteRequest) return;
 
     final viaOkx = _lwQuote != null;
     setState(() {
@@ -944,14 +1066,18 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       // the success sheet; otherwise surface a failure and DON'T clear input.
       String signature;
       if (viaOkx) {
-        final result = await _executeSwapLibwallet(wallet, auth);
+        final result = await _executeSwapLibwallet(
+          wallet,
+          auth,
+          closeTokenAccount: closeTokenAccount,
+        );
         if (!mounted) return;
         signature = result.hash;
         if (_isSolana) {
           // Solana: authoritative on-chain signature check (Helius RPC).
           if (!await _confirmLanded(signature)) {
             if (!mounted) return;
-            setState(() => _error = l10n.swapNotConfirmed);
+            _showUnconfirmedSwap(signature);
             return;
           }
         } else {
@@ -959,14 +1085,14 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
           final st = await _confirmOkxOrder(wallet, result.orderId);
           if (!mounted) return;
           if (st == null || !st.success) {
+            if (st == null || !st.failed) {
+              _showUnconfirmedSwap(st?.txHash ?? '');
+              return;
+            }
             setState(
-              () => _error = st != null && st.failed
-                  ? 'Swap failed${st.reason.isNotEmpty ? ': ${st.reason}' : ''}. '
-                        'Your funds were not moved.'
-                  : st != null && st.pending
-                  ? 'Swap is still pending after 40s. Check the explorer '
-                        'before retrying so you don’t double-spend.'
-                  : l10n.swapNotConfirmed,
+              () => _error =
+                  'Swap failed${st.reason.isNotEmpty ? ': ${st.reason}' : ''}. '
+                  'Your funds were not moved.',
             );
             return;
           }
@@ -977,7 +1103,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         if (!mounted) return;
         if (!await _confirmLanded(signature)) {
           if (!mounted) return;
-          setState(() => _error = l10n.swapNotConfirmed);
+          _showUnconfirmedSwap(signature);
           return;
         }
       }
@@ -1045,10 +1171,21 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     }
   }
 
-  /// Confirm a Solana swap signature actually landed on-chain — the guard
-  /// against OKX "phantom successes" (a hash returned for an order that never
-  /// lands). Returns false on timeout/error so the caller reports a failure
-  /// rather than a fake success.
+  void _showUnconfirmedSwap(String signature) {
+    _quoteDebounce?.cancel();
+    _quoteRequest++;
+    setState(() {
+      _confirmationUnavailable = true;
+      _hasQuote = false;
+      _lwQuote = null;
+      _jupiterQuote = null;
+    });
+    context.read<BalancesStore?>()?.onTxCommitted(
+      signature.isEmpty ? null : signature,
+    );
+  }
+
+  /// False means confirmation is unavailable, not necessarily a failed swap.
   Future<bool> _confirmLanded(String signature) async {
     if (signature.isEmpty) return false;
     final rpc = RpcService();
@@ -1068,6 +1205,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
   /// Pre-authorization review of the swap: the two tokens + amounts and the
   /// network, mirroring the send review sheet. Returns true when confirmed.
   Future<bool?> _showSwapReviewSheet({
+    required bool closeTokenAccount,
     required String inputSymbol,
     required String outputSymbol,
     required double inputAmount,
@@ -1086,6 +1224,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => _SwapReviewSheet(
+        closeTokenAccount: closeTokenAccount,
         inputSymbol: inputSymbol,
         outputSymbol: outputSymbol,
         inputAmount: inputAmount,
@@ -1156,8 +1295,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
 
   Future<lw.SwapResult> _executeSwapLibwallet(
     WalletService wallet,
-    BatchAuth auth,
-  ) async {
+    BatchAuth auth, {
+    required bool closeTokenAccount,
+  }) async {
     final q = _lwQuote!;
     final client = await wallet.libwallet.ensureClient();
     // In-app swaps always authorize via the sign sheet, so the batch keys are
@@ -1168,7 +1308,11 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       'provider=${q.provider} net=${wallet.libwallet.currentNetwork?.id} '
       'in=${q.amountIn} out=${q.amountOut} keys=${keys.length}',
     );
-    final result = await client.swap.execute(quoteId: q.quoteId, keys: keys);
+    final result = await client.swap.execute(
+      quoteId: q.quoteId,
+      keys: keys,
+      closeTokenAccount: closeTokenAccount,
+    );
     debugPrint(
       '[swap.exec] RESULT hash=${result.hash} orderId=${result.orderId} '
       'provider=${result.provider} chain=${result.chain} url=${result.url} '
@@ -1295,6 +1439,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       isScrollControlled: true,
       builder: (context) => _OutputTokenPicker(
         isSolana: _isSolana,
+        isVerifiedMint: _isVerifiedMint,
         evmTokens: _isSolana ? const <TokenHolding>[] : _holdings,
         onSelect: (mint, symbol, name, imageUrl, decimals) {
           Navigator.pop(context);
@@ -1342,6 +1487,7 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
       isScrollControlled: true,
       builder: (context) => _InputTokenPicker(
         holdings: _holdings,
+        isVerifiedMint: _isVerifiedMint,
         onSelect: (holding) {
           Navigator.pop(context);
           _selectInput(holding);
@@ -1356,6 +1502,30 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
     final wallet = context.watch<WalletService>();
     if (context.watch<UkComplianceService>().isUk) {
       return const _SwapUnavailableInRegion();
+    }
+    if (_confirmationUnavailable) {
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(l10n.swapNotConfirmed, textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          txBackToHomeButton(
+            context,
+            onPressed: () {
+              wallet.notifyTxCommitted();
+              final navigator = Navigator.of(context);
+              if (navigator.canPop()) {
+                navigator.popUntil((route) => route.isFirst);
+              } else {
+                setState(() {
+                  _confirmationUnavailable = false;
+                  _amountController.clear();
+                });
+              }
+            },
+          ),
+        ],
+      );
     }
 
     return GestureDetector(
@@ -1595,10 +1765,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                           ),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
+                            child: _selectedTokenLabel(
                               _selectedInput!.symbol,
-                              style: _selectedTokenStyle,
-                              overflow: TextOverflow.ellipsis,
+                              _selectedInput!.mint,
                             ),
                           ),
                         ] else ...[
@@ -1643,6 +1812,8 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
           TextField(
             key: const Key('swap-amount-input'),
             controller: _amountController,
+            focusNode: _amountFocus,
+            canRequestFocus: !_reviewingSwap,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => context.unfocus(),
@@ -1747,10 +1918,9 @@ class _SwapScreenState extends State<SwapScreen> with TxConfirmationRefresh {
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
+                      child: _selectedTokenLabel(
                         _selectedOutput!.symbol,
-                        style: _selectedTokenStyle,
-                        overflow: TextOverflow.ellipsis,
+                        _selectedOutput!.mint,
                       ),
                     ),
                   ] else ...[
@@ -2249,8 +2419,13 @@ class _PercentButton extends StatelessWidget {
 class _InputTokenPicker extends StatelessWidget {
   final List<TokenHolding> holdings;
   final void Function(TokenHolding) onSelect;
+  final bool Function(String) isVerifiedMint;
 
-  const _InputTokenPicker({required this.holdings, required this.onSelect});
+  const _InputTokenPicker({
+    required this.holdings,
+    required this.onSelect,
+    required this.isVerifiedMint,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2290,6 +2465,7 @@ class _InputTokenPicker extends StatelessWidget {
                   mint: h.mint,
                   name: h.name,
                   symbol: h.symbol,
+                  verified: isVerifiedMint(h.mint),
                   trailing: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -2341,11 +2517,13 @@ class _OutputTokenPicker extends StatefulWidget {
   /// chains show the account's [evmTokens] (from libwallet getAssets) and
   /// resolve a pasted contract via libwallet (chain-aware).
   final bool isSolana;
+  final bool Function(String) isVerifiedMint;
   final List<TokenHolding> evmTokens;
 
   const _OutputTokenPicker({
     required this.onSelect,
     required this.isSolana,
+    required this.isVerifiedMint,
     required this.evmTokens,
   });
 
@@ -2477,6 +2655,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
                             mint: token.mint,
                             name: token.name,
                             symbol: token.symbol,
+                            verified: widget.isVerifiedMint(token.mint),
                             onTap: () {
                               // SOL=9, USDC/USDT/pump=6
                               final decimals = token.mint == wsolMint ? 9 : 6;
@@ -2522,6 +2701,7 @@ class _OutputTokenPickerState extends State<_OutputTokenPicker> {
             mint: h.mint,
             name: h.name,
             symbol: h.symbol,
+            verified: widget.isVerifiedMint(h.mint),
             onTap: () => widget.onSelect(
               h.mint,
               h.symbol,
@@ -2607,6 +2787,7 @@ Widget _swapTokenColumn({
 /// and Cancel / Confirm. A mix of the send review sheet's chrome with the swap
 /// two-token summary.
 class _SwapReviewSheet extends StatelessWidget {
+  final bool closeTokenAccount;
   final String inputSymbol;
   final String outputSymbol;
   final double inputAmount;
@@ -2618,6 +2799,7 @@ class _SwapReviewSheet extends StatelessWidget {
   final lw.Network? net;
 
   const _SwapReviewSheet({
+    required this.closeTokenAccount,
     required this.inputSymbol,
     required this.outputSymbol,
     required this.inputAmount,
@@ -2677,6 +2859,10 @@ class _SwapReviewSheet extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             if (net != null) _networkCard(net!, l10n),
+            if (closeTokenAccount) ...[
+              const SizedBox(height: 12),
+              Text(l10n.swapMaxCloseNotice),
+            ],
             const SizedBox(height: 24),
             Row(
               children: [

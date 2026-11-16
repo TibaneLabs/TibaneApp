@@ -11,7 +11,9 @@ import '../utils/context_extensions.dart';
 /// the branding shows on tab roots while pushed detail screens supply their own
 /// AppBar (with a back button). See NAVIGATION_MIGRATION.md.
 class TibaneAppBar extends StatelessWidget implements PreferredSizeWidget {
-  const TibaneAppBar({super.key});
+  const TibaneAppBar({super.key, this.leading});
+
+  final Widget? leading;
 
   static const double _height = 56;
 
@@ -21,6 +23,7 @@ class TibaneAppBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     return AppBar(
+      leading: leading,
       backgroundColor: TibaneColors.black,
       surfaceTintColor: Colors.transparent,
       toolbarHeight: _height,

@@ -5,7 +5,6 @@ import '../../theme/tibane_theme.dart';
 import '../settings_screen.dart' show SettingsTile;
 import '../wallet/accounts_management_screen.dart';
 import '../wallet/device_transfer_receive_screen.dart';
-import '../wallet/inapp_export_screen.dart';
 import '../wallet/inapp_import_screen.dart';
 import '../wallet/wallet_data_reset_screen.dart';
 import '../wallet/wallets_management_screen.dart';
@@ -66,15 +65,6 @@ class WalletsAccountsScreen extends StatelessWidget {
                 subtitle: l10n.walletsAccountsImportWalletSubtitle,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const InAppImportScreen()),
-                ),
-              ),
-              const SizedBox(height: 6),
-              SettingsTile(
-                icon: Icons.download_outlined,
-                title: l10n.walletsAccountsExportWalletTitle,
-                subtitle: l10n.walletsAccountsExportWalletSubtitle,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const InAppExportScreen()),
                 ),
               ),
               const SizedBox(height: 24),

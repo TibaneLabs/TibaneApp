@@ -52,6 +52,7 @@ Future<(_Harness, AppLocalizations)> _open(
   double keyboard = 0,
   Wallet? wallet,
   bool transactionReviewed = false,
+  bool confirmationStyle = false,
   Future<String?> Function()? deviceRead,
   NormalWalletBiometrics? normalBiometrics,
 }) async {
@@ -90,6 +91,7 @@ Future<(_Harness, AppLocalizations)> _open(
                 title: 'Fixture operation',
                 actionLabel: 'Confirm fixture',
                 transactionReviewed: transactionReviewed,
+                confirmationStyle: confirmationStyle,
                 normalBiometrics: normalBiometrics,
               );
               harness.completed = true;
@@ -122,6 +124,20 @@ Future<void> _enterAndConfirm(WidgetTester tester, String value) async {
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets(
+    'claim confirmation uses one password prompt with Cancel and Confirm',
+    (tester) async {
+      final (harness, l10n) = await _open(tester, confirmationStyle: true);
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.text('Fixture operation'), findsOneWidget);
+      expect(find.text(l10n.actionConfirm), findsOneWidget);
+      await tester.tap(find.text(l10n.actionCancel));
+      await tester.pumpAndSettle();
+      expect(harness.completed, isTrue);
+      expect(harness.result, isNull);
+    },
+  );
 
   testWidgets(
     'seed signing uses biometric credential without a password or MPC modal',

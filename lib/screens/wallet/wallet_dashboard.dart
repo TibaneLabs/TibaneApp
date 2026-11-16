@@ -10,12 +10,14 @@ import '../../services/balances_store.dart';
 import '../../services/jupiter_service.dart';
 import '../../services/portfolio_performance.dart';
 import '../../services/wallet/asset_network.dart';
+import '../../services/wallet/libwallet_backend.dart';
 import '../../services/uk_compliance_service.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/network_logos.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
+import '../../widgets/token_picker_tile.dart';
 import '../swap_screen.dart';
 import '../token_detail_screen.dart';
 import 'receive_screen.dart';
@@ -31,14 +33,48 @@ class WalletDashboard extends StatefulWidget {
 }
 
 class _WalletDashboardState extends State<WalletDashboard> {
-  // Holdings + transactions + their refresh now live in BalancesStore, read via
-  // context.watch<BalancesStore>() in build — the dashboard is a pure consumer.
+  LibwalletBackend? _catalogBackend;
+  String? _catalogChain;
+  Future<Set<String>>? _verifiedTokens;
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
     final wallet = context.watch<WalletService>();
     final store = context.watch<BalancesStore>();
+    final backend = wallet.libwallet;
+    final network = backend.currentNetwork;
+    final chain = network == null
+        ? null
+        : '${network.type.name}.${network.chainId}';
+    if (_catalogBackend != backend || _catalogChain != chain) {
+      _catalogBackend = backend;
+      _catalogChain = chain;
+      _verifiedTokens = chain == null
+          ? null
+          : backend.verifiedCuratedTokenAddresses(network: chain);
+    }
+
+    return FutureBuilder<Set<String>>(
+      future: _verifiedTokens,
+      builder: (context, snapshot) => _buildDashboard(
+        context,
+        wallet,
+        store,
+        snapshot.connectionState == ConnectionState.done
+            ? snapshot.data ?? const {}
+            : const {},
+      ),
+    );
+  }
+
+  Widget _buildDashboard(
+    BuildContext context,
+    WalletService wallet,
+    BalancesStore store,
+    Set<String> verifiedTokens,
+  ) {
+    final l10n = context.l10n;
+    final net = wallet.libwallet.currentNetwork;
     final displayTokens = _displayTokens(
       wallet,
       store.holdings,
@@ -215,7 +251,6 @@ class _WalletDashboardState extends State<WalletDashboard> {
             else
               ...visibleTokens.map((h) {
                 final isNativeRow = h.mint.endsWith('.NATIVE');
-                final net = wallet.libwallet.currentNetwork;
                 final isSolanaNative =
                     isNativeRow && net?.type == NetworkType.solana;
                 // Defer to TokenIcon's wsolMint → sol.png branch for
@@ -255,6 +290,12 @@ class _WalletDashboardState extends State<WalletDashboard> {
                 // the row's mint untouched (synthetic `.NATIVE` sentinel
                 // for non-Solana native, real on-chain mint for SPL).
                 final iconMint = isSolanaNative ? wsolMint : h.mint;
+                final isVerified = net?.type == NetworkType.evm
+                    ? verifiedTokens.any(
+                        (address) =>
+                            address.toLowerCase() == iconMint.toLowerCase(),
+                      )
+                    : verifiedTokens.contains(iconMint);
                 final roundedBalance = _roundedTokenBalance(h);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 6),
@@ -275,13 +316,23 @@ class _WalletDashboardState extends State<WalletDashboard> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                h.symbol.isNotEmpty ? h.symbol : h.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 16.1,
-                                  color: TibaneColors.text,
-                                ),
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      h.symbol.isNotEmpty ? h.symbol : h.name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 16.1,
+                                        color: TibaneColors.text,
+                                      ),
+                                    ),
+                                  ),
+                                  if (isVerified) ...[
+                                    const SizedBox(width: 4),
+                                    const VerifiedTokenBadge(),
+                                  ],
+                                ],
                               ),
                               if (h.name.isNotEmpty && h.name != h.symbol)
                                 Text(

@@ -40,6 +40,7 @@ class TokenSearchResult {
   final String? symbol;
   final String? imageUrl;
   final int? decimals;
+  final bool verified;
 
   const TokenSearchResult({
     required this.mint,
@@ -47,6 +48,7 @@ class TokenSearchResult {
     this.symbol,
     this.imageUrl,
     this.decimals,
+    this.verified = false,
   });
 }
 
@@ -3014,8 +3016,18 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
           symbol: t.symbol,
           imageUrl: t.logoUri.isEmpty ? null : t.logoUri,
           decimals: t.decimals,
+          verified: t.verified,
         ),
     ];
+  }
+
+  Future<Set<String>> verifiedCuratedTokenAddresses({String? network}) async {
+    final chainKey = network ?? _curatedChainKey();
+    if (chainKey == null) return const {};
+    return {
+      for (final token in await _loadCurated(chainKey))
+        if (token.verified) token.address,
+    };
   }
 
   /// libwallet 0.5.9: the token's issuer is identified and confirmed.

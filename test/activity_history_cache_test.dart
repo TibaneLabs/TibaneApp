@@ -111,6 +111,31 @@ void main() {
   });
 
   test(
+    'legacy Solana classifications are discarded without losing receipts',
+    () async {
+      final cache = ActivityHistoryCache();
+      await cache.write(
+        'scope',
+        ActivityHistorySnapshot(
+          [_tx(1), _tx(2)],
+          {'public-signature-1': _detail(), 'public-signature-2': _detail()},
+        ),
+      );
+      final prefs = await SharedPreferences.getInstance();
+      final key = prefs.getKeys().single;
+      final rows = jsonDecode(prefs.getString(key)!) as List;
+      final legacy = rows.last['activity'] as Map;
+      legacy.remove('classificationVersion');
+      legacy['kind'] = 'sent';
+      await prefs.setString(key, jsonEncode(rows));
+
+      final restored = await cache.read('scope');
+      expect(restored.transactions.map((tx) => tx.id), ['row-2', 'row-1']);
+      expect(restored.activity.keys, ['public-signature-2']);
+    },
+  );
+
+  test(
     'merge retains older cached receipts when the provider returns only one',
     () {
       final rows = recentActivityTransactions([

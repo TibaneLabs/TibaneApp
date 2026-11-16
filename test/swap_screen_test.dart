@@ -17,6 +17,7 @@ import 'package:tibaneapp/theme/tibane_theme.dart';
 import 'package:tibaneapp/widgets/gradient_button.dart';
 import 'package:tibaneapp/widgets/tibane_card.dart';
 import 'package:tibaneapp/widgets/token_icon.dart';
+import 'package:tibaneapp/widgets/token_picker_tile.dart';
 import 'package:tibaneapp/widgets/token_search.dart';
 
 final _network = lw.Network(
@@ -36,6 +37,7 @@ final _network = lw.Network(
 
 class _Transport implements lw.Transport {
   BigInt maxAmount = BigInt.from(3024662);
+  BigInt tokenMaxAmount = BigInt.from(1000000000);
   int? maxDecimals;
   bool failMax = false;
   String maxStatus = '';
@@ -43,6 +45,9 @@ class _Transport implements lw.Transport {
   Map<String, dynamic>? quoteParams;
   lw.SwapError? quoteError;
   Completer<void>? maxGate;
+  Completer<void>? tokenMaxGate;
+  Completer<void>? exactQuoteGate;
+  int tokenMaxRequests = 0;
   @override
   Future<dynamic> request(
     String path,
@@ -74,6 +79,12 @@ class _Transport implements lw.Transport {
     }
     if (path == 'Swap:quotes') {
       quoteParams = params;
+      if (params?['amountIn'] == 'MAX') {
+        tokenMaxRequests++;
+        await tokenMaxGate?.future;
+      } else {
+        await exactQuoteGate?.future;
+      }
       if (quoteError case final error?) {
         return {
           'attempts': [
@@ -98,7 +109,9 @@ class _Transport implements lw.Transport {
               'tokenIn': params!['tokenIn'],
               'tokenOut': params['tokenOut'],
               'amountIn': {
-                'v': params['amountIn'],
+                'v': params['amountIn'] == 'MAX'
+                    ? tokenMaxAmount.toString()
+                    : params['amountIn'],
                 'e': params['tokenIn']['decimals'],
               },
               'amountOut': {'v': '658560678', 'e': 6},
@@ -146,6 +159,10 @@ class _Backend extends LibwalletBackend {
   @override
   String? get accountId => 'fixture-solana-account';
   @override
+  Future<Set<String>> verifiedCuratedTokenAddresses({String? network}) async =>
+      const {usdcMint};
+
+  @override
   Future<List<TokenSearchResult>> searchCuratedTokens(
     String query, {
     String? network,
@@ -158,6 +175,7 @@ class _Backend extends LibwalletBackend {
         name: 'USD Coin',
         symbol: 'USDC',
         decimals: 6,
+        verified: true,
       ),
     ];
   }
@@ -289,6 +307,54 @@ Future<_Wallet> _pump(
 
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
+
+  for (final useKeyboard in [false, true]) {
+    testWidgets(
+      'swap confirmation keeps amount keyboard closed ($useKeyboard)',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(393, 1100));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await _pump(tester, lamports: 5959822);
+        final input = find.byKey(const Key('swap-amount-input'));
+        final focus = tester.widget<TextField>(input).focusNode!;
+        if (useKeyboard) {
+          await tester.enterText(input, '0.001');
+          expect(tester.testTextInput.isVisible, isTrue);
+        } else {
+          await tester.tap(find.text('25%'));
+          expect(tester.testTextInput.isVisible, isFalse);
+        }
+        await tester.pump(const Duration(milliseconds: 600));
+        await tester.pumpAndSettle();
+        tester.testTextInput.log.clear();
+        await tester.tap(find.byKey(const Key('swap-submit')));
+        await tester.pumpAndSettle();
+        final l10n = AppLocalizations.of(
+          tester.element(find.byType(SwapScreen)),
+        );
+        expect(find.text(l10n.swapReviewTitle), findsOneWidget);
+        expect(focus.hasFocus, isFalse);
+        expect(focus.canRequestFocus, isFalse);
+        expect(tester.testTextInput.isVisible, isFalse);
+
+        await tester.tap(find.text(l10n.actionConfirm));
+        await tester.pumpAndSettle();
+        expect(find.text(l10n.authSignNoWallet), findsOneWidget);
+        expect(focus.hasFocus, isFalse);
+        expect(tester.testTextInput.isVisible, isFalse);
+        expect(
+          tester.testTextInput.log.where(
+            (call) => call.method == 'TextInput.show',
+          ),
+          isEmpty,
+        );
+        await tester.tap(input);
+        await tester.pump();
+        expect(tester.testTextInput.isVisible, isTrue);
+      },
+    );
+  }
+
   testWidgets('output token search styles results on a narrow screen', (
     tester,
   ) async {
@@ -303,6 +369,8 @@ void main() {
 
     final search = find.byType(TokenSearch);
     expect(search, findsOneWidget);
+    final badge = find.byType(VerifiedTokenBadge);
+    expect(find.descendant(of: search, matching: badge), findsOneWidget);
     expect(find.text('FAVORITES'), findsNothing);
     final popularIcon = tester.widget<TokenIcon>(
       find.descendant(
@@ -335,6 +403,7 @@ void main() {
     );
     expect(icon.size, 43.2);
     final name = find.text('USD Coin');
+    expect(find.descendant(of: search, matching: badge), findsOneWidget);
     expect(tester.widget<Text>(name).style!.fontSize, 17.5);
     final ticker = tester.widget<Text>(find.text(r'$USDC'));
     expect(ticker.style!.fontSize, 12.65);
@@ -351,6 +420,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(search, findsNothing);
     expect(find.text('USDC'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('swap-output-selector')),
+        matching: badge,
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -520,6 +596,7 @@ void main() {
       input: 'flash-mint',
       tokenUnits: 70645495481,
     );
+    wallet.backend.client.transport.tokenMaxAmount = BigInt.from(70645495481);
     await tester.tap(find.text('MAX'));
     await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
@@ -531,12 +608,93 @@ void main() {
       '70645.495481',
     );
     final params = wallet.backend.client.transport.quoteParams!;
-    // A whole SPL balance quotes as "MAX" so libwallet closes the account.
-    expect(params['amountIn'], 'MAX');
+    expect(params['amountIn'], '70645495481');
+    expect(wallet.backend.client.transport.tokenMaxRequests, 0);
     expect(params['tokenIn']['address'], 'flash-mint');
     expect(params['tokenIn']['decimals'], 6);
     expect(wallet.backend.client.transport.maxParams, isNull);
+    await tester.enterText(
+      find.byKey(const Key('swap-amount-input')),
+      '70645.495480',
+    );
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(
+      wallet.backend.client.transport.quoteParams!['amountIn'],
+      '70645495480',
+    );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'SPL MAX quotes exact balance first without reusing an old quote',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 1100));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final wallet = await _pump(
+        tester,
+        lamports: 9583000,
+        input: 'flash-mint',
+        tokenUnits: 70645495481,
+      );
+      final transport = wallet.backend.client.transport;
+      final submit = find.byKey(const Key('swap-submit'));
+      await tester.enterText(
+        find.byKey(const Key('swap-amount-input')),
+        '70645.495481',
+      );
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(tester.widget<GradientButton>(submit).onPressed, isNotNull);
+
+      final exact = Completer<void>();
+      transport.exactQuoteGate = exact;
+      await tester.tap(find.text('MAX'));
+      await tester.pump();
+      expect(transport.quoteParams!['amountIn'], '70645495481');
+      expect(transport.quoteParams!['from'], 'fixture-solana-account');
+      expect(transport.maxParams, isNull);
+      expect(transport.tokenMaxRequests, 0);
+      expect(tester.widget<GradientButton>(submit).onPressed, isNull);
+      exact.complete();
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        submit,
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(tester.widget<GradientButton>(submit).onPressed, isNotNull);
+      expect(transport.tokenMaxRequests, 0);
+    },
+  );
+
+  testWidgets('SPL MAX stops loading when neither quote responds', (
+    tester,
+  ) async {
+    final wallet = await _pump(tester, lamports: 9583000, input: 'flash-mint');
+    final transport = wallet.backend.client.transport;
+    final symbolic = Completer<void>();
+    final exact = Completer<void>();
+    transport.tokenMaxGate = symbolic;
+    transport.exactQuoteGate = exact;
+    await tester.tap(find.text('MAX'));
+    await tester.pump();
+    expect(transport.quoteParams!['amountIn'], '1000000000');
+    await tester.pump(const Duration(seconds: 16));
+    expect(transport.quoteParams!['amountIn'], 'MAX');
+    await tester.pump(const Duration(seconds: 7));
+    symbolic.complete();
+    exact.complete();
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.of(tester.element(find.byType(SwapScreen)));
+    expect(find.text(l10n.walletErrorSwapQuoteUnavailable), findsOneWidget);
+    final submit = find.byKey(const Key('swap-submit'));
+    await tester.scrollUntilVisible(
+      submit,
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(tester.widget<GradientButton>(submit).onPressed, isNull);
   });
 
   testWidgets('native MAX accepts a normalized Amount exponent', (

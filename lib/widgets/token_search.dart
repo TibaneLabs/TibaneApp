@@ -264,6 +264,7 @@ class _TokenSearchState extends State<TokenSearch> {
             name: r.name ?? r.symbol ?? address,
             symbol: r.symbol,
             imageUrl: r.imageUrl,
+            verified: r.verified,
             framed: true,
             trailing: Text(
               address,

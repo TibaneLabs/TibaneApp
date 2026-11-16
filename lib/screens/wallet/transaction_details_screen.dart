@@ -59,6 +59,8 @@ class _TransactionDetailsScreenState extends State<TransactionDetailsScreen> {
             : ActivityKind.received);
     final title = switch (kind) {
       ActivityKind.swap => l10n.swapButton,
+      ActivityKind.burn => l10n.incineratorBurnButton,
+      ActivityKind.reclaimSol => l10n.reclaimSolTitle,
       ActivityKind.sent => l10n.dashboardTxSent,
       ActivityKind.received => l10n.dashboardTxReceived,
       ActivityKind.transaction => l10n.labelTransaction,
@@ -145,9 +147,13 @@ class _TransactionDetailsScreenState extends State<TransactionDetailsScreen> {
                 '${formatActivityAmount(tx.amount!.value, tx.amount!.exp)} ${tx.asset}',
               ),
             ],
-            if (sender.isNotEmpty)
+            if (kind != ActivityKind.swap &&
+                (!isSolana || activity != null) &&
+                sender.isNotEmpty)
               _field(l10n.activitySender, sender, copy: true),
-            if (recipient.isNotEmpty)
+            if (kind != ActivityKind.swap &&
+                (!isSolana || activity != null) &&
+                recipient.isNotEmpty)
               _field(l10n.activityRecipient, recipient, copy: true),
             if (activity != null)
               _field(

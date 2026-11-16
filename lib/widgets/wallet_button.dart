@@ -81,26 +81,32 @@ class _ConnectButton extends StatelessWidget {
       child: InkWell(
         onTap: () => _showConnectDialog(context),
         borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.account_balance_wallet_outlined,
-                size: 16,
-                color: TibaneColors.black,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                l10n.actionConnect,
-                style: const TextStyle(
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: TibaneColors.primaryButtonGradient,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.account_balance_wallet_outlined,
+                  size: 16,
                   color: TibaneColors.black,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
                 ),
-              ),
-            ],
+                const SizedBox(width: 6),
+                Text(
+                  l10n.actionConnect,
+                  style: const TextStyle(
+                    color: TibaneColors.black,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

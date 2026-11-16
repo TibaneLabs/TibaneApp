@@ -1,13 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
 
 import '../../l10n/l10n.dart';
 import '../../services/wallet/unified_account.dart'
-    show UnifiedAccount, abbreviateAccountAddress;
+    show UnifiedAccount, abbreviateAccountAddress, chainLabel;
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
@@ -18,6 +17,11 @@ import '../../utils/wallet_error.dart';
 import '../../utils/context_extensions.dart';
 import 'export_private_key_screen.dart';
 import 'widgets/account_switcher_view_model.dart';
+
+String _accountTitle(UnifiedAccount account) {
+  final name = account.accountName.trim();
+  return name.isEmpty ? chainLabel(account.chain) : name;
+}
 
 /// Lists every chain account derived from libwallet wallets on this device.
 /// Account creation lives in the account switcher; this screen only manages
@@ -33,6 +37,7 @@ class AccountsManagementScreen extends StatefulWidget {
 class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
   List<UnifiedAccount>? _accounts;
   Map<String, lw.Account> _rawAccountsById = const {};
+  final _visibilityPending = <String>{};
   bool _loading = true;
   String? _error;
 
@@ -114,6 +119,22 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
         raw.pubkey == wallet.pubkey;
   }
 
+  Future<void> _toggleVisibility(UnifiedAccount account) async {
+    if (!_visibilityPending.add(account.id)) return;
+    setState(() {});
+    final accounts = context.read<WalletService>().accountsService;
+    try {
+      await accounts.setHiddenInSidebar(
+        account,
+        !accounts.isHiddenInSidebar(account),
+      );
+    } catch (e) {
+      if (mounted) showWalletError(context, e);
+    } finally {
+      if (mounted) setState(() => _visibilityPending.remove(account.id));
+    }
+  }
+
   Future<void> _openAccount(
     UnifiedAccount account, {
     required bool active,
@@ -132,15 +153,13 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                account.accountName.isNotEmpty
-                    ? account.accountName
-                    : account.label,
+                _accountTitle(account),
                 style: Theme.of(sheetContext).textTheme.titleLarge,
               ),
               const SizedBox(height: 6),
               Text(
                 abbreviateAccountAddress(account.address),
-                style: monoStyle(fontSize: 13, color: TibaneColors.textMuted),
+                style: monoStyle(fontSize: 15.6, color: TibaneColors.textMuted),
               ),
               const SizedBox(height: 16),
               ListTile(
@@ -307,13 +326,19 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
               wallets: ws.accountsService.walletsById.values,
               unnamedLabel: l10n.walletsMgmtUnnamed,
               attachedWalletParents: ws.accountsService.attachedWalletParents,
+              walletGroups: ws.accountsService.walletGroups,
             );
             bool isActive(UnifiedAccount account) =>
                 account.id == currentId ||
                 (!account.isVirtual && account.accountId == activeId);
             Widget tile(UnifiedAccount account) => _AccountTile(
+              key: ValueKey('managed-account-${account.id}'),
               account: account,
               active: isActive(account),
+              hiddenInSidebar: ws.accountsService.isHiddenInSidebar(account),
+              onToggleVisibility: _visibilityPending.contains(account.id)
+                  ? null
+                  : () => _toggleVisibility(account),
               onTap: () => _openAccount(account, active: isActive(account)),
               onRemove: account.isMainWalletContext
                   ? null
@@ -325,18 +350,10 @@ class _AccountsManagementScreenState extends State<AccountsManagementScreen> {
                 for (final group in groups) ...[
                   _AccountsWalletHeader(group.walletName),
                   const SizedBox(height: 8),
-                  for (final account in group.mainAccounts) ...[
-                    tile(account),
-                    const SizedBox(height: 8),
-                  ],
-                  if (group.additionalAccounts.isNotEmpty) ...[
-                    _AccountsSubHeader(l10n.accountSwitcherAdditionalHeader),
-                    const SizedBox(height: 8),
-                    for (final account in group.additionalAccounts) ...[
-                      tile(account),
-                      const SizedBox(height: 8),
-                    ],
-                  ],
+                  for (final account in accountsInCreationOrder([
+                    ...group.mainAccounts,
+                    ...group.additionalAccounts,
+                  ])) ...[tile(account), const SizedBox(height: 8)],
                   const SizedBox(height: 12),
                 ],
               ],
@@ -368,37 +385,20 @@ class _AccountsWalletHeader extends StatelessWidget {
   }
 }
 
-class _AccountsSubHeader extends StatelessWidget {
-  final String text;
-
-  const _AccountsSubHeader(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(
-          text,
-          style: monoStyle(fontSize: 10, color: TibaneColors.textMuted),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Divider(color: TibaneColors.textMuted.withValues(alpha: 0.22)),
-        ),
-      ],
-    );
-  }
-}
-
 class _AccountTile extends StatelessWidget {
   final UnifiedAccount account;
   final bool active;
+  final bool hiddenInSidebar;
+  final VoidCallback? onToggleVisibility;
   final VoidCallback onTap;
   final VoidCallback? onRemove;
 
   const _AccountTile({
+    super.key,
     required this.account,
     required this.active,
+    required this.hiddenInSidebar,
+    required this.onToggleVisibility,
     required this.onTap,
     required this.onRemove,
   });
@@ -406,7 +406,6 @@ class _AccountTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final addr = account.address;
     final canRemove = onRemove != null;
     return TibaneCard(
       onTap: onTap,
@@ -424,7 +423,7 @@ class _AccountTile extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        account.label,
+                        _accountTitle(account),
                         style: const TextStyle(
                           color: TibaneColors.text,
                           fontSize: 15,
@@ -452,47 +451,31 @@ class _AccountTile extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        abbreviateAccountAddress(addr),
-                        overflow: TextOverflow.ellipsis,
-                        style: monoStyle(
-                          fontSize: 11,
-                          color: TibaneColors.textMuted,
-                        ),
-                      ),
-                    ),
-                    InkWell(
-                      onTap: () {
-                        Clipboard.setData(ClipboardData(text: addr));
-                        context.showSnackBar(
-                          SnackBar(
-                            content: Text(l10n.addressCopied),
-                            duration: const Duration(seconds: 1),
-                          ),
-                        );
-                      },
-                      child: const Padding(
-                        padding: EdgeInsets.all(4),
-                        child: Icon(
-                          Icons.copy,
-                          size: 12,
-                          color: TibaneColors.textDim,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (!account.isMainWalletContext &&
-                    account.walletName.trim().isNotEmpty)
-                  Text(
-                    l10n.accountsFromWallet(account.walletName),
-                    style: monoStyle(fontSize: 11, color: TibaneColors.textDim),
+                Text(
+                  abbreviateAccountAddress(account.address),
+                  overflow: TextOverflow.ellipsis,
+                  style: monoStyle(
+                    fontSize: 13.2,
+                    color: TibaneColors.textMuted,
                   ),
+                ),
               ],
             ),
+          ),
+          IconButton(
+            tooltip: hiddenInSidebar
+                ? l10n.accountsShowInSidebar
+                : l10n.accountsHideInSidebar,
+            icon: Icon(
+              hiddenInSidebar
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
+              size: 18,
+            ),
+            color: hiddenInSidebar
+                ? TibaneColors.textDim
+                : TibaneColors.textMuted,
+            onPressed: onToggleVisibility,
           ),
           if (canRemove)
             IconButton(

@@ -248,12 +248,17 @@ Widget txExplorerLink({required VoidCallback onTap, required String label}) {
 /// navigator stack back to its root.
 /// When no [label] is provided the localized [AppLocalizations.backToHome] string
 /// is used. Callers that DO pass a label (already localized) keep their override.
-Widget txBackToHomeButton(BuildContext context, {String? label}) {
+Widget txBackToHomeButton(
+  BuildContext context, {
+  String? label,
+  VoidCallback? onPressed,
+}) {
   final resolvedLabel = label ?? context.l10n.backToHome;
   return SizedBox(
     width: double.infinity,
     child: FilledButton(
-      onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
+      onPressed:
+          onPressed ?? () => Navigator.of(context).popUntil((r) => r.isFirst),
       style: FilledButton.styleFrom(
         backgroundColor: TibaneColors.orange,
         foregroundColor: TibaneColors.black,

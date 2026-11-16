@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+TextStyle? cardSubtitleStyle(BuildContext context) => Theme.of(context)
+    .textTheme
+    .bodyMedium
+    ?.copyWith(color: TibaneColors.textMuted, height: 1.5)
+    .apply(fontSizeFactor: 1.15);
+
 /// Tibane Labs design system - matching tibane.net theme
 class TibaneColors {
   // Core palette
@@ -12,7 +18,7 @@ class TibaneColors {
   static const surface = Color(0xFF1A1A26);
 
   // Brand
-  static const orange = Color(0xFFFF6B2C);
+  static const orange = Color(0xFFFF843A);
   static const gold = Color(0xFFFFAD42);
   static const amber = Color(0xFFFFD666);
 
@@ -32,10 +38,16 @@ class TibaneColors {
   static const borderHover = Color(0x1AFFFFFF); // 10% white
 
   // Gradients
+  static const _gradientOrange = Color(0xFFFF6B2C);
+
   static const brandGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [orange, gold, amber],
+    colors: [_gradientOrange, gold, amber],
+  );
+
+  static const primaryButtonGradient = LinearGradient(
+    colors: [gold, _gradientOrange],
   );
 
   static const purpleGradient = LinearGradient(
@@ -99,6 +111,30 @@ List<String> get cjkFallback {
 }
 
 class TibaneTheme {
+  static Widget _primaryButtonBackground(
+    BuildContext context,
+    Set<WidgetState> states,
+    Widget? child,
+  ) {
+    if (states.contains(WidgetState.disabled)) return child!;
+    return Builder(
+      builder: (context) {
+        // Read the resolved fill so per-screen gray and red buttons keep it.
+        final surface = context.findAncestorWidgetOfExactType<Material>();
+        if (surface?.color != TibaneColors.orange) return child!;
+        final shape = surface?.shape;
+        if (shape is! OutlinedBorder) return child!;
+        return Ink(
+          decoration: ShapeDecoration(
+            gradient: TibaneColors.primaryButtonGradient,
+            shape: shape.copyWith(side: BorderSide.none),
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+
   static ThemeData get darkTheme {
     final textTheme = GoogleFonts.dmSansTextTheme(
       ThemeData.dark().textTheme,
@@ -204,6 +240,11 @@ class TibaneTheme {
             fontWeight: FontWeight.w600,
             letterSpacing: 0.3,
           ).copyWith(fontFamilyFallback: cjkFallback),
+        ).copyWith(backgroundBuilder: _primaryButtonBackground),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: const ButtonStyle().copyWith(
+          backgroundBuilder: _primaryButtonBackground,
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(

@@ -380,7 +380,7 @@ void main() {
         );
         expect(
           tester.widget<Text>(title).style!.fontSize,
-          closeTo(13 * 1.15, 0.01),
+          closeTo(13 * 1.15 * 1.15, 0.01),
         );
         final content = find
             .descendant(of: row, matching: find.byType(Row))
@@ -401,14 +401,15 @@ void main() {
           (icon.decoration as BoxDecoration).color,
           TibaneColors.orange.withValues(alpha: 0.1),
         );
-        expect(icon.constraints!.maxWidth, 32);
+        expect(icon.constraints!.biggest, const Size.square(40));
+        expect((icon.child as Icon).size, 32);
         await tester.tap(row);
         await tester.pumpAndSettle();
         expect(find.byType(TransactionDetailsScreen), findsOneWidget);
         expect(find.text(l10n.activityDetailsTitle), findsOneWidget);
-        expect(find.text(l10n.activitySender), findsOneWidget);
-        expect(find.text(l10n.activityRecipient), findsOneWidget);
-        expect(find.text(_address), findsNWidgets(2));
+        expect(find.text(l10n.activitySender), findsNothing);
+        expect(find.text(l10n.activityRecipient), findsNothing);
+        expect(find.text(_address), findsNothing);
         expect(find.text('-0.0025 SOL'), findsOneWidget);
         expect(find.text('+994.802149 TEST'), findsOneWidget);
         final link = find.text(l10n.viewOnExplorerNamed('Solscan'));

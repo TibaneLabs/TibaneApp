@@ -12,13 +12,24 @@ import 'package:tibaneapp/services/uk_compliance_service.dart';
 import 'package:tibaneapp/services/wallet/libwallet_backend.dart';
 import 'package:tibaneapp/services/wallet_service.dart';
 import 'package:tibaneapp/theme/tibane_theme.dart';
+import 'package:tibaneapp/widgets/tibane_card.dart';
+import 'package:tibaneapp/widgets/token_picker_tile.dart';
 
 class _Backend extends LibwalletBackend {
+  String chainId = 'mainnet';
+  final catalogRequests = <String?>[];
+
+  @override
+  Future<Set<String>> verifiedCuratedTokenAddresses({String? network}) async {
+    catalogRequests.add(network);
+    return network == 'solana.mainnet' ? {wsolMint, chiefPussyMint} : {};
+  }
+
   @override
   Network? get currentNetwork => Network(
     id: 'solana',
     type: NetworkType.solana,
-    chainId: 'mainnet',
+    chainId: chainId,
     name: 'Solana',
     rpc: '',
     currencySymbol: 'SOL',
@@ -33,6 +44,11 @@ class _Backend extends LibwalletBackend {
 
 class _Wallet extends WalletService {
   final backend = _Backend();
+  void switchChain(String chainId) {
+    backend.chainId = chainId;
+    notifyListeners();
+  }
+
   @override
   LibwalletBackend get libwallet => backend;
   @override
@@ -73,11 +89,12 @@ class _Balances extends BalancesStore {
 
 Future<_Balances> _pumpDashboard(
   WidgetTester tester, {
+  _Wallet? fixtureWallet,
   double change = 0,
   int nativeUnits = 1000000000,
   List<TokenHolding> holdings = const [],
 }) async {
-  final wallet = _Wallet();
+  final wallet = fixtureWallet ?? _Wallet();
   final balances = _Balances(wallet, change, nativeUnits, holdings);
   final compliance = UkComplianceService();
   addTearDown(wallet.dispose);
@@ -114,6 +131,49 @@ TokenHolding _chiefPussy(int raw, {double? valueUsd}) => TokenHolding(
 
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
+  testWidgets('wallet badges follow the active catalog and exact mint', (
+    tester,
+  ) async {
+    final wallet = _Wallet();
+    final holdings = [
+      _chiefPussy(1000000),
+      TokenHolding(
+        mint: chiefPussyMint.toLowerCase(),
+        symbol: 'FAKE',
+        name: 'Tibanne Thecat',
+        balance: BigInt.from(1000000),
+        decimals: 6,
+        uiBalance: 1,
+      ),
+    ];
+    final balances = await _pumpDashboard(
+      tester,
+      fixtureWallet: wallet,
+      holdings: holdings,
+    );
+    Finder badgeFor(String symbol) => find.descendant(
+      of: find.ancestor(
+        of: find.text(symbol),
+        matching: find.byType(TibaneCard),
+      ),
+      matching: find.byType(VerifiedTokenBadge),
+    );
+
+    expect(badgeFor('SOL'), findsOneWidget);
+    expect(badgeFor('ChiefPussy'), findsOneWidget);
+    expect(find.text('FAKE'), findsOneWidget);
+    expect(badgeFor('FAKE'), findsNothing);
+    balances.replaceHoldings([...holdings]);
+    await tester.pumpAndSettle();
+    expect(wallet.backend.catalogRequests, ['solana.mainnet']);
+
+    wallet.switchChain('devnet');
+    await tester.pumpAndSettle();
+    expect(wallet.backend.catalogRequests, ['solana.mainnet', 'solana.devnet']);
+    expect(find.text('ChiefPussy'), findsOneWidget);
+    expect(find.byType(VerifiedTokenBadge), findsNothing);
+  });
+
   testWidgets('portfolio hides zero tokens and insignificant residuals', (
     tester,
   ) async {
@@ -211,7 +271,10 @@ void main() {
             GoogleFonts.dmSans(fontWeight: FontWeight.w700).fontFamily,
           );
           expect(tester.widget<Text>(percent).style!.fontSize, 11);
-          expect(tester.widget<Text>(percent).style!.fontWeight, FontWeight.w800);
+          expect(
+            tester.widget<Text>(percent).style!.fontWeight,
+            FontWeight.w800,
+          );
           expect(
             tester.getCenter(pnl).dx,
             closeTo(tester.getCenter(sol).dx - 3, 0.01),

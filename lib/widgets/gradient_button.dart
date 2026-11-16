@@ -26,7 +26,7 @@ class GradientButton extends StatelessWidget {
     final button = AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       decoration: BoxDecoration(
-        gradient: enabled ? TibaneColors.brandGradient : null,
+        gradient: enabled ? TibaneColors.primaryButtonGradient : null,
         color: enabled ? null : TibaneColors.textDim.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(8),
         boxShadow: enabled

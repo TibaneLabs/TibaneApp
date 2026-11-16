@@ -4,10 +4,7 @@ import '../../l10n/l10n.dart';
 import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 
-/// Help & FAQ (Settings → Help). Plain, self-contained answers about backups,
-/// moving a wallet to a new phone, passwords/2FA, and why signing prompts each
-/// time — matching how the MPC wallet actually behaves (single device-key slot,
-/// backups exclude the device key, device transfer vs restore, etc.).
+/// User-facing help for the current wallet and account flows.
 class HelpFaqScreen extends StatelessWidget {
   const HelpFaqScreen({super.key});
 
@@ -20,8 +17,10 @@ class HelpFaqScreen extends StatelessWidget {
         icon: Icons.backup_outlined,
         items: [
           _Faq(l10n.helpFaqBackupHowQ, l10n.helpFaqBackupHowA),
+          _Faq(l10n.helpFaqPrivateKeyQ, l10n.helpFaqPrivateKeyA),
           _Faq(l10n.helpFaqRestoreHowQ, l10n.helpFaqRestoreHowA),
           _Faq(l10n.helpFaqRestoredCantSendQ, l10n.helpFaqRestoredCantSendA),
+          _Faq(l10n.helpFaqLostMpcContactQ, l10n.helpFaqLostMpcContactA),
         ],
       ),
       _FaqGroup(
@@ -47,6 +46,16 @@ class HelpFaqScreen extends StatelessWidget {
         icon: Icons.verified_user_outlined,
         items: [
           _Faq(l10n.helpFaqWhySignEveryTimeQ, l10n.helpFaqWhySignEveryTimeA),
+          _Faq(l10n.helpFaqBiometricsQ, l10n.helpFaqBiometricsA),
+          _Faq(l10n.helpFaqDappsQ, l10n.helpFaqDappsA),
+        ],
+      ),
+      _FaqGroup(
+        title: l10n.helpFaqToolsGroup,
+        icon: Icons.handyman_outlined,
+        items: [
+          _Faq(l10n.helpFaqReclaimQ, l10n.helpFaqReclaimA),
+          _Faq(l10n.helpFaqBulkQ, l10n.helpFaqBulkA),
         ],
       ),
     ];
@@ -60,7 +69,10 @@ class HelpFaqScreen extends StatelessWidget {
           children: [
             Text(
               l10n.helpFaqIntro,
-              style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
+              style: const TextStyle(
+                color: TibaneColors.textMuted,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 20),
             for (final group in faqGroups) ...[
@@ -120,14 +132,16 @@ class _GroupHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, color: TibaneColors.orange, size: 18),
+        Icon(icon, color: TibaneColors.orange, size: 18 * 1.3),
         const SizedBox(width: 8),
-        Text(
-          title,
-          style: const TextStyle(
-            color: TibaneColors.text,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: TibaneColors.text,
+              fontSize: 15 * 1.3,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ],
@@ -156,7 +170,7 @@ class _FaqTile extends StatelessWidget {
         item.q,
         style: const TextStyle(
           color: TibaneColors.text,
-          fontSize: 14,
+          fontSize: 14 * 1.2,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -165,7 +179,7 @@ class _FaqTile extends StatelessWidget {
           item.a,
           style: const TextStyle(
             color: TibaneColors.textMuted,
-            fontSize: 13,
+            fontSize: 13 * 1.15,
             height: 1.5,
           ),
         ),

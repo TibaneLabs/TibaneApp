@@ -8,6 +8,7 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import '../about_screen.dart';
 import '../settings_screen.dart' show SettingsTile;
+import 'browser_screen.dart';
 import 'language_screen.dart';
 
 /// Sub-screen reached from Settings → "General". Catch-all for app-level
@@ -36,6 +37,15 @@ class GeneralScreen extends StatelessWidget {
                 subtitle: languageDisplayName(l10n, locale),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const LanguageScreen()),
+                ),
+              ),
+              const SizedBox(height: 6),
+              SettingsTile(
+                icon: Icons.public,
+                title: l10n.browserTitle,
+                subtitle: l10n.settingsBrowserSubtitle,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const BrowserScreen()),
                 ),
               ),
               const SizedBox(height: 6),
@@ -93,7 +103,10 @@ class _UkComplianceTile extends StatelessWidget {
                   children: [
                     Text(
                       l10n.generalUkComplianceTitle,
-                      style: const TextStyle(color: TibaneColors.text, fontSize: 15),
+                      style: const TextStyle(
+                        color: TibaneColors.text,
+                        fontSize: 15,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(

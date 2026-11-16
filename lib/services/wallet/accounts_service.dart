@@ -37,6 +37,7 @@ class AccountsService extends ChangeNotifier {
   static const _prefsCurrentAccountId = 'current_account_id';
   static const _prefsAccountPreferredChains = 'account_preferred_chains';
   static const _prefsAttachedWalletParents = 'attached_wallet_parents_v1';
+  static const _prefsSidebarVisibility = 'hidden_sidebar_accounts_v1';
   // Wallet ids whose default accounts have been ensured. Additive-only; gates
   // the [refresh] default-account backfill so it runs at most once per wallet.
   static const _prefsDefaultsEnsured = 'wallet_defaults_ensured_v2';
@@ -47,6 +48,7 @@ class AccountsService extends ChangeNotifier {
   Map<String, Wallet> _walletsById = const {};
   Map<String, String> _attachedWalletParents = const {};
   Map<String, String> _walletGroups = const {};
+  Set<String> _hiddenSidebarAccounts = const {};
   Map<String, String> get walletGroups => Map.unmodifiable(_walletGroups);
 
   // Derived unified list (in-app accounts across all wallets + the connected
@@ -68,6 +70,26 @@ class AccountsService extends ChangeNotifier {
 
   /// The unified account list (in-app + MWA). Empty until the first [refresh].
   List<UnifiedAccount> get accounts => _accounts;
+
+  bool isHiddenInSidebar(UnifiedAccount account) =>
+      account.isInApp && _hiddenSidebarAccounts.contains(account.id);
+
+  Future<void> setHiddenInSidebar(UnifiedAccount account, bool hidden) async {
+    if (!account.isInApp) return;
+    final prefs = await SharedPreferences.getInstance();
+    final ids = _readHiddenSidebarAccounts(prefs);
+    final changed = hidden ? ids.add(account.id) : ids.remove(account.id);
+    if (!changed) return;
+    if (!await prefs.setStringList(_prefsSidebarVisibility, ids.toList())) {
+      throw StateError('Could not save account visibility');
+    }
+    _hiddenSidebarAccounts = _readHiddenSidebarAccounts(prefs);
+    notifyListeners();
+  }
+
+  Set<String> _readHiddenSidebarAccounts(SharedPreferences prefs) =>
+      (prefs.getStringList(_prefsSidebarVisibility) ?? const <String>[])
+          .toSet();
 
   /// The account that signs right now, as a [UnifiedAccount]; null when none
   /// is resolved yet.
@@ -186,6 +208,7 @@ class AccountsService extends ChangeNotifier {
         prefs.getString(_prefsCurrentAccountId),
         preferMwa: preferMwa,
       );
+      _hiddenSidebarAccounts = _readHiddenSidebarAccounts(prefs);
       notifyListeners();
     } catch (e) {
       debugPrint('AccountsService.refresh failed: $e');
@@ -443,6 +466,7 @@ class AccountsService extends ChangeNotifier {
       _prefsCurrentAccountId,
       _prefsAccountPreferredChains,
       _prefsAttachedWalletParents,
+      _prefsSidebarVisibility,
       _prefsDefaultsEnsured,
       WalletGroupStore.preferenceKey,
     ]) {
@@ -457,6 +481,7 @@ class AccountsService extends ChangeNotifier {
     _walletsById = const {};
     _attachedWalletParents = const {};
     _walletGroups = const {};
+    _hiddenSidebarAccounts = const {};
     _accounts = const [];
     _current = null;
     _bitcoinAddressCache.clear();

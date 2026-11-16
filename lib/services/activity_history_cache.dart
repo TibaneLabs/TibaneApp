@@ -37,6 +37,7 @@ class ActivityHistorySnapshot {
 /// Public receipts only. Never persist signing keys, raw transactions or calldata.
 class ActivityHistoryCache {
   static const _prefix = 'activity_history_v1_';
+  static const _classificationVersion = 2;
   Future<void> _writes = Future.value();
   static int _generation = 0;
 
@@ -63,9 +64,12 @@ class ActivityHistoryCache {
           );
           rows.add(tx);
           if (row['activity'] is Map) {
-            activity[activityTransactionId(tx)] = _decodeActivity(
-              row['activity'] as Map,
-            );
+            final detail = row['activity'] as Map;
+            // Keep receipts, but let the current parser classify old Solana details.
+            if (!tx.asset.startsWith('solana.') ||
+                detail['classificationVersion'] == _classificationVersion) {
+              activity[activityTransactionId(tx)] = _decodeActivity(detail);
+            }
           }
         } catch (_) {
           // One malformed receipt must not hide the remaining cached history.
@@ -129,6 +133,7 @@ class ActivityHistoryCache {
   }
 
   Map<String, dynamic> _encodeActivity(TransactionActivity a) => {
+    'classificationVersion': _classificationVersion,
     'kind': a.kind.name,
     'failed': a.failed,
     'fee': a.fee.toString(),

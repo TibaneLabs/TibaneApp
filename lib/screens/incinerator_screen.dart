@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../constants/solana_constants.dart';
 import '../models/token_account.dart';
+import '../services/balances_store.dart';
 import '../services/domain_instructions.dart';
 import '../services/nft_instructions.dart';
 import '../services/relay_service.dart';
@@ -24,6 +25,12 @@ import '../utils/wallet_error.dart';
 import '../widgets/wallet_error_display.dart';
 import '../l10n/l10n.dart';
 import '../utils/context_extensions.dart';
+
+typedef _BurnSelection = ({
+  List<TokenAccount> tokens,
+  List<NftItem> nfts,
+  List<DomainItem> domains,
+});
 
 class IncineratorScreen extends StatefulWidget {
   const IncineratorScreen({super.key});
@@ -55,13 +62,22 @@ class _IncineratorScreenState extends State<IncineratorScreen>
   String? _error;
 
   // Sponsored burn settings
-  bool _sponsoredMode = true;
+  bool _sponsoredMode = false;
   double _tipPercent =
       5.0; // 0 = minimum (relay keeps fees only), 100 = user gives all rent
   int _sponsoredCurrent = 0;
   int _sponsoredTotal = 0;
 
-  bool _walletWasConnected = false;
+  Object? _walletScope;
+  int _scopeRevision = 0;
+
+  Object? _scopeOf(WalletService wallet) =>
+      wallet.isConnected && wallet.publicKey != null
+      ? (wallet.kind, wallet.publicKey, wallet.libwallet.signingContext)
+      : null;
+
+  bool _isScope(int revision) =>
+      mounted && revision == _scopeRevision && _walletScope != null;
 
   @override
   void initState() {
@@ -70,26 +86,25 @@ class _IncineratorScreenState extends State<IncineratorScreen>
     final wallet = context.read<WalletService>();
     _wallet = wallet;
     wallet.addListener(_onWalletChanged);
-    if (wallet.isConnected) {
-      _walletWasConnected = true;
+    _walletScope = _scopeOf(wallet);
+    if (_walletScope != null) {
       _loadAll();
     }
   }
 
   void _onWalletChanged() {
-    final wallet = context.read<WalletService>();
-    if (wallet.isConnected && !_walletWasConnected) {
-      _walletWasConnected = true;
-      _loadAll();
-    } else if (!wallet.isConnected && _walletWasConnected) {
-      _walletWasConnected = false;
-      setState(() {
-        _tokenAccounts = [];
-        _nfts = [];
-        _domains = [];
-        _error = null;
-      });
-    }
+    final scope = _scopeOf(_wallet!);
+    if (scope == _walletScope) return;
+    _walletScope = scope;
+    _scopeRevision++;
+    setState(() {
+      _tokenAccounts = [];
+      _nfts = [];
+      _domains = [];
+      _loadingTokens = _loadingNfts = _loadingDomains = false;
+      _error = null;
+    });
+    if (scope != null) _loadAll();
   }
 
   @override
@@ -108,7 +123,9 @@ class _IncineratorScreenState extends State<IncineratorScreen>
 
   Future<void> _loadTokens() async {
     final wallet = context.read<WalletService>();
-    if (!wallet.isConnected) return;
+    final owner = wallet.publicKey;
+    if (!wallet.isConnected || owner == null) return;
+    final revision = _scopeRevision;
 
     setState(() {
       _loadingTokens = true;
@@ -116,12 +133,21 @@ class _IncineratorScreenState extends State<IncineratorScreen>
     });
 
     try {
-      final splAccounts = await _rpc.getTokenAccountsByOwner(wallet.publicKey!);
+      final splAccounts = await _rpc.getTokenAccountsByOwner(owner);
+      if (!_isScope(revision)) return;
       final t22Accounts = await _rpc.getTokenAccountsByOwner(
-        wallet.publicKey!,
+        owner,
         token2022: true,
       );
-      final allAccounts = [...splAccounts, ...t22Accounts];
+      if (!_isScope(revision)) return;
+      final allAccounts = [
+        for (final account in [...splAccounts, ...t22Accounts])
+          if (account.owner == owner &&
+              account.amount > BigInt.zero &&
+              !account.isNative &&
+              account.mint != wsolMint)
+            account,
+      ];
 
       final mints = allAccounts.map((a) => a.mint).toSet().toList();
       if (mints.isNotEmpty) {
@@ -131,6 +157,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
             i + 100 > mints.length ? mints.length : i + 100,
           );
           final metadata = await _rpc.getAssetBatch(batch);
+          if (!_isScope(revision)) return;
           for (final account in allAccounts) {
             final meta = metadata[account.mint];
             if (meta != null) {
@@ -149,6 +176,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       });
     } catch (e) {
       logError('[Incinerator._loadTokens] error: $e');
+      if (!_isScope(revision) || !mounted) return;
       setState(() {
         _error = walletErrorMessageForContext(context, e);
         _loadingTokens = false;
@@ -158,12 +186,15 @@ class _IncineratorScreenState extends State<IncineratorScreen>
 
   Future<void> _loadNfts() async {
     final wallet = context.read<WalletService>();
-    if (!wallet.isConnected) return;
+    final owner = wallet.publicKey;
+    if (!wallet.isConnected || owner == null) return;
+    final revision = _scopeRevision;
 
     setState(() => _loadingNfts = true);
 
     try {
-      final assets = await _rpc.getAssetsByOwner(wallet.publicKey!);
+      final assets = await _rpc.getAssetsByOwner(owner);
+      if (!_isScope(revision)) return;
       final nfts = <NftItem>[];
 
       for (final asset in assets) {
@@ -180,18 +211,21 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         _loadingNfts = false;
       });
     } catch (e) {
-      setState(() => _loadingNfts = false);
+      if (_isScope(revision)) setState(() => _loadingNfts = false);
     }
   }
 
   Future<void> _loadDomains() async {
     final wallet = context.read<WalletService>();
-    if (!wallet.isConnected) return;
+    final owner = wallet.publicKey;
+    if (!wallet.isConnected || owner == null) return;
+    final revision = _scopeRevision;
 
     setState(() => _loadingDomains = true);
 
     try {
-      final assets = await _rpc.getAssetsByOwner(wallet.publicKey!);
+      final assets = await _rpc.getAssetsByOwner(owner);
+      if (!_isScope(revision)) return;
       final domains = <DomainItem>[];
 
       for (final asset in assets) {
@@ -208,7 +242,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         _loadingDomains = false;
       });
     } catch (e) {
-      setState(() => _loadingDomains = false);
+      if (_isScope(revision)) setState(() => _loadingDomains = false);
     }
   }
 
@@ -223,20 +257,6 @@ class _IncineratorScreenState extends State<IncineratorScreen>
 
   int get _selectedCount =>
       _selectedTokens.length + _selectedNfts.length + _selectedDomains.length;
-
-  BigInt get _reclaimableSol {
-    var total = BigInt.zero;
-    for (final a in _selectedTokens) {
-      total += a.rentLamports;
-    }
-    for (final n in _selectedNfts) {
-      total += BigInt.from(n.rentLamports);
-    }
-    for (final d in _selectedDomains) {
-      total += BigInt.from(d.rentLamports);
-    }
-    return total;
-  }
 
   void _toggleAllTokens(bool? selected) {
     setState(() {
@@ -279,59 +299,92 @@ class _IncineratorScreenState extends State<IncineratorScreen>
   }
 
   Future<void> _burnSelected() async {
+    if (_burning || _selectedCount == 0) return;
+    final revision = _scopeRevision;
+    if (!_isScope(revision)) return;
+    final selection = (
+      tokens: _selectedTokens,
+      nfts: _selectedNfts,
+      domains: _selectedDomains,
+    );
+    final count =
+        selection.tokens.length +
+        selection.nfts.length +
+        selection.domains.length;
+    final sponsored = _sponsoredMode;
     final l10n = context.l10n;
-    // Confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: TibaneColors.card,
-        title: Text(l10n.incineratorConfirmBurnTitle),
+        scrollable: true,
+        title: Text(
+          l10n.incineratorConfirmBurnTitle,
+          style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         content: Text(
-          l10n.incineratorConfirmBurnBody(_selectedCount),
-          style: const TextStyle(color: TibaneColors.textMuted),
+          [
+            l10n.incineratorConfirmBurnBody(count),
+            l10n.incineratorBurnWarning,
+            if (sponsored) l10n.incineratorSponsoredBurnWarning,
+          ].join('\n\n'),
+          style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+            color: TibaneColors.textMuted,
+          ),
         ),
         actions: [
-          TextButton(
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: TibaneColors.textDim,
+              foregroundColor: TibaneColors.text,
+            ),
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(l10n.actionCancel),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              l10n.incineratorBurnButton,
-              style: const TextStyle(color: TibaneColors.error),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: TibaneColors.orange,
+              foregroundColor: TibaneColors.black,
             ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.actionConfirm),
           ),
         ],
       ),
     );
     if (confirmed != true) return;
-    if (!mounted) return;
+    if (!mounted || !_isScope(revision) || _burning) return;
 
     // Authorize ONCE for the whole batch (sign sheet or legacy unlock), then
     // sign each tx with the collected keys so the sheet isn't shown per item.
     final auth = await authorizeBatch(context, transactionReviewed: true);
-    if (auth == null) return;
+    if (auth == null || !_isScope(revision) || _burning) return;
 
-    if (_sponsoredMode) {
-      await _sponsoredBurn(auth);
+    if (sponsored) {
+      await _sponsoredBurn(auth, selection, revision);
     } else {
-      await _directBurn(auth);
+      await _directBurn(auth, selection, revision);
     }
   }
 
   Future<void> _partialBurn(TokenAccount account) async {
+    final revision = _scopeRevision;
+    if (_burning || !_isScope(revision)) return;
     final l10n = context.l10n;
     final controller = TextEditingController();
     final confirmed = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         backgroundColor: TibaneColors.card,
         title: Text(l10n.incineratorPartialBurnTitle(account.displayName)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text(l10n.incineratorBurnWarning),
+            const SizedBox(height: 12),
             Text(
               l10n.commonBalanceLabel(
                 formatTokenAmount(account.amount, account.decimals),
@@ -350,10 +403,10 @@ class _IncineratorScreenState extends State<IncineratorScreen>
             const SizedBox(height: 8),
             GestureDetector(
               onTap: () {
-                final v =
-                    account.amount.toDouble() /
-                    BigInt.from(10).pow(account.decimals).toDouble();
-                controller.text = v.toStringAsFixed(account.decimals);
+                controller.text = formatExactTokenAmount(
+                  account.amount,
+                  account.decimals,
+                );
               },
               child: Text(
                 'MAX',
@@ -384,36 +437,40 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       return;
     }
 
-    if (!mounted) return;
+    if (!mounted || !_isScope(revision) || _burning) return;
     final wallet = context.read<WalletService>();
-    if (!wallet.isConnected) return;
+    final owner = wallet.publicKey;
+    if (owner == null || owner != account.owner) return;
 
     setState(() => _burning = true);
     try {
       final blockhash = await _rpc.getLatestBlockhash();
+      if (!mounted || !_isScope(revision)) return;
       final tokenProgramId = account.isToken2022
           ? token2022ProgramId
           : splTokenProgramId;
       final ix = createBurnCheckedIx(
         tokenAccount: account.pubkey,
         mint: account.mint,
-        authority: wallet.publicKey!,
+        authority: owner,
         amount: amount,
         decimals: account.decimals,
         tokenProgramId: tokenProgramId,
       );
       final tx = buildTransaction(
         recentBlockhash: blockhash,
-        feePayer: wallet.publicKey!,
+        feePayer: owner,
         instructions: [ix],
       );
       if (!mounted) return;
-      final sigs = await authorizeAndSignAndSend(context, [
+      final auth = await authorizeBatch(context, transactionReviewed: true);
+      if (auth == null || !_isScope(revision)) return;
+      final sig = await signAndSendOne(
+        wallet,
         Uint8List.fromList(tx),
-      ]);
+        auth.keys,
+      );
       if (!mounted) return;
-      if (sigs == null) return; // cancelled / not authorized
-      final sig = sigs.first;
       if (sig != null) {
         context.showSnackBar(
           SnackBar(
@@ -423,7 +480,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
           ),
         );
         await _rpc.confirmTransaction(sig);
-        if (!mounted) return;
+        if (!_isScope(revision)) return;
         _loadTokens();
         wallet.notifyTxCommitted();
       }
@@ -432,7 +489,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       if (!mounted) return;
       showWalletError(context, e);
     } finally {
-      setState(() => _burning = false);
+      if (mounted) setState(() => _burning = false);
     }
   }
 
@@ -450,9 +507,14 @@ class _IncineratorScreenState extends State<IncineratorScreen>
 
   /// Direct burn: user pays fees, sign & send. [auth] was collected once by
   /// the caller so the sign sheet isn't shown per tx.
-  Future<void> _directBurn(BatchAuth auth) async {
+  Future<void> _directBurn(
+    BatchAuth auth,
+    _BurnSelection selection,
+    int revision,
+  ) async {
     final wallet = context.read<WalletService>();
-    if (!wallet.isConnected) return;
+    final owner = wallet.publicKey;
+    if (owner == null || !_isScope(revision)) return;
 
     setState(() => _burning = true);
 
@@ -462,7 +524,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       var successCount = 0;
 
       // Burn tokens (batch 5 per tx)
-      final tokens = _selectedTokens.toList();
+      final tokens = selection.tokens;
       for (var i = 0; i < tokens.length; i += 5) {
         final batch = tokens.sublist(
           i,
@@ -470,22 +532,25 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         );
         final instructions = <SolanaInstruction>[];
         for (final account in batch) {
-          instructions.addAll(
-            buildBurnAndCloseInstructions(
+          instructions.add(
+            createBurnCheckedIx(
               tokenAccount: account.pubkey,
               mint: account.mint,
-              owner: wallet.publicKey!,
+              authority: owner,
               amount: account.amount,
               decimals: account.decimals,
-              isToken2022: account.isToken2022,
+              tokenProgramId: account.isToken2022
+                  ? token2022ProgramId
+                  : splTokenProgramId,
             ),
           );
         }
         final tx = buildTransaction(
           recentBlockhash: blockhash,
-          feePayer: wallet.publicKey!,
+          feePayer: owner,
           instructions: instructions,
         );
+        if (!_isScope(revision)) return;
         final sig = await signAndSendOne(
           wallet,
           Uint8List.fromList(tx),
@@ -500,7 +565,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       }
 
       // Burn regular NFTs (batch 3 per tx)
-      final regularNfts = _selectedNfts
+      final regularNfts = selection.nfts
           .where((n) => !n.compressed && n.mint != null)
           .toList();
       for (var i = 0; i < regularNfts.length; i += 3) {
@@ -509,13 +574,14 @@ class _IncineratorScreenState extends State<IncineratorScreen>
           i + 3 > regularNfts.length ? regularNfts.length : i + 3,
         );
         final instructions = batch
-            .map((n) => buildRegularNftBurnIx(n, wallet.publicKey!))
+            .map((n) => buildRegularNftBurnIx(n, owner))
             .toList();
         final tx = buildTransaction(
           recentBlockhash: blockhash,
-          feePayer: wallet.publicKey!,
+          feePayer: owner,
           instructions: instructions,
         );
+        if (!_isScope(revision)) return;
         final sig = await signAndSendOne(
           wallet,
           Uint8List.fromList(tx),
@@ -530,16 +596,18 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       }
 
       // Burn cNFTs (1 per tx)
-      final cNfts = _selectedNfts.where((n) => n.compressed).toList();
+      final cNfts = selection.nfts.where((n) => n.compressed);
       for (final nft in cNfts) {
+        if (!_isScope(revision)) return;
         final proof = await _rpc.getAssetProof(nft.id);
         if (proof == null) continue;
-        final ix = buildCnftBurnIx(nft, wallet.publicKey!, proof);
+        final ix = buildCnftBurnIx(nft, owner, proof);
         final tx = buildTransaction(
           recentBlockhash: blockhash,
-          feePayer: wallet.publicKey!,
+          feePayer: owner,
           instructions: [ix],
         );
+        if (!_isScope(revision)) return;
         final sig = await signAndSendOne(
           wallet,
           Uint8List.fromList(tx),
@@ -554,25 +622,21 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       }
 
       // Delete domains (batch 25 per tx)
-      final domains = _selectedDomains.toList();
+      final domains = selection.domains;
       for (var i = 0; i < domains.length; i += 25) {
         final batch = domains.sublist(
           i,
           i + 25 > domains.length ? domains.length : i + 25,
         );
         final instructions = batch
-            .map(
-              (d) => buildDomainDeleteIx(
-                nameAccount: d.id,
-                owner: wallet.publicKey!,
-              ),
-            )
+            .map((d) => buildDomainDeleteIx(nameAccount: d.id, owner: owner))
             .toList();
         final tx = buildTransaction(
           recentBlockhash: blockhash,
-          feePayer: wallet.publicKey!,
+          feePayer: owner,
           instructions: instructions,
         );
+        if (!_isScope(revision)) return;
         final sig = await signAndSendOne(
           wallet,
           Uint8List.fromList(tx),
@@ -604,11 +668,11 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       if (!mounted) return;
       showWalletError(context, e);
     } finally {
-      setState(() => _burning = false);
-      if (lastSig != null) {
+      if (mounted) setState(() => _burning = false);
+      if (lastSig != null && _isScope(revision)) {
         await _rpc.confirmTransaction(lastSig);
       }
-      if (mounted) {
+      if (_isScope(revision)) {
         _loadAll();
         wallet.notifyTxCommitted();
       }
@@ -618,9 +682,14 @@ class _IncineratorScreenState extends State<IncineratorScreen>
   /// Sponsored burn: relayer pays fees, user signs only, relay submits.
   /// Matches tibanenet IncineratorView.vue executeCombinedSponsoredBurn().
   /// [auth] was collected once by the caller (no per-tx sheet).
-  Future<void> _sponsoredBurn(BatchAuth auth) async {
+  Future<void> _sponsoredBurn(
+    BatchAuth auth,
+    _BurnSelection selection,
+    int revision,
+  ) async {
     final wallet = context.read<WalletService>();
-    if (!wallet.isConnected) return;
+    final owner = wallet.publicKey;
+    if (owner == null || !_isScope(revision)) return;
 
     setState(() {
       _burning = true;
@@ -630,13 +699,12 @@ class _IncineratorScreenState extends State<IncineratorScreen>
 
     String? lastSig;
     try {
-      final owner = wallet.publicKey!;
       final feePayer = relayerAddress;
 
       // Gather all work items: (instructions, rent) pairs
       final items = <({List<SolanaInstruction> ixs, int rent})>[];
 
-      for (final account in _selectedTokens) {
+      for (final account in selection.tokens) {
         items.add((
           ixs: buildBurnAndCloseInstructions(
             tokenAccount: account.pubkey,
@@ -650,7 +718,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         ));
       }
 
-      final regularNfts = _selectedNfts
+      final regularNfts = selection.nfts
           .where((n) => !n.compressed && n.mint != null)
           .toList();
       for (final nft in regularNfts) {
@@ -660,7 +728,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         ));
       }
 
-      for (final domain in _selectedDomains) {
+      for (final domain in selection.domains) {
         items.add((
           ixs: [buildDomainDeleteIx(nameAccount: domain.id, owner: owner)],
           rent: domain.rentLamports,
@@ -728,17 +796,20 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       }
 
       // cNFTs: 1 per tx, no tip (0 rent)
-      final cNfts = _selectedNfts.where((n) => n.compressed).toList();
+      final cNfts = selection.nfts.where((n) => n.compressed);
       for (final nft in cNfts) {
+        if (!_isScope(revision)) return;
         final proof = await _rpc.getAssetProof(nft.id);
         if (proof == null) continue;
         batches.add(([buildCnftBurnIx(nft, owner, proof)], [0]));
       }
 
+      if (!_isScope(revision)) return;
       setState(() => _sponsoredTotal = batches.length);
 
       final signatures = <String>[];
       for (final (ixs, _) in batches) {
+        if (!_isScope(revision)) return;
         final freshHash = await _rpc.getLatestBlockhash();
         final txBytes = buildTransaction(
           recentBlockhash: freshHash,
@@ -771,6 +842,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         }
 
         // Sign only — relay adds fee payer signature and submits
+        if (!_isScope(revision)) return;
         final signed = await signOne(
           wallet,
           Uint8List.fromList(txBytes),
@@ -786,9 +858,11 @@ class _IncineratorScreenState extends State<IncineratorScreen>
           }
           break;
         }
+        if (!_isScope(revision)) return;
         final sig = await _relay.relay(signed);
         signatures.add(sig);
         lastSig = sig;
+        if (!_isScope(revision)) return;
         setState(() => _sponsoredCurrent++);
       }
 
@@ -808,14 +882,14 @@ class _IncineratorScreenState extends State<IncineratorScreen>
       if (!mounted) return;
       showWalletError(context, e);
     } finally {
-      setState(() => _burning = false);
+      if (mounted) setState(() => _burning = false);
       // Wait for the last submitted tx to confirm before reloading. Without
       // this, RPC returns pre-burn state and the just-burned accounts and
       // balances appear unchanged in the UI.
-      if (lastSig != null) {
+      if (lastSig != null && _isScope(revision)) {
         await _rpc.confirmTransaction(lastSig);
       }
-      if (mounted) {
+      if (_isScope(revision)) {
         _loadAll();
         wallet.notifyTxCommitted();
       }
@@ -826,6 +900,11 @@ class _IncineratorScreenState extends State<IncineratorScreen>
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final wallet = context.watch<WalletService>();
+    final walletPrices = <String, double>{
+      for (final token in context.watch<BalancesStore?>()?.holdings ?? [])
+        if (token.priceUsd case final price? when price.isFinite && price > 0)
+          token.mint: price,
+    };
     final anyLoading = _loadingTokens || _loadingNfts || _loadingDomains;
 
     return Column(
@@ -835,19 +914,6 @@ class _IncineratorScreenState extends State<IncineratorScreen>
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: TibaneColors.orange.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.local_fire_department,
-                  color: TibaneColors.orange,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -875,6 +941,16 @@ class _IncineratorScreenState extends State<IncineratorScreen>
           ),
         ),
         const SizedBox(height: 16),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          child: Text(
+            l10n.incineratorBurnWarning,
+            style: context.textTheme.bodySmall?.apply(
+              fontSizeFactor: 1.2,
+              color: TibaneColors.warning,
+            ),
+          ),
+        ),
         // Tabs
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -931,6 +1007,7 @@ class _IncineratorScreenState extends State<IncineratorScreen>
                             onRefresh: _loadTokens,
                             child: _TokensList(
                               accounts: _tokenAccounts,
+                              walletPrices: walletPrices,
                               onToggle: (account) => setState(
                                 () => account.selected = !account.selected,
                               ),
@@ -978,7 +1055,6 @@ class _IncineratorScreenState extends State<IncineratorScreen>
         if (wallet.isConnected && _selectedCount > 0)
           _BottomBar(
             selectedCount: _selectedCount,
-            reclaimableSol: _reclaimableSol,
             burning: _burning,
             sponsoredMode: _sponsoredMode,
             tipPercent: _tipPercent,
@@ -1061,12 +1137,14 @@ class _ErrorView extends StatelessWidget {
 
 class _TokensList extends StatelessWidget {
   final List<TokenAccount> accounts;
+  final Map<String, double> walletPrices;
   final void Function(TokenAccount) onToggle;
   final void Function(bool?) onToggleAll;
   final void Function(TokenAccount)? onPartialBurn;
 
   const _TokensList({
     required this.accounts,
+    required this.walletPrices,
     required this.onToggle,
     required this.onToggleAll,
     this.onPartialBurn,
@@ -1092,8 +1170,6 @@ class _TokensList extends StatelessWidget {
     }
 
     final l10n = context.l10n;
-    final emptyAccounts = accounts.where((a) => a.isEmpty).toList();
-    final nonEmptyAccounts = accounts.where((a) => !a.isEmpty).toList();
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1115,45 +1191,18 @@ class _TokensList extends StatelessWidget {
               l10n.incineratorAccountCount(accounts.length),
               style: monoStyle(fontSize: 12, color: TibaneColors.textMuted),
             ),
-            const Spacer(),
-            Text(
-              l10n.incineratorEmptyCount(emptyAccounts.length),
-              style: monoStyle(fontSize: 12, color: TibaneColors.textDim),
-            ),
           ],
         ),
         const SizedBox(height: 8),
-        if (emptyAccounts.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              l10n.incineratorSectionEmpty,
-              style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
-            ),
+        for (final account in accounts)
+          _TokenAccountTile(
+            account: account,
+            walletPrice: walletPrices[account.mint],
+            onToggle: () => onToggle(account),
+            onLongPress: onPartialBurn == null
+                ? null
+                : () => onPartialBurn!(account),
           ),
-          ...emptyAccounts.map(
-            (a) => _TokenAccountTile(account: a, onToggle: () => onToggle(a)),
-          ),
-          const SizedBox(height: 16),
-        ],
-        if (nonEmptyAccounts.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              l10n.incineratorSectionTokens,
-              style: monoStyle(fontSize: 10, color: TibaneColors.textDim),
-            ),
-          ),
-          ...nonEmptyAccounts.map(
-            (a) => _TokenAccountTile(
-              account: a,
-              onToggle: () => onToggle(a),
-              onLongPress: onPartialBurn != null
-                  ? () => onPartialBurn!(a)
-                  : null,
-            ),
-          ),
-        ],
       ],
     );
   }
@@ -1161,21 +1210,30 @@ class _TokensList extends StatelessWidget {
 
 class _TokenAccountTile extends StatelessWidget {
   final TokenAccount account;
+  final double? walletPrice;
   final VoidCallback onToggle;
   final VoidCallback? onLongPress;
 
   const _TokenAccountTile({
     required this.account,
+    this.walletPrice,
     required this.onToggle,
     this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
+    final metadataPrice = account.usdPrice;
+    final price =
+        metadataPrice != null && metadataPrice.isFinite && metadataPrice > 0
+        ? metadataPrice
+        : walletPrice;
+    final value = price == null ? null : account.displayAmount * price;
+    final roundedAmount = formatTokenAmount(account.amount, account.decimals);
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: GestureDetector(
-        onLongPress: !account.isEmpty ? onLongPress : null,
+        onLongPress: onLongPress,
         child: TibaneCard(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           onTap: onToggle,
@@ -1193,7 +1251,7 @@ class _TokenAccountTile extends StatelessWidget {
                 imageUrl: account.imageUrl,
                 mint: account.mint,
                 symbol: account.symbol ?? account.displayName,
-                size: 36,
+                size: 44.85,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1204,60 +1262,64 @@ class _TokenAccountTile extends StatelessWidget {
                       account.displayName,
                       style: const TextStyle(
                         color: TibaneColors.text,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
+                        fontSize: 16.1,
+                        fontWeight: FontWeight.w600,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      account.isEmpty
-                          ? context.l10n.incineratorEmptyAccount
-                          : formatTokenAmount(account.amount, account.decimals),
+                      account.amount > BigInt.zero && roundedAmount == '0.00'
+                          ? formatExactTokenAmount(
+                              account.amount,
+                              account.decimals,
+                            )
+                          : roundedAmount,
                       style: monoStyle(
-                        fontSize: 11,
-                        color: account.isEmpty
-                            ? TibaneColors.textDim
-                            : TibaneColors.textMuted,
+                        fontSize: 12.65,
+                        color: TibaneColors.textMuted,
                       ),
                     ),
                   ],
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${account.rentSol.toStringAsFixed(4)} SOL',
-                    style: monoStyle(fontSize: 11, color: TibaneColors.gold),
-                  ),
-                  if (account.usdPrice != null && !account.isEmpty)
+              const SizedBox(width: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 96),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
                     Text(
-                      '\$${(account.displayAmount * account.usdPrice!).toStringAsFixed(2)}',
+                      value != null && value.isFinite
+                          ? '\$${value.toStringAsFixed(2)}'
+                          : '—',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: monoStyle(
-                        fontSize: 9,
-                        color: TibaneColors.textDim,
+                        fontSize: 11.25,
+                        color: TibaneColors.textMuted,
                       ),
                     ),
-                  if (account.isToken2022)
-                    Container(
-                      margin: const EdgeInsets.only(top: 2),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 1,
-                      ),
-                      decoration: BoxDecoration(
-                        color: TibaneColors.purple.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: Text(
-                        'T22',
-                        style: monoStyle(
-                          fontSize: 8,
-                          color: TibaneColors.purple,
+                    if (account.isToken2022)
+                      Container(
+                        margin: const EdgeInsets.only(top: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: TibaneColors.purple.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Text(
+                          'Token-2022',
+                          style: monoStyle(
+                            fontSize: 8,
+                            color: TibaneColors.purple,
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -1413,11 +1475,6 @@ class _NftTile extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                if (nft.rentLamports > 0)
-                  Text(
-                    '${(nft.rentLamports / 1e9).toStringAsFixed(4)} SOL',
-                    style: monoStyle(fontSize: 11, color: TibaneColors.gold),
-                  ),
                 Container(
                   margin: const EdgeInsets.only(top: 2),
                   padding: const EdgeInsets.symmetric(
@@ -1561,10 +1618,6 @@ class _DomainTile extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            Text(
-              '${(domain.rentLamports / 1e9).toStringAsFixed(4)} SOL',
-              style: monoStyle(fontSize: 11, color: TibaneColors.gold),
-            ),
           ],
         ),
       ),
@@ -1574,7 +1627,6 @@ class _DomainTile extends StatelessWidget {
 
 class _BottomBar extends StatelessWidget {
   final int selectedCount;
-  final BigInt reclaimableSol;
   final bool burning;
   final bool sponsoredMode;
   final double tipPercent;
@@ -1586,7 +1638,6 @@ class _BottomBar extends StatelessWidget {
 
   const _BottomBar({
     required this.selectedCount,
-    required this.reclaimableSol,
     required this.burning,
     required this.sponsoredMode,
     required this.tipPercent,
@@ -1624,13 +1675,6 @@ class _BottomBar extends StatelessWidget {
                         style: const TextStyle(
                           color: TibaneColors.text,
                           fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        l10n.incineratorReclaimSol(formatSol(reclaimableSol)),
-                        style: monoStyle(
-                          fontSize: 12,
-                          color: TibaneColors.gold,
                         ),
                       ),
                     ],

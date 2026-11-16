@@ -2,24 +2,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:libwallet/libwallet.dart';
 import 'package:tibaneapp/services/wallet/libwallet_backend.dart';
 
-CuratedToken _verified(String address, {String symbol = 'GOAT'}) =>
-    CuratedToken(
-      chainKey: 'solana.mainnet',
-      address: address,
-      symbol: symbol,
-      name: symbol,
-      decimals: 6,
-      type: 'spl-token',
-      verified: true,
-    );
-
-CuratedToken _token(String address) => CuratedToken(
+CuratedToken _token(
+  String address, {
+  String symbol = 'GOAT',
+  bool verified = false,
+}) => CuratedToken(
   chainKey: 'solana.mainnet',
   address: address,
-  symbol: 'GOAT',
-  name: 'Goat token',
+  symbol: symbol,
+  name: '$symbol token',
   decimals: 6,
   type: 'spl-token',
+  verified: verified,
 );
 
 void main() {
@@ -29,9 +23,9 @@ void main() {
         _token('unverified-1'),
         _token('unverified-2'),
         _token('unverified-3'),
-        _verified('verified-1'),
-        _verified('verified-2'),
-        _verified('unrelated', symbol: 'JUP'),
+        _token('verified-1', verified: true),
+        _token('verified-2', verified: true),
+        _token('unrelated', symbol: 'JUP', verified: true),
       ],
       ' GOAT ',
       3,
@@ -42,6 +36,7 @@ void main() {
       'verified-2',
       'unverified-1',
     ]);
+    expect(results.map((r) => r.verified), [true, true, false]);
   });
 
   test('legacy catalog keeps its order and still supports mint queries', () {

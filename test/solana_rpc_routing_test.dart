@@ -8,6 +8,49 @@ import 'package:tibaneapp/constants/solana_constants.dart';
 import 'package:tibaneapp/services/rpc_service.dart';
 
 void main() {
+  test(
+    'batch signature status distinguishes execution failure from success',
+    () async {
+      final signatures = ['succeeded', 'reverted', 'unknown', 'incomplete'];
+      final service = RpcService.real(
+        client: MockClient((request) async {
+          expect(request.url.toString(), modchainSolanaRpcUrl);
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          expect(body['method'], 'getSignatureStatuses');
+          expect(body['params'], [
+            signatures,
+            {'searchTransactionHistory': true},
+          ]);
+          return http.Response(
+            jsonEncode({
+              'result': {
+                'value': [
+                  {'confirmationStatus': 'finalized', 'err': null},
+                  {
+                    'confirmationStatus': 'confirmed',
+                    'err': {
+                      'InstructionError': [0, 'Failure'],
+                    },
+                  },
+                  null,
+                  {'confirmationStatus': 'confirmed'},
+                ],
+              },
+            }),
+            200,
+          );
+        }),
+      );
+      addTearDown(service.dispose);
+      expect(await service.getSignatureStatuses(signatures), [
+        SolanaSignatureStatus.confirmed,
+        SolanaSignatureStatus.failed,
+        SolanaSignatureStatus.pending,
+        SolanaSignatureStatus.pending,
+      ]);
+    },
+  );
+
   test('loads DAS token metadata from ModChain without a price', () async {
     final service = RpcService.real(
       client: MockClient((request) async {

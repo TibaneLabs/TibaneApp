@@ -4,14 +4,20 @@ import 'package:libwallet/libwallet.dart' show KeyDescription, WalletSecret;
 import 'package:provider/provider.dart';
 
 import '../../l10n/l10n.dart';
+import '../../services/app_lock_controller.dart';
+import '../../services/wallet/signing.dart';
 import '../../services/wallet/unified_account.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
-import 'widgets/sign_sheet.dart';
 
 class ExportPrivateKeyScreen extends StatefulWidget {
-  const ExportPrivateKeyScreen({super.key, required this.account});
+  const ExportPrivateKeyScreen({
+    super.key,
+    required this.account,
+    this.authenticator,
+  });
   final UnifiedAccount account;
+  final AppLockAuthenticator? authenticator;
 
   @override
   State<ExportPrivateKeyScreen> createState() => _ExportPrivateKeyScreenState();
@@ -19,9 +25,12 @@ class ExportPrivateKeyScreen extends StatefulWidget {
 
 class _ExportPrivateKeyScreenState extends State<ExportPrivateKeyScreen>
     with WidgetsBindingObserver {
+  late final _authenticator =
+      widget.authenticator ?? DeviceAppLockAuthenticator();
   bool _agreed = false;
   bool _busy = false;
   bool _exporting = false;
+  bool _authenticating = false;
   WalletSecret? _secret;
   String? _error;
   int _request = 0;
@@ -42,7 +51,10 @@ class _ExportPrivateKeyScreenState extends State<ExportPrivateKeyScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed && _secret != null) {
+    if (state != AppLifecycleState.resumed &&
+        (_secret != null ||
+            (_busy &&
+                (!_authenticating || state != AppLifecycleState.inactive)))) {
       setState(() {
         _request++;
         _secret = null;
@@ -53,8 +65,16 @@ class _ExportPrivateKeyScreenState extends State<ExportPrivateKeyScreen>
     }
   }
 
+  bool _canReveal(int request) {
+    final state = WidgetsBinding.instance.lifecycleState;
+    return mounted &&
+        request == _request &&
+        (state == null || state == AppLifecycleState.resumed);
+  }
+
   Future<void> _reveal() async {
     if (!_agreed || _busy) return;
+    final l10n = context.l10n;
     final request = ++_request;
     setState(() {
       _busy = true;
@@ -68,43 +88,47 @@ class _ExportPrivateKeyScreenState extends State<ExportPrivateKeyScreen>
       if (account.wallet != widget.account.walletId ||
           account.address != widget.account.address ||
           account.index != 0 ||
-          wallet.threshold != 0 ||
-          wallet.keys.length != 1) {
-        if (mounted) {
-          setState(() => _error = context.l10n.privateKeyExportUnavailable);
+          account.pubkey != wallet.pubkey ||
+          !isSingleDeviceKeyWallet(wallet)) {
+        if (_canReveal(request)) {
+          setState(() => _error = l10n.privateKeyExportUnavailable);
         }
         return;
       }
-      if (!mounted || request != _request) return;
-      final l10n = context.l10n;
-      final keys = await showSignSheet(
-        context,
-        wallet: wallet,
-        readStoreKey: (key, password) => backend.readStoreKeyPrivateForWallet(
-          wallet.id,
-          key,
-          password: password,
-        ),
-        title: l10n.privateKeyExportTitle,
-        subtitlePurpose: l10n.privateKeyExportPurpose,
-        actionLabel: l10n.actionConfirm,
-      );
-      if (keys == null || !mounted || request != _request) return;
+      if (!_canReveal(request)) return;
+      var authorized = false;
+      _authenticating = true;
+      try {
+        authorized = await _authenticator.authenticate(
+          l10n.privateKeyExportAuthReason,
+          AppLockAuthentication.deviceOwner,
+        );
+      } catch (_) {
+        // No fallback to an unlocked app session.
+      } finally {
+        _authenticating = false;
+      }
+      if (!_canReveal(request)) return;
+      if (!authorized) {
+        setState(() => _error = l10n.appLockAuthenticationFailed);
+        return;
+      }
       setState(() => _exporting = true);
+      final storeKey = wallet.keys.single;
+      final key = await backend.readStoreKeyPrivateForWallet(
+        wallet.id,
+        storeKey,
+      );
+      if (!_canReveal(request)) return;
+      if (key == null || key.isEmpty) {
+        setState(() => _error = l10n.privateKeyExportFailed);
+        return;
+      }
       final secret = await backend.exportImportedPrivateKey(
         accountId: account.id,
-        keys: [
-          for (final key in keys)
-            KeyDescription(
-              type: key.type ?? wallet.keys.single.type,
-              key: key.key,
-              id: key.id,
-            ),
-        ],
+        keys: [KeyDescription(type: storeKey.type, key: key, id: storeKey.id)],
       );
-      if (!mounted || request != _request) return;
-      final state = WidgetsBinding.instance.lifecycleState;
-      if (state != null && state != AppLifecycleState.resumed) return;
+      if (!_canReveal(request)) return;
       setState(() => _secret = secret);
     } catch (_) {
       // Never log native export errors: they may contain secret material.
