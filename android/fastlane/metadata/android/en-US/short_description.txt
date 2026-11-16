@@ -1,1 +1,1 @@
-Solana wallet, staking pools, account incinerator, and on-chain token info.
+Solana wallet, swaps, bulk sell, staking pools, SOL reclaim and token info.

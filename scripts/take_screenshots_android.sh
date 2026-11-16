@@ -9,6 +9,7 @@
 #   ./scripts/take_screenshots_android.sh                                # Pixel 7 Pro phone
 #   ./scripts/take_screenshots_android.sh Pixel_7_Pro_API_35
 #   ./scripts/take_screenshots_android.sh Tablet_10in_API_33 tenInch     # tablet
+#   ./scripts/take_screenshots_android.sh Pixel_7_Pro_API_35 phone ja    # app language (en, fr, ja, pt)
 
 set -e
 
@@ -17,12 +18,21 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 DEFAULT_EMU="Pixel_7_Pro_API_35"
 EMU="${1:-$DEFAULT_EMU}"
 KIND="${2:-phone}"
+APP_LOCALE="${3:-en}"
+# Play Console listing folder for each app language.
+case "$APP_LOCALE" in
+    en) STORE_LOCALE="en-US" ;;
+    fr) STORE_LOCALE="fr-FR" ;;
+    ja) STORE_LOCALE="ja-JP" ;;
+    pt) STORE_LOCALE="pt-BR" ;;
+    *) echo "Unknown locale: $APP_LOCALE"; exit 1 ;;
+esac
 case "$KIND" in
     phone)   SUBDIR="phoneScreenshots" ;;
     tenInch) SUBDIR="tenInchScreenshots" ;;
     *) echo "Unknown kind: $KIND (use phone or tenInch)"; exit 1 ;;
 esac
-SCREENSHOTS_DIR="$PROJECT_DIR/android/fastlane/metadata/android/en-US/images/$SUBDIR"
+SCREENSHOTS_DIR="$PROJECT_DIR/android/fastlane/metadata/android/$STORE_LOCALE/images/$SUBDIR"
 LOG_FILE="$(mktemp -t tibane_screenshots).log"
 
 GREEN='\033[0;32m'
@@ -31,7 +41,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo -e "${GREEN}=== Tibane Play Store Screenshots ===${NC}"
-echo -e "${BLUE}Emulator:${NC} $EMU  ${BLUE}Kind:${NC} $KIND"
+echo -e "${BLUE}Emulator:${NC} $EMU  ${BLUE}Kind:${NC} $KIND  ${BLUE}Locale:${NC} $STORE_LOCALE"
 echo -e "${BLUE}Log:${NC} $LOG_FILE"
 
 # Kill any stale flutter run / dart processes left over from earlier runs.
@@ -78,6 +88,17 @@ adb -s "$DEVICE_ID" shell settings put system user_rotation 0 || true
 adb -s "$DEVICE_ID" shell cmd window set-letterbox-style --isEducationEnabled false || true
 adb -s "$DEVICE_ID" shell cmd window set-letterbox-style --isUserAppAspectRatioSettingsEnabled false || true
 
+# Clean status bar: SystemUI demo mode (fixed clock, full battery and signal,
+# no notification icons).
+adb -s "$DEVICE_ID" shell settings put global sysui_demo_allowed 1 || true
+demo() { adb -s "$DEVICE_ID" shell am broadcast -a com.android.systemui.demo -e command "$@" >/dev/null || true; }
+demo enter
+demo clock -e hhmm 0941
+demo battery -e level 100 -e plugged false
+demo network -e wifi show -e level 4
+demo network -e mobile show -e datatype none -e level 4
+demo notifications -e visible false
+
 # Force-stop any prior app instance on the device and clear logcat so the
 # new flutter run doesn't pick up stale "Screen N ready" lines from a
 # previous session's process.
@@ -85,7 +106,8 @@ adb -s "$DEVICE_ID" shell am force-stop net.tibane.tibaneapp || true
 adb -s "$DEVICE_ID" logcat -c || true
 
 echo -e "${YELLOW}Building and launching screenshot app...${NC}"
-flutter run --target=lib/screenshot_main.dart -d "$DEVICE_ID" --no-hot >"$LOG_FILE" 2>&1 &
+flutter run --target=lib/screenshot_main.dart -d "$DEVICE_ID" --no-hot \
+    --dart-define=SCREENSHOT_LOCALE="$APP_LOCALE" >"$LOG_FILE" 2>&1 &
 FLUTTER_PID=$!
 
 # Wait until we see the screen-N-ready signal in the log, then grab a frame.
@@ -100,6 +122,10 @@ wait_and_capture() {
             echo -e "${GREEN}Saved:${NC} $out"
             return 0
         fi
+        if ! kill -0 "$FLUTTER_PID" 2>/dev/null; then
+            echo "flutter run exited before screen $n (see $LOG_FILE)"
+            return 1
+        fi
         sleep 0.1
     done
     echo "Timeout waiting for screen $n"
@@ -107,11 +133,13 @@ wait_and_capture() {
 }
 
 wait_and_capture 1 "$SCREENSHOTS_DIR/1_wallet.png"
-wait_and_capture 2 "$SCREENSHOTS_DIR/2_wallet_setup.png"
-wait_and_capture 3 "$SCREENSHOTS_DIR/3_staking_pools.png"
-wait_and_capture 4 "$SCREENSHOTS_DIR/4_staking_detail.png"
-wait_and_capture 5 "$SCREENSHOTS_DIR/5_incinerator.png"
-wait_and_capture 6 "$SCREENSHOTS_DIR/6_token_info.png"
+wait_and_capture 2 "$SCREENSHOTS_DIR/2_bulk_sell.png"
+wait_and_capture 3 "$SCREENSHOTS_DIR/3_my_staked.png"
+wait_and_capture 4 "$SCREENSHOTS_DIR/4_staking_pools.png"
+wait_and_capture 5 "$SCREENSHOTS_DIR/5_staking_detail.png"
+wait_and_capture 6 "$SCREENSHOTS_DIR/6_incinerator.png"
+wait_and_capture 7 "$SCREENSHOTS_DIR/7_token_info.png"
+wait_and_capture 8 "$SCREENSHOTS_DIR/8_wallet_setup.png"
 
 kill "$FLUTTER_PID" 2>/dev/null || true
 pkill -f "flutter run" 2>/dev/null || true

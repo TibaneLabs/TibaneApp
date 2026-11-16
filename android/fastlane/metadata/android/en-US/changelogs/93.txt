@@ -1,0 +1,4 @@
+Hardware wallets: Ledger (USB or Bluetooth) with firmware updates, CatCard over USB, and air-gapped QR signers.
+New tools: Bulk Sell, Reclaim SOL, and My Staked for all your ChiefStaker positions.
+Verified token badges, accounts grouped by wallet, MPC wallet setup guide, better Bitcoin and EVM accounts, improved swap MAX quotes, profit and loss, and a new activity history.
+Now in French, Japanese, and Portuguese.

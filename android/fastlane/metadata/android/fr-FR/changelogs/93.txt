@@ -1,0 +1,4 @@
+Portefeuilles matériels : Ledger (USB ou Bluetooth) avec mises à jour du firmware, CatCard en USB et signataires hors ligne par QR code.
+Nouveaux outils : vente groupée, récupération de SOL et Mes positions pour vos stakes ChiefStaker.
+Badges de vérification, comptes regroupés par portefeuille, guide MPC, comptes Bitcoin et EVM améliorés, swap MAX plus précis, plus-values et nouvel historique.
+Disponible en français, japonais et portugais.

@@ -1,0 +1,4 @@
+Carteiras de hardware: Ledger (USB ou Bluetooth) com atualização de firmware, CatCard via USB e assinadores offline por QR code.
+Novas ferramentas: Venda em lote, Recuperar SOL e Meus stakes para suas posições ChiefStaker.
+Selos de verificação, contas agrupadas por carteira, guia MPC, contas Bitcoin e EVM melhores, cotações MAX mais precisas, lucros e perdas e novo histórico.
+Agora em francês, japonês e português.
