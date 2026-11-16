@@ -2,13 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:libwallet/libwallet.dart' show Wallet, WalletKey;
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tibaneapp/l10n/gen/app_localizations.dart';
+import 'package:tibaneapp/screens/wallet/accounts_management_screen.dart';
+import 'package:tibaneapp/screens/wallet/inapp_import_private_key_screen.dart';
+import 'package:tibaneapp/screens/wallet/wallet_create_options_screen.dart';
 import 'package:tibaneapp/screens/wallet/widgets/account_switcher_sheet.dart';
 import 'package:libwallet/libwallet.dart' show CatCardPairing;
 import 'package:tibaneapp/screens/wallet/add_hardware_wallet_screen.dart';
 import 'package:tibaneapp/screens/wallet/widgets/hardware_status.dart';
 import 'package:tibaneapp/services/wallet/unified_account.dart';
+import 'package:tibaneapp/services/wallet/accounts_service.dart';
 import 'package:tibaneapp/services/wallet_service.dart';
 import 'package:tibaneapp/theme/tibane_theme.dart';
 
@@ -44,18 +50,56 @@ final _accounts = [
   ),
 ];
 
+class _FixtureAccounts extends AccountsService {
+  _FixtureAccounts(
+    super.libwallet,
+    super.mwa,
+    this.walletsById,
+    this.attachedWalletParents,
+    this.walletGroups,
+  );
+
+  @override
+  final Map<String, Wallet> walletsById;
+
+  @override
+  final Map<String, String> attachedWalletParents;
+
+  @override
+  final Map<String, String> walletGroups;
+}
+
 class _Service extends WalletService {
-  _Service({List<UnifiedAccount>? accounts})
-    : visibleAccounts = accounts ?? _accounts;
+  _Service({
+    List<UnifiedAccount>? accounts,
+    this.fixtureWallets,
+    this.attachedWalletParents = const {},
+    this.walletGroups = const {},
+  }) : visibleAccounts = accounts ?? _accounts;
 
   final List<UnifiedAccount> visibleAccounts;
+  final Map<String, Wallet>? fixtureWallets;
+  final Map<String, String> attachedWalletParents;
+  final Map<String, String> walletGroups;
+  late final _fixtureAccounts = _FixtureAccounts(
+    libwallet,
+    mwa,
+    fixtureWallets!,
+    attachedWalletParents,
+    walletGroups,
+  );
   final selections = <UnifiedAccount>[];
 
   @override
   List<UnifiedAccount> get accounts => visibleAccounts;
 
   @override
-  UnifiedAccount get currentAccount => _accounts[2];
+  UnifiedAccount get currentAccount =>
+      fixtureWallets == null ? _accounts[2] : visibleAccounts.first;
+
+  @override
+  AccountsService get accountsService =>
+      fixtureWallets == null ? super.accountsService : _fixtureAccounts;
 
   @override
   Future<void> refreshAccounts() async {}
@@ -81,13 +125,21 @@ Future<_Service> _open(
   String language = 'en',
   Size size = const Size(393, 852),
   List<UnifiedAccount>? accounts,
+  Map<String, Wallet>? wallets,
+  Map<String, String> attachedWalletParents = const {},
+  Map<String, String> walletGroups = const {},
   GlobalKey<NavigatorState>? navigatorKey,
 }) async {
   tester.view.physicalSize = size * 2;
   tester.view.devicePixelRatio = 2;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
-  final service = _Service(accounts: accounts);
+  final service = _Service(
+    accounts: accounts,
+    fixtureWallets: wallets,
+    attachedWalletParents: attachedWalletParents,
+    walletGroups: walletGroups,
+  );
   if (navigatorKey != null) installHardwareWalletUi(service, navigatorKey);
   addTearDown(service.dispose);
   await tester.pumpWidget(
@@ -101,9 +153,21 @@ Future<_Service> _open(
         supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
           body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () => showAccountSwitcher(context),
-              child: const Text('Open accounts'),
+            builder: (context) => Column(
+              children: [
+                TextButton(
+                  onPressed: () => showAccountSwitcher(context),
+                  child: const Text('Open accounts'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => const AccountsManagementScreen(),
+                    ),
+                  ),
+                  child: const Text('Manage test accounts'),
+                ),
+              ],
             ),
           ),
         ),
@@ -117,6 +181,242 @@ Future<_Service> _open(
 
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
+
+  testWidgets(
+    'a lone private key offers wallet creation or independent import',
+    (tester) async {
+      final imported = Wallet(
+        id: 'wallet',
+        name: 'Imported',
+        curve: 'ed25519',
+        protocol: 'frost',
+        threshold: 0,
+        gen: 0,
+        pubkey: '',
+        chaincode: '',
+        created: DateTime(2020),
+        modified: DateTime(2020),
+        keys: const [
+          WalletKey(
+            id: 'key',
+            wallet: 'wallet',
+            type: 'StoreKey',
+            key: '',
+            gen: 0,
+          ),
+        ],
+      );
+      await _open(
+        tester,
+        accounts: [_accounts.first],
+        wallets: {'wallet': imported},
+      );
+
+      Future<void> openMenu() async {
+        final add = find.text('Add New');
+        await tester.ensureVisible(add);
+        await tester.tap(add);
+        await tester.pumpAndSettle();
+        final dialog = find.byType(AlertDialog);
+        expect(
+          find.descendant(of: dialog, matching: find.text('Add New')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: dialog, matching: find.byType(Text)),
+          findsNWidgets(4),
+        );
+        final cancel = tester.widget<FilledButton>(
+          find.descendant(
+            of: dialog,
+            matching: find.widgetWithText(FilledButton, 'Cancel'),
+          ),
+        );
+        expect(
+          cancel.style?.backgroundColor?.resolve({}),
+          TibaneColors.textDim,
+        );
+        expect(find.text('Create New Account'), findsNothing);
+      }
+
+      await openMenu();
+      await tester.tap(find.text('Create wallet'));
+      await tester.pumpAndSettle();
+      expect(find.byType(WalletCreateOptionsScreen), findsOneWidget);
+      expect(
+        find.byKey(const Key('wallet-create-seed-option')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('wallet-create-mpc-option')), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      await openMenu();
+      await tester.tap(find.text('Import Another Account'));
+      await tester.pumpAndSettle();
+      final screen = tester.widget<InAppImportPrivateKeyScreen>(
+        find.byType(InAppImportPrivateKeyScreen),
+      );
+      expect(screen.groups, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'an imported selection offers wallet creation even beside an MPC wallet',
+    (tester) async {
+      const imported = UnifiedAccount(
+        backend: AccountBackend.inapp,
+        chain: 'solana',
+        address: 'imported-public-address',
+        label: 'Imported account',
+        accountId: 'imported-account',
+        walletId: 'imported',
+      );
+      Wallet wallet(String id, int threshold) => Wallet(
+        id: id,
+        name: id,
+        curve: 'ed25519',
+        protocol: 'frost',
+        threshold: threshold,
+        gen: 0,
+        pubkey: '',
+        chaincode: '',
+        created: DateTime(2020),
+        modified: DateTime(2020),
+        keys: const [],
+      );
+      await _open(
+        tester,
+        accounts: [imported, _accounts.first],
+        wallets: {
+          'wallet': wallet('wallet', 1),
+          'imported': wallet('imported', 0),
+        },
+        attachedWalletParents: const {'imported': 'wallet'},
+      );
+      final add = find.text('Add New');
+      await tester.ensureVisible(add);
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      expect(find.text('Create New Account'), findsNothing);
+      expect(find.text('Import Another Account'), findsOneWidget);
+
+      await tester.tap(find.text('Create wallet'));
+      await tester.pumpAndSettle();
+      expect(find.byType(WalletCreateOptionsScreen), findsOneWidget);
+    },
+  );
+
+  testWidgets('manage accounts groups chains and hides only the sidebar row', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    Wallet wallet(String id, String curve) => Wallet(
+      id: id,
+      name: 'Combined wallet',
+      curve: curve,
+      threshold: 1,
+      gen: 0,
+      pubkey: '',
+      chaincode: '',
+      created: DateTime.utc(2026),
+      modified: DateTime.utc(2026),
+      keys: const [],
+    );
+    UnifiedAccount account(
+      String name,
+      String chain,
+      String walletId,
+      int day, {
+      bool main = false,
+    }) => UnifiedAccount(
+      backend: AccountBackend.inapp,
+      chain: chain,
+      address: 'public-$name-account-address',
+      label: 'Combined wallet - $name',
+      accountName: name,
+      walletName: 'Combined wallet',
+      accountId: name,
+      walletId: walletId,
+      createdAt: DateTime.utc(2026, 1, day),
+      isMainWalletContext: main,
+    );
+    final eth = account('Ethereum account', 'ethereum', 'evm', 1, main: true);
+    final sol = account('Solana account', 'solana', 'sol', 2, main: true);
+    final added = account('Added account', 'solana', 'sol', 3);
+    final service = await _open(
+      tester,
+      size: const Size(320, 568),
+      accounts: [sol, added, eth],
+      wallets: {
+        'sol': wallet('sol', 'ed25519'),
+        'evm': wallet('evm', 'secp256k1'),
+      },
+      walletGroups: const {'sol': 'group', 'evm': 'group'},
+    );
+    final l10n = AppLocalizations.of(
+      tester.element(find.byType(AccountSwitcherSheet)),
+    );
+    await tester.tap(find.byTooltip(l10n.actionClose));
+    await tester.pumpAndSettle();
+    Future<void> open(String name) async {
+      await tester.tap(find.text(name));
+      await tester.pumpAndSettle();
+    }
+
+    await open('Manage test accounts');
+    expect(find.text('Combined wallet'), findsOneWidget);
+    expect(find.textContaining('Combined wallet -'), findsNothing);
+    expect(find.text('Added accounts'), findsNothing);
+    expect(find.textContaining('From wallet:'), findsNothing);
+    expect(find.byIcon(Icons.copy), findsNothing);
+    final rows = [
+      for (final a in [eth, sol, added])
+        find.byKey(ValueKey('managed-account-${a.id}')),
+    ];
+    expect(
+      tester.getTopLeft(rows[0]).dy,
+      lessThan(tester.getTopLeft(rows[1]).dy),
+    );
+    expect(
+      tester.getTopLeft(rows[1]).dy,
+      lessThan(tester.getTopLeft(rows[2]).dy),
+    );
+    final address = find.descendant(
+      of: rows[1],
+      matching: find.text(abbreviateAccountAddress(sol.address)),
+    );
+    expect(tester.widget<Text>(address).style!.fontSize, 13.2);
+    final hide = find.descendant(
+      of: rows[1],
+      matching: find.byTooltip(l10n.accountsHideInSidebar),
+    );
+    await tester.tap(hide);
+    await tester.pumpAndSettle();
+    final show = find.descendant(
+      of: rows[1],
+      matching: find.byTooltip(l10n.accountsShowInSidebar),
+    );
+    expect(show, findsOneWidget);
+    expect(service.currentAccount, same(sol));
+    expect(service.accounts, contains(sol));
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await open('Open accounts');
+    expect(_row(sol), findsNothing);
+    expect(_row(eth), findsOneWidget);
+    await tester.tap(find.byTooltip(l10n.actionClose));
+    await tester.pumpAndSettle();
+    await open('Manage test accounts');
+    await tester.tap(show);
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await open('Open accounts');
+    expect(_row(sol), findsOneWidget);
+    expect(service.selections, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
 
   for (final language in ['en', 'pt', 'fr', 'ja']) {
     testWidgets('Add hardware wallet opens the device chooser: $language', (

@@ -250,12 +250,32 @@ class _InAppCreateScreenState extends State<InAppCreateScreen> {
 
   Widget _buildIdentifier() {
     final l10n = context.l10n;
+    final introFontSize = Theme.of(context).textTheme.bodyMedium?.fontSize ?? 14;
+    const emphasis = TextStyle(fontWeight: FontWeight.w700);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          l10n.inappCreateIdentifierIntro,
-          style: const TextStyle(color: TibaneColors.textMuted, height: 1.4),
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: l10n.inappCreateIdentifierContactLead,
+                style: emphasis,
+              ),
+              TextSpan(text: l10n.inappCreateIdentifierContactBody),
+              const TextSpan(text: '\n\n'),
+              TextSpan(
+                text: l10n.inappCreateIdentifierRestoreLead,
+                style: emphasis,
+              ),
+              TextSpan(text: l10n.inappCreateIdentifierRestoreBody),
+            ],
+          ),
+          style: TextStyle(
+            color: TibaneColors.textMuted,
+            fontSize: introFontSize * 1.2,
+            height: 1.4,
+          ),
         ),
         const SizedBox(height: 20),
         SegmentedButton<_IdMode>(

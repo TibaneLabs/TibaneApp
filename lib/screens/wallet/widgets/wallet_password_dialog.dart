@@ -4,14 +4,18 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../l10n/l10n.dart';
 import '../../../theme/tibane_theme.dart';
 
-Future<String?> showWalletPasswordDialog(BuildContext context) =>
-    showDialog<String>(
-      context: context,
-      builder: (_) => const _WalletPasswordDialog(),
-    );
+Future<String?> showWalletPasswordDialog(
+  BuildContext context, {
+  String? confirmationTitle,
+}) => showDialog<String>(
+  context: context,
+  builder: (_) => _WalletPasswordDialog(confirmationTitle: confirmationTitle),
+);
 
 class _WalletPasswordDialog extends StatefulWidget {
-  const _WalletPasswordDialog();
+  const _WalletPasswordDialog({this.confirmationTitle});
+
+  final String? confirmationTitle;
 
   @override
   State<_WalletPasswordDialog> createState() => _WalletPasswordDialogState();
@@ -76,7 +80,7 @@ class _WalletPasswordDialogState extends State<_WalletPasswordDialog>
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       scrollable: true,
       title: Text(
-        l10n.signSheetPasswordTitle,
+        widget.confirmationTitle ?? l10n.signSheetPasswordTitle,
         key: const Key('wallet-password-title'),
         textAlign: TextAlign.center,
         // Google Fonts loads static variants; select the actual medium file.
@@ -117,7 +121,12 @@ class _WalletPasswordDialogState extends State<_WalletPasswordDialog>
                 key: const Key('wallet-password-cancel'),
                 onPressed: _cancel,
                 style: TextButton.styleFrom(
-                  foregroundColor: TibaneColors.orange,
+                  backgroundColor: widget.confirmationTitle == null
+                      ? null
+                      : TibaneColors.surface,
+                  foregroundColor: widget.confirmationTitle == null
+                      ? TibaneColors.orange
+                      : TibaneColors.text,
                   minimumSize: const Size(0, 52),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -144,7 +153,12 @@ class _WalletPasswordDialogState extends State<_WalletPasswordDialog>
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: Text(l10n.actionOk, textAlign: TextAlign.center),
+                child: Text(
+                  widget.confirmationTitle == null
+                      ? l10n.actionOk
+                      : l10n.actionConfirm,
+                  textAlign: TextAlign.center,
+                ),
               ),
             ),
           ],

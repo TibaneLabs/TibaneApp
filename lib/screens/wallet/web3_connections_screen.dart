@@ -1,20 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:libwallet/libwallet.dart' show Web3Connection;
 import 'package:provider/provider.dart';
 
 import '../../l10n/l10n.dart';
+import '../../services/wallet/connected_dapps.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
-import '../../widgets/tibane_card.dart';
-import '../../widgets/wallet_error_display.dart';
-import '../../utils/log.dart';
-import '../../utils/wallet_error.dart';
 import '../../utils/context_extensions.dart';
+import '../../utils/wallet_error.dart';
+import '../../widgets/tibane_card.dart';
 
-/// Lists every dApp the user has granted EIP-1193 (window.ethereum /
-/// window.solana) access to via the in-app browser. Each row exposes a
-/// delete button so the user can revoke the connection. Re-granted on
-/// the next visit if the dApp asks again.
 class Web3ConnectionsScreen extends StatefulWidget {
   const Web3ConnectionsScreen({super.key});
 
@@ -23,176 +17,232 @@ class Web3ConnectionsScreen extends StatefulWidget {
 }
 
 class _Web3ConnectionsScreenState extends State<Web3ConnectionsScreen> {
-  List<Web3Connection>? _connections;
+  List<ConnectedDapp> _connections = const [];
+  String? _walletId;
   bool _loading = true;
+  bool _revoking = false;
   String? _error;
+  int _revision = 0;
+
+  String? _selectedWalletId(WalletService wallet) {
+    final account = wallet.currentAccount;
+    return account?.isInApp == true ? account?.walletId : null;
+  }
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    if (mounted) {
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
-    }
-    try {
-      final client = await context
-          .read<WalletService>()
-          .libwallet
-          .ensureClient();
-      final list = await client.web3Connections.list();
-      list.sort((a, b) => b.created.compareTo(a.created));
-      if (!mounted) return;
-      setState(() {
-        _connections = list;
-        _loading = false;
-      });
-    } catch (e) {
-      logError('[Web3Connections._load] load connections error: $e');
-      if (!mounted) return;
-      setState(() {
-        _error = walletErrorMessageForContext(context, e);
-        _loading = false;
-      });
-    }
-  }
-
-  Future<void> _revoke(Web3Connection c) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        final l10n = ctx.l10n;
-        return AlertDialog(
-          backgroundColor: TibaneColors.card,
-          title: Text(l10n.web3RevokeTitle),
-          content: Text(
-            l10n.web3RevokeBody(c.host),
-            style: const TextStyle(color: TibaneColors.textMuted),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(l10n.actionCancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(
-                l10n.web3RevokeAction,
-                style: const TextStyle(color: TibaneColors.error),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-    if (confirmed != true) return;
-    if (!mounted) return;
-    try {
-      final client = await context
-          .read<WalletService>()
-          .libwallet
-          .ensureClient();
-      await client.web3Connections.delete(c.id);
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final walletId = _selectedWalletId(context.watch<WalletService>());
+    if (_revision == 0 || walletId != _walletId) {
+      _walletId = walletId;
+      _connections = const [];
       _load();
+    }
+  }
+
+  Future<void> _load({bool revokeFailed = false}) async {
+    final revision = ++_revision;
+    final wallet = context.read<WalletService>();
+    final walletId = _walletId;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final list = walletId == null
+          ? <ConnectedDapp>[]
+          : await listConnectedDapps(
+              await wallet.libwallet.ensureClient(),
+              connectedAccountsFor(wallet, walletId),
+            );
+      if (!mounted || revision != _revision) return;
+      setState(() => _connections = list);
     } catch (e) {
-      logError('[Web3Connections._revoke] revoke error: $e');
-      if (!mounted) return;
-      showWalletError(context, e);
+      if (!mounted || revision != _revision) return;
+      setState(() => _error = walletErrorMessageForContext(context, e));
+    } finally {
+      if (mounted && revision == _revision) {
+        setState(() {
+          _loading = false;
+          if (revokeFailed) _error ??= context.l10n.web3RevokeFailed;
+        });
+      }
+    }
+  }
+
+  Future<void> _revoke({ConnectedDapp? single}) async {
+    final walletId = _walletId;
+    if (walletId == null || _loading || _revoking) return;
+    final wallet = context.read<WalletService>();
+    final l10n = context.l10n;
+    final revision = _revision;
+    final reviewed = {
+      for (final entry in single == null ? _connections : [single])
+        (entry.isSession, entry.id),
+    };
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: TibaneColors.card,
+        title: Text(single == null ? l10n.web3RevokeAll : l10n.web3RevokeTitle),
+        content: Text(
+          single == null
+              ? l10n.web3RevokeAllBody
+              : single.isSession
+              ? l10n.web3DisconnectSessionBody
+              : l10n.web3RevokeBody(single.name),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.actionCancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: TibaneColors.orange,
+              foregroundColor: TibaneColors.black,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.actionConfirm),
+          ),
+        ],
+      ),
+    );
+    bool isCurrent() =>
+        mounted &&
+        _revision == revision &&
+        _selectedWalletId(wallet) == walletId;
+    if (approved != true || !isCurrent() || _revoking) return;
+    setState(() => _revoking = true);
+    var failed = false;
+    try {
+      final client = await wallet.libwallet.ensureClient();
+      if (!isCurrent()) return;
+      final list = await listConnectedDapps(
+        client,
+        connectedAccountsFor(wallet, walletId),
+      );
+      for (final entry in list) {
+        if (!isCurrent()) break;
+        if (!reviewed.contains((entry.isSession, entry.id))) {
+          continue;
+        }
+        try {
+          await entry.revoke(client);
+        } catch (_) {
+          failed = true;
+        }
+      }
+    } catch (_) {
+      failed = true;
+    } finally {
+      if (mounted) {
+        setState(() => _revoking = false);
+        if (isCurrent()) await _load(revokeFailed: failed);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final busy = _loading || _revoking;
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(
-        title: Text(l10n.web3Title),
+        title: Text(l10n.web3Title, maxLines: 2),
         actions: [
           IconButton(
             tooltip: l10n.actionRefresh,
-            onPressed: _load,
+            onPressed: busy ? null : _load,
             icon: const Icon(Icons.refresh),
           ),
         ],
       ),
       body: SafeArea(
-        child: Builder(
-          builder: (context) {
-            if (_loading) {
-              return const Center(
+        child: _loading
+            ? const Center(
                 child: CircularProgressIndicator(color: TibaneColors.orange),
-              );
-            }
-            if (_error != null) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(
-                    _error!,
-                    style: const TextStyle(color: TibaneColors.textMuted),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              );
-            }
-            final list = _connections ?? const [];
-            if (list.isEmpty) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.link_off,
-                        size: 48,
-                        color: TibaneColors.textDim,
+              )
+            : RefreshIndicator(
+                color: TibaneColors.orange,
+                onRefresh: () async {
+                  if (!busy) await _load();
+                },
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                  children: [
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(color: TibaneColors.error),
+                        ),
+                      )
+                    else if (_connections.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          children: [
+                            const Icon(
+                              Icons.link_off,
+                              size: 48,
+                              color: TibaneColors.textDim,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              _walletId == null
+                                  ? l10n.web3SelectWallet
+                                  : l10n.web3Empty,
+                              style: context.textTheme.titleMedium,
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 16),
-                      Text(
-                        l10n.web3Empty,
-                        style: context.textTheme.titleMedium,
+                    for (final connection in _connections)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _ConnectionRow(
+                          connection: connection,
+                          onRevoke: busy
+                              ? null
+                              : () => _revoke(single: connection),
+                        ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        l10n.web3EmptyHint,
-                        style: const TextStyle(color: TibaneColors.textMuted),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }
-            return RefreshIndicator(
-              color: TibaneColors.orange,
-              onRefresh: _load,
-              child: ListView.separated(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 96),
-                itemCount: list.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (_, i) => _ConnectionRow(
-                  connection: list[i],
-                  onRevoke: () => _revoke(list[i]),
+                  ],
                 ),
               ),
-            );
-          },
-        ),
       ),
+      bottomNavigationBar: _connections.isEmpty && !_revoking
+          ? null
+          : SafeArea(
+              top: false,
+              minimum: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+              child: FilledButton(
+                onPressed: busy ? null : () => _revoke(),
+                style: FilledButton.styleFrom(
+                  backgroundColor: TibaneColors.orange,
+                  foregroundColor: TibaneColors.black,
+                  minimumSize: const Size(0, 48),
+                ),
+                child: _revoking
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(l10n.web3RevokeAll),
+              ),
+            ),
     );
   }
 }
 
 class _ConnectionRow extends StatelessWidget {
-  final Web3Connection connection;
-  final VoidCallback onRevoke;
+  final ConnectedDapp connection;
+  final VoidCallback? onRevoke;
 
   const _ConnectionRow({required this.connection, required this.onRevoke});
 
@@ -200,8 +250,12 @@ class _ConnectionRow extends StatelessWidget {
     final now = DateTime.now();
     final diff = now.difference(t);
     if (diff.inMinutes < 1) return l10n.web3TimeJustNow;
-    if (diff.inMinutes < 60) return l10n.web3TimeMinutesAgo(diff.inMinutes.toString());
-    if (diff.inHours < 24) return l10n.web3TimeHoursAgo(diff.inHours.toString());
+    if (diff.inMinutes < 60) {
+      return l10n.web3TimeMinutesAgo(diff.inMinutes.toString());
+    }
+    if (diff.inHours < 24) {
+      return l10n.web3TimeHoursAgo(diff.inHours.toString());
+    }
     if (diff.inDays < 30) return l10n.web3TimeDaysAgo(diff.inDays.toString());
     return '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
   }
@@ -219,8 +273,8 @@ class _ConnectionRow extends StatelessWidget {
               color: TibaneColors.orange.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.public,
+            child: Icon(
+              connection.isSession ? Icons.link : Icons.public,
               color: TibaneColors.orange,
               size: 16,
             ),
@@ -231,17 +285,23 @@ class _ConnectionRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  connection.host.isEmpty ? l10n.web3UnknownHost : connection.host,
+                  connection.name.isEmpty
+                      ? l10n.web3UnknownHost
+                      : connection.name,
                   style: const TextStyle(
                     color: TibaneColors.text,
                     fontSize: 15,
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  l10n.web3ConnectedAt(_formatTime(connection.created, l10n)),
-                  style: monoStyle(fontSize: 11, color: TibaneColors.textMuted),
-                ),
+                if (connection.created case final created?)
+                  Text(
+                    l10n.web3ConnectedAt(_formatTime(created, l10n)),
+                    style: monoStyle(
+                      fontSize: 11,
+                      color: TibaneColors.textMuted,
+                    ),
+                  ),
               ],
             ),
           ),

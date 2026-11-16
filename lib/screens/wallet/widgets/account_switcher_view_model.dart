@@ -69,7 +69,7 @@ List<AccountSwitcherGroup> buildAccountGroups({
                 )
                 .toList()
               ..sort(compareAccountsForSwitcher),
-        additionalAccounts: _accountsInCreationOrder(
+        additionalAccounts: accountsInCreationOrder(
           walletAccounts.where(
             (a) =>
                 !a.isMainWalletContext ||
@@ -90,7 +90,7 @@ List<AccountSwitcherGroup> buildAccountGroups({
         walletName: unnamedLabel,
         mainAccounts: leftovers.where((a) => a.isMainWalletContext).toList()
           ..sort(compareAccountsForSwitcher),
-        additionalAccounts: _accountsInCreationOrder(
+        additionalAccounts: accountsInCreationOrder(
           leftovers.where((a) => !a.isMainWalletContext),
         ),
       ),
@@ -99,7 +99,7 @@ List<AccountSwitcherGroup> buildAccountGroups({
   return groups;
 }
 
-List<UnifiedAccount> _accountsInCreationOrder(
+List<UnifiedAccount> accountsInCreationOrder(
   Iterable<UnifiedAccount> accounts,
 ) {
   final indexed = accounts.indexed.toList()

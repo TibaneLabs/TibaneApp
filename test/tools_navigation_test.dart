@@ -2,16 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:tibaneapp/constants/solana_constants.dart';
 import 'package:tibaneapp/l10n/gen/app_localizations.dart';
 import 'package:tibaneapp/models/staking_pool.dart';
 import 'package:tibaneapp/screens/incinerator_screen.dart';
 import 'package:tibaneapp/screens/staking/staking_pools_screen.dart';
-import 'package:tibaneapp/screens/token_search_screen.dart';
 import 'package:tibaneapp/screens/tools_screen.dart';
 import 'package:tibaneapp/services/chiefstaker_api.dart';
 import 'package:tibaneapp/services/uk_compliance_service.dart';
-import 'package:tibaneapp/services/wallet/libwallet_backend.dart';
 import 'package:tibaneapp/services/wallet/unified_account.dart';
 import 'package:tibaneapp/services/wallet_service.dart';
 import 'package:tibaneapp/theme/tibane_theme.dart';
@@ -33,34 +30,11 @@ const _ethereum = UnifiedAccount(
   accountId: 'ethereum',
 );
 
-class _Backend extends LibwalletBackend {
-  final searches = <String>[];
-  @override
-  Future<List<TokenSearchResult>> searchCuratedTokens(
-    String query, {
-    String? network,
-    int limit = 20,
-  }) async {
-    searches.add(query);
-    return const [
-      TokenSearchResult(
-        mint: wsolMint,
-        name: 'Wrapped SOL',
-        symbol: 'SOL',
-        decimals: 9,
-      ),
-    ];
-  }
-}
-
 class _Wallet extends WalletService {
-  final backend = _Backend();
   UnifiedAccount? current;
   List<UnifiedAccount> entries = [];
   final switches = <UnifiedAccount>[];
   bool failSwitch = false;
-  @override
-  LibwalletBackend get libwallet => backend;
   @override
   bool get isConnected => false;
   @override
@@ -79,12 +53,6 @@ class _Wallet extends WalletService {
     current = account;
     notifyListeners();
     return true;
-  }
-
-  @override
-  void dispose() {
-    backend.dispose();
-    super.dispose();
   }
 }
 
@@ -159,40 +127,71 @@ void main() {
 
   for (final locale in AppLocalizations.supportedLocales) {
     for (final size in [const Size(320, 568), const Size(393, 852)]) {
-      testWidgets('Tools lists all three translated features: $locale $size', (
+      testWidgets('Tools lists translated features: $locale $size', (
         tester,
       ) async {
         final l10n = await _pump(tester, _Wallet(), locale: locale, size: size);
-        for (final (key, title) in [
-          ('tools-stake', l10n.homeStakeCardTitle),
-          ('tools-incinerator', l10n.incineratorTitle),
-          ('tools-search', l10n.homeTokenInfoTitle),
-        ]) {
+        final rows = [
+          ('tools-bulk-sell', l10n.bulkSellTitle, l10n.bulkSellDescription),
+          (
+            'tools-incinerator',
+            l10n.incineratorTitle,
+            l10n.homeIncineratorDescription,
+          ),
+          ('tools-stake', l10n.homeStakeCardTitle, l10n.homeStakeCardDesc),
+        ];
+        expect(find.byKey(const Key('tools-search')), findsNothing);
+        if (size.height == 852) {
+          final offsets = [
+            for (final (key, _, _) in rows)
+              tester.getTopLeft(find.byKey(Key(key))).dy,
+          ];
+          expect(offsets, orderedEquals([...offsets]..sort()));
+        }
+        for (final (key, title, description) in rows) {
           final card = find.byKey(Key(key));
-          await tester.ensureVisible(card);
+          if (card.evaluate().isEmpty) {
+            await tester.scrollUntilVisible(card, 120);
+          } else {
+            await tester.ensureVisible(card);
+          }
           await tester.pumpAndSettle();
           expect(
-            find.descendant(of: card, matching: find.text(title)),
-            findsOneWidget,
+            find.descendant(of: card, matching: find.byType(Icon)),
+            findsNothing,
           );
+          final theme = Theme.of(tester.element(card)).textTheme;
+          for (final (label, baseStyle) in [
+            (title, theme.titleMedium!),
+            (description, theme.bodyMedium!),
+          ]) {
+            final text = find.descendant(of: card, matching: find.text(label));
+            expect(text, findsOneWidget);
+            expect(
+              tester.widget<Text>(text).style!.fontSize,
+              closeTo(baseStyle.fontSize! * 1.15, 0.001),
+            );
+          }
           expect(tester.takeException(), isNull);
         }
       });
     }
   }
 
-  testWidgets('regional gate hides Stake without hiding other tools', (
+  testWidgets('regional gate hides Stake and Bulk Sell without hiding cleanup', (
     tester,
   ) async {
     final region = _Compliance()..uk = true;
     await _pump(tester, _Wallet(), compliance: region);
     expect(find.byKey(const Key('tools-stake')), findsNothing);
     expect(find.byKey(const Key('tools-incinerator')), findsOneWidget);
-    expect(find.byKey(const Key('tools-search')), findsOneWidget);
+    expect(find.byKey(const Key('tools-bulk-sell')), findsNothing);
+    expect(find.byKey(const Key('tools-search')), findsNothing);
     expect((ChiefStakerApi.testInstance as _Pools).loads, 0);
     region.setRegion(false);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('tools-stake')), findsOneWidget);
+    expect(find.byKey(const Key('tools-bulk-sell')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -211,6 +210,10 @@ void main() {
       expect(wallet.switches, [_solana]);
       expect(wallet.current, _solana);
       expect(find.byType(screen), findsOneWidget);
+      if (screen == StakingPoolsScreen) {
+        expect(find.byIcon(Icons.account_balance), findsNothing);
+        expect(find.byIcon(Icons.refresh), findsOneWidget);
+      }
       await tester.pageBack();
       await tester.pumpAndSettle();
       expect(find.byType(ToolsScreen), findsOneWidget);
@@ -230,25 +233,4 @@ void main() {
       expect(wallet.switches, isEmpty);
     });
   }
-
-  testWidgets('Search opens and searches without changing the active account', (
-    tester,
-  ) async {
-    final wallet = _Wallet()
-      ..current = _ethereum
-      ..entries = [_ethereum];
-    await _pump(tester, wallet, compliance: _Compliance()..uk = true);
-    await _tap(tester, 'tools-search');
-    expect(find.byType(TokenSearchScreen), findsOneWidget);
-    await tester.enterText(find.byType(TextField), 'SOL');
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pumpAndSettle();
-    expect(wallet.backend.searches, ['SOL']);
-    expect(find.text('Wrapped SOL'), findsOneWidget);
-    expect(find.byIcon(Icons.star), findsNothing);
-    expect(find.byIcon(Icons.star_border), findsNothing);
-    expect(wallet.current, _ethereum);
-    expect(wallet.switches, isEmpty);
-    expect(tester.takeException(), isNull);
-  });
 }

@@ -272,7 +272,7 @@ void main() {
         find.text(l10n.walletsAccountsManageAccountsTitle),
         findsOneWidget,
       );
-      expect(find.text(l10n.walletsAccountsExportWalletTitle), findsOneWidget);
+      expect(find.text(l10n.walletsAccountsExportWalletTitle), findsNothing);
     });
   }
 

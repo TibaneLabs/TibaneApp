@@ -88,14 +88,13 @@ void main() {
     });
   });
 
-  test('shell has four tabs and starts on Wallet', () {
+  test('shell has three tabs and starts on Wallet', () {
     expect(ShellTab.values, [
       ShellTab.wallet,
-      ShellTab.activity,
       ShellTab.browser,
       ShellTab.settings,
     ]);
     expect(const TibaneShell().initialIndex, ShellTab.wallet.index);
-    expect(() => TibaneShell(initialIndex: 4), throwsAssertionError);
+    expect(() => TibaneShell(initialIndex: 3), throwsAssertionError);
   });
 }

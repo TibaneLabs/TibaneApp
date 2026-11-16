@@ -228,6 +228,7 @@ void main() {
       'current_account_id': 'account-1',
       'account_preferred_chains': '{"account-1":"solana"}',
       'attached_wallet_parents_v1': '{"child":"parent"}',
+      'hidden_sidebar_accounts_v1': <String>['account-1'],
       'wallet_defaults_ensured_v2': <String>['wallet-1'],
       'app_locale': 'pt',
     });
@@ -239,6 +240,7 @@ void main() {
     expect(prefs.getString('current_account_id'), isNull);
     expect(prefs.getString('account_preferred_chains'), isNull);
     expect(prefs.getString('attached_wallet_parents_v1'), isNull);
+    expect(prefs.getStringList('hidden_sidebar_accounts_v1'), isNull);
     expect(prefs.getStringList('wallet_defaults_ensured_v2'), isNull);
     expect(prefs.getString('app_locale'), 'pt');
     expect(service.accounts, isEmpty);

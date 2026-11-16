@@ -7,6 +7,8 @@ class TokenAccount {
   final int decimals;
   final BigInt rentLamports;
   final bool isToken2022;
+  final bool isNative;
+  final String? closeAuthority;
 
   // Metadata (enriched later)
   String? name;
@@ -24,6 +26,8 @@ class TokenAccount {
     required this.decimals,
     required this.rentLamports,
     this.isToken2022 = false,
+    this.isNative = false,
+    this.closeAuthority,
     this.name,
     this.symbol,
     this.imageUrl,

@@ -8,6 +8,8 @@ import '../models/staking_pool.dart';
 import '../models/token_account.dart';
 import 'solana_common.dart';
 
+enum SolanaSignatureStatus { pending, confirmed, failed }
+
 /// Solana RPC calls, routed by method to ModChain or Helius.
 class RpcService {
   /// Test/screenshot hook: when set, every `RpcService()` returns this
@@ -125,6 +127,31 @@ class RpcService {
     return false;
   }
 
+  /// A confirmed signature may still carry an on-chain execution error.
+  Future<List<SolanaSignatureStatus>> getSignatureStatuses(
+    List<String> signatures,
+  ) async {
+    final result = await _rpc('getSignatureStatuses', [
+      signatures,
+      {'searchTransactionHistory': true},
+    ]);
+    final values = result['value'] as List;
+    if (values.length != signatures.length) {
+      throw const FormatException('Unexpected signature status count');
+    }
+    return values.map((status) {
+      if (status is! Map ||
+          (status['confirmationStatus'] != 'confirmed' &&
+              status['confirmationStatus'] != 'finalized') ||
+          !status.containsKey('err')) {
+        return SolanaSignatureStatus.pending;
+      }
+      return status['err'] != null
+          ? SolanaSignatureStatus.failed
+          : SolanaSignatureStatus.confirmed;
+    }).toList();
+  }
+
   /// Simulate a transaction (skips signature verification)
   Future<Map<String, dynamic>> simulateTransaction(Uint8List txBytes) async {
     final b64 = base64Encode(txBytes);
@@ -221,6 +248,8 @@ class RpcService {
           decimals: tokenAmount['decimals'] as int,
           rentLamports: BigInt.from(lamports),
           isToken2022: token2022,
+          isNative: parsed['isNative'] == true,
+          closeAuthority: parsed['closeAuthority'] as String?,
         ),
       );
     }
@@ -264,10 +293,10 @@ class RpcService {
   Future<StakingPool?> getStakingPool(String address) async {
     final result = await _rpc('getAccountInfo', [
       address,
-      {'encoding': 'base64'},
+      {'encoding': 'base64', 'commitment': 'confirmed'},
     ]);
     final value = result['value'];
-    if (value == null) return null;
+    if (value == null || value['owner'] != chiefStakerProgramId) return null;
     final data = base64Decode((value['data'] as List)[0] as String);
     final pool = StakingPool.deserialize(address, data);
     if (pool != null) {
@@ -276,6 +305,48 @@ class RpcService {
       pool.rewardBalance = BigInt.from((lamports - rent).clamp(0, lamports));
     }
     return pool;
+  }
+
+  /// Fetch the on-chain precision when a pool is not in the directory.
+  Future<int> getTokenDecimals(String mint) async {
+    final result = await _rpc('getTokenSupply', [mint]);
+    final decimals = result['value']['decimals'] as int;
+    if (decimals < 0 || decimals > 255) {
+      throw const FormatException('Invalid token decimals');
+    }
+    return decimals;
+  }
+
+  /// One owner-scoped scan across all pools, including older stake layouts.
+  Future<List<UserStake>> getUserStakes(String owner) async {
+    final result = await _rpc('getProgramAccounts', [
+      chiefStakerProgramId,
+      {
+        'encoding': 'base64',
+        'commitment': 'confirmed',
+        'filters': [
+          {
+            'memcmp': {
+              'offset': 0,
+              'bytes': base58Encode(userStakeDiscriminator),
+            },
+          },
+          {
+            'memcmp': {'offset': 8, 'bytes': owner},
+          },
+        ],
+      },
+    ]);
+    final stakes = <UserStake>[];
+    for (final row in result as List) {
+      final account = row['account'];
+      if (account['owner'] != chiefStakerProgramId) continue;
+      final stake = UserStake.deserialize(
+        base64Decode((account['data'] as List).first as String),
+      );
+      if (stake != null && stake.owner == owner) stakes.add(stake);
+    }
+    return stakes;
   }
 
   /// Get member count for a pool by counting user stake accounts

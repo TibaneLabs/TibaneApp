@@ -19,7 +19,7 @@ String formatActivityAmount(BigInt amount, int decimals, {int? maxDecimals}) {
       : value;
 }
 
-enum ActivityKind { swap, sent, received, transaction }
+enum ActivityKind { swap, burn, reclaimSol, sent, received, transaction }
 
 class ActivityTokenChange {
   const ActivityTokenChange({
@@ -74,6 +74,7 @@ class TransactionActivity {
         ...((inner['instructions'] as List?) ?? []).whereType<Map>(),
     ];
     final owners = <String, String>{};
+    final wrappedSolAccounts = <String>{};
     final ownedTokenIndices = <int>{};
     final deltas = <String, BigInt>{};
     final decimals = <String, int>{};
@@ -83,6 +84,7 @@ class TransactionActivity {
         final accountOwner = balance['owner'] as String?;
         if (index < keys.length && accountOwner != null) {
           owners[keys[index]] = accountOwner;
+          if (balance['mint'] == wsolMint) wrappedSolAccounts.add(keys[index]);
         }
         if (accountOwner != owner) continue;
         ownedTokenIndices.add(index);
@@ -108,6 +110,7 @@ class TransactionActivity {
         final accountOwner = (info['owner'] ?? info['wallet']) as String?;
         if (account != null && accountOwner != null) {
           owners[account] = accountOwner;
+          if (info['mint'] == wsolMint) wrappedSolAccounts.add(account);
           final index = keys.indexOf(account);
           if (accountOwner == owner && index >= 0) ownedTokenIndices.add(index);
         }
@@ -116,6 +119,50 @@ class TransactionActivity {
     final pre = (meta['preBalances'] as List?) ?? [];
     final post = (meta['postBalances'] as List?) ?? [];
     final ownerIndex = keys.indexOf(owner);
+    final closedAccounts = <String>{};
+    var burned = false;
+    var onlyCloses = true;
+    for (final instruction in instructions) {
+      if (const {
+        'ComputeBudget111111111111111111111111111111',
+        'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr',
+      }.contains(instruction['programId'])) {
+        continue;
+      }
+      final parsed = instruction['parsed'];
+      final isTokenProgram =
+          const {
+            'spl-token',
+            'spl-token-2022',
+          }.contains(instruction['program']) ||
+          const {
+            splTokenProgramId,
+            token2022ProgramId,
+          }.contains(instruction['programId']);
+      if (!isTokenProgram || parsed is! Map || parsed['info'] is! Map) {
+        onlyCloses = false;
+        continue;
+      }
+      final info = parsed['info'] as Map;
+      final account = info['account'];
+      final authority = info['authority'] ?? info['owner'];
+      final owned =
+          account is String &&
+          (owners[account] == owner ||
+              (owners[account] == null && authority == owner));
+      if (parsed['type'] == 'closeAccount' &&
+          owned &&
+          info['destination'] == owner &&
+          !wrappedSolAccounts.contains(account)) {
+        closedAccounts.add(account);
+      } else {
+        onlyCloses = false;
+        if (owned && const {'burn', 'burnChecked'}.contains(parsed['type'])) {
+          burned = true;
+        }
+      }
+    }
+    final isReclaim = !failed && onlyCloses && closedAccounts.isNotEmpty;
     if (ownerIndex >= 0 &&
         ownerIndex < pre.length &&
         ownerIndex < post.length) {
@@ -129,6 +176,17 @@ class TransactionActivity {
         }
       }
       if (ownerIndex == 0) nativeDelta += fee;
+      if (isReclaim) {
+        // For Reclaim the rent refund is the amount, not an incidental change.
+        nativeDelta = BigInt.zero;
+        for (final account in closedAccounts) {
+          final index = keys.indexOf(account);
+          if (index >= 0 && index < pre.length && index < post.length) {
+            nativeDelta +=
+                BigInt.parse('${pre[index]}') - BigInt.parse('${post[index]}');
+          }
+        }
+      }
       deltas[wsolMint] = nativeDelta;
       decimals[wsolMint] = 9;
     }
@@ -174,6 +232,10 @@ class TransactionActivity {
         );
     final kind = isSwap
         ? ActivityKind.swap
+        : !failed && burned
+        ? ActivityKind.burn
+        : isReclaim
+        ? ActivityKind.reclaimSol
         : onlyTransfers && outgoing.isNotEmpty && incoming.isEmpty
         ? ActivityKind.sent
         : onlyTransfers && incoming.isNotEmpty && outgoing.isEmpty

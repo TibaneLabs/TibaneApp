@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/wallet_error_display.dart';
 import '../../utils/log.dart';
@@ -125,12 +126,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: Text(l10n.contactsTitle)),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: TibaneColors.orange,
-        foregroundColor: TibaneColors.black,
+      floatingActionButton: GradientButton(
         onPressed: _add,
-        icon: const Icon(Icons.add),
-        label: Text(l10n.contactsNewContact),
+        icon: Icons.add,
+        label: l10n.contactsNewContact,
       ),
       body: SafeArea(
         child: Builder(

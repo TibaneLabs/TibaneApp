@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../l10n/l10n.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/wallet_error_display.dart';
 import '../../utils/log.dart';
@@ -152,7 +153,9 @@ class _TokensScreenState extends State<TokensScreen> {
       _load();
       wallet.notifyTokenListChanged();
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text(l10n.tokensAdded(c.symbol))));
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.tokensAdded(c.symbol))),
+      );
     } catch (e) {
       logError('[Tokens._addCurated] create error: $e');
       if (!mounted) return;
@@ -216,12 +219,10 @@ class _TokensScreenState extends State<TokensScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: TibaneColors.orange,
-        foregroundColor: TibaneColors.black,
+      floatingActionButton: GradientButton(
         onPressed: _addByAddress,
-        icon: const Icon(Icons.add),
-        label: Text(l10n.tokensAddByAddress),
+        icon: Icons.add,
+        label: l10n.tokensAddByAddress,
       ),
       body: SafeArea(
         child: Builder(

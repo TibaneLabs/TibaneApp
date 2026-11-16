@@ -44,6 +44,67 @@ Map<String, dynamic> fixture({
 };
 
 void main() {
+  Map<String, Object> tokenInstruction(String type, Map<String, String> info) =>
+      {
+        'program': 'spl-token-2022',
+        'parsed': {'type': type, 'info': info},
+      };
+  final close = tokenInstruction('closeAccount', {
+    'account': 'token-account',
+    'destination': owner,
+    'owner': owner,
+  });
+
+  test('reclaim shows the SOL deposit returned, before fees', () {
+    final activity = TransactionActivity.fromSolana(
+      fixture(
+        pre: [10000000, 0, 1513840],
+        post: [11508840, 0, 0],
+        preTokens: [tokenBalance(2, 'token', '0')],
+        instructions: [close],
+      ),
+      owner,
+    );
+    expect(activity.kind, ActivityKind.reclaimSol);
+    expect(activity.changes.single.mint, wsolMint);
+    expect(activity.changes.single.amount, BigInt.from(1513840));
+  });
+
+  test('burn is recognized with or without a sponsored account closure', () {
+    final burn = tokenInstruction('burnChecked', {
+      'account': 'token-account',
+      'authority': owner,
+      'mint': 'token',
+    });
+    for (final withClose in [false, true]) {
+      final activity = TransactionActivity.fromSolana(
+        fixture(
+          pre: [10000000, 0, 1513840],
+          post: withClose ? [11508840, 0, 0] : [9995000, 0, 1513840],
+          preTokens: [tokenBalance(2, 'token', '1')],
+          postTokens: withClose ? [] : [tokenBalance(2, 'token', '0')],
+          instructions: [burn, if (withClose) close],
+        ),
+        owner,
+      );
+      expect(activity.kind, ActivityKind.burn);
+      expect(activity.changes.single.amount, -BigInt.one);
+    }
+  });
+
+  test('unwrapping SOL is not an empty token account reclaim', () {
+    final activity = TransactionActivity.fromSolana(
+      fixture(
+        pre: [10000000, 0, 2000000],
+        post: [11995000, 0, 0],
+        preTokens: [tokenBalance(2, wsolMint, '500000')],
+        instructions: [close],
+      ),
+      owner,
+    );
+    expect(activity.kind, ActivityKind.transaction);
+  });
+
   test('compact activity values show at most four decimals', () {
     expect(
       formatActivityAmount(BigInt.from(994802149), 6, maxDecimals: 4),

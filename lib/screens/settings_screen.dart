@@ -4,14 +4,15 @@ import 'package:provider/provider.dart';
 import '../l10n/l10n.dart';
 import '../services/wallet_service.dart';
 import '../theme/tibane_theme.dart';
+import '../widgets/tibane_app_bar.dart';
 import '../widgets/tibane_card.dart';
-import 'settings/browser_screen.dart';
 import 'settings/connections_screen.dart';
 import 'settings/general_screen.dart';
 import 'settings/help_faq_screen.dart';
 import 'settings/security_privacy_screen.dart';
 import 'settings/wallets_accounts_screen.dart';
 import 'tools_screen.dart';
+import 'wallet/activity_screen.dart';
 
 /// Top-level Settings screen. Shows the drill-down categories and the
 /// lock/disconnect tile.
@@ -35,12 +36,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionLabel(l10n.settingsSection),
+          const ReclaimSolCard(key: Key('settings-reclaim-sol')),
+          const SizedBox(height: 6),
+          SettingsTile(
+            key: const Key('settings-activity'),
+            title: l10n.dashboardTabActivity,
+            subtitle: l10n.settingsActivitySubtitle,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const Scaffold(
+                  backgroundColor: TibaneColors.black,
+                  appBar: TibaneAppBar(
+                    leading: BackButton(key: Key('activity-back')),
+                  ),
+                  body: ActivityScreen(),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          SettingsTile(
+            key: const Key('settings-tools'),
+            icon: Icons.handyman_outlined,
+            title: l10n.homeToolsCardTitle,
+            subtitle: l10n.settingsToolsSubtitle,
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const ToolsScreen())),
+          ),
+          const SizedBox(height: 20),
+          _SectionLabel(
+            l10n.settingsSection,
+            key: const Key('settings-heading'),
+          ),
           const SizedBox(height: 10),
           SettingsTile(
             icon: Icons.account_balance_wallet_outlined,
             title: l10n.settingsWalletsAccountsTitle,
-            subtitle: l10n.settingsWalletsAccountsSubtitle,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const WalletsAccountsScreen()),
             ),
@@ -49,7 +81,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SettingsTile(
             icon: Icons.lock_outline,
             title: l10n.settingsSecurityPrivacyTitle,
-            subtitle: l10n.settingsSecurityPrivacySubtitle,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const SecurityPrivacyScreen()),
             ),
@@ -58,35 +89,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SettingsTile(
             icon: Icons.link,
             title: l10n.settingsConnectionsTitle,
-            subtitle: l10n.settingsConnectionsSubtitle,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const ConnectionsScreen()),
             ),
           ),
           const SizedBox(height: 6),
           SettingsTile(
-            key: const Key('settings-tools'),
-            icon: Icons.handyman_outlined,
-            title: l10n.homeToolsCardTitle,
-            subtitle: l10n.homeToolsCardDesc,
-            onTap: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const ToolsScreen())),
-          ),
-          const SizedBox(height: 6),
-          SettingsTile(
-            icon: Icons.public,
-            title: l10n.browserTitle,
-            subtitle: l10n.settingsBrowserSubtitle,
-            onTap: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const BrowserScreen())),
-          ),
-          const SizedBox(height: 6),
-          SettingsTile(
             icon: Icons.tune,
             title: l10n.settingsGeneralTitle,
-            subtitle: l10n.settingsGeneralSubtitle,
             onTap: () => Navigator.of(
               context,
             ).push(MaterialPageRoute(builder: (_) => const GeneralScreen())),
@@ -95,7 +105,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SettingsTile(
             icon: Icons.help_outline,
             title: l10n.helpFaqTitle,
-            subtitle: l10n.settingsHelpFaqSubtitle,
             onTap: () => Navigator.of(
               context,
             ).push(MaterialPageRoute(builder: (_) => const HelpFaqScreen())),
@@ -157,7 +166,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 class _SectionLabel extends StatelessWidget {
   final String text;
 
-  const _SectionLabel(this.text);
+  const _SectionLabel(this.text, {super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -172,7 +181,7 @@ class _SectionLabel extends StatelessWidget {
 /// sub-screen under `lib/screens/settings/`. Public so the sub-screens
 /// can import it from one place instead of duplicating the styling.
 class SettingsTile extends StatelessWidget {
-  final IconData icon;
+  final IconData? icon;
   final String title;
   final String? subtitle;
   final VoidCallback onTap;
@@ -180,7 +189,7 @@ class SettingsTile extends StatelessWidget {
 
   const SettingsTile({
     super.key,
-    required this.icon,
+    this.icon,
     required this.title,
     required this.onTap,
     this.subtitle,
@@ -195,32 +204,36 @@ class SettingsTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(width: 14),
+          if (icon != null) ...[
+            Icon(icon, color: color, size: 24),
+            const SizedBox(width: 14),
+          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(title, style: TextStyle(color: color, fontSize: 17.25)),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 17.25 * 1.15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
                 if (subtitle != null) ...[
                   const SizedBox(height: 2),
-                  Text(
-                    subtitle!,
-                    style: monoStyle(
-                      fontSize: 12.65,
-                      color: TibaneColors.textMuted,
-                    ),
-                  ),
+                  Text(subtitle!, style: cardSubtitleStyle(context)),
                 ],
               ],
             ),
           ),
-          const Icon(
-            Icons.chevron_right,
-            color: TibaneColors.textDim,
-            size: 21.6,
-          ),
+          if (icon != null)
+            const Icon(
+              Icons.chevron_right,
+              color: TibaneColors.textDim,
+              size: 21.6,
+            ),
         ],
       ),
     );

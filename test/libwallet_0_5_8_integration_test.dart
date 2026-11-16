@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libwallet/libwallet.dart';
+import 'package:tibaneapp/constants/solana_constants.dart';
 
 // Public BIP-39 fixture and loopback RPC only; never user wallets or funds.
 const _phrase =
@@ -65,6 +66,22 @@ void main() {
     transport.dispose();
     await directory.delete(recursive: true);
   });
+
+  test(
+    'native Solana catalog exposes verified flags for curated tokens',
+    () async {
+      final catalog = await TokenApi(local).listCurated('solana.mainnet');
+      final verified = {
+        for (final token in catalog)
+          if (token.verified) token.address,
+      };
+      expect(
+        verified,
+        containsAll([wsolMint, usdcMint, usdtMint, chiefPussyMint]),
+      );
+      expect(catalog.any((token) => !token.verified), isTrue);
+    },
+  );
 
   test(
     'native BIP39 generation and validation support every advertised length',

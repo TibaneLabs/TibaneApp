@@ -36,6 +36,7 @@ Future<UnifiedAccount?> showSendAccountPicker(
           senderAddress: wallet.currentAccount?.address ?? wallet.publicKey,
           wallets: wallet.accountsService.walletsById.values,
           attachedWalletParents: wallet.accountsService.attachedWalletParents,
+          walletGroups: wallet.accountsService.walletGroups,
         ),
       ),
     ),
@@ -91,6 +92,7 @@ class SendAccountPicker extends StatelessWidget {
   final List<UnifiedAccount> accounts;
   final Iterable<Wallet> wallets;
   final Map<String, String> attachedWalletParents;
+  final Map<String, String> walletGroups;
   final String? senderAccountId;
   final String? senderAddress;
 
@@ -102,6 +104,7 @@ class SendAccountPicker extends StatelessWidget {
     this.senderAccountId,
     this.senderAddress,
     this.attachedWalletParents = const {},
+    this.walletGroups = const {},
   });
 
   @override
@@ -118,6 +121,7 @@ class SendAccountPicker extends StatelessWidget {
       wallets: wallets,
       unnamedLabel: l10n.walletsMgmtUnnamed,
       attachedWalletParents: attachedWalletParents,
+      walletGroups: walletGroups,
     );
     final external = recipients.where((account) => account.isMwa).toList();
     return SafeArea(

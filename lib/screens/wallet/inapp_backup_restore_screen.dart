@@ -185,6 +185,7 @@ class _InAppBackupRestoreScreenState extends State<InAppBackupRestoreScreen> {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: TibaneColors.card,
+        scrollable: true,
         title: Text(l10n.backupRestoreSetupTitle),
         content: Text(
           l10n.backupRestoreSetupBody,

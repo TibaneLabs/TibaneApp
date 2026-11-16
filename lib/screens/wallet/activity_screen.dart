@@ -242,12 +242,14 @@ class _TransactionRow extends StatelessWidget {
         ? l10n.activityFailed
         : switch (kind) {
             ActivityKind.swap => l10n.swapButton,
+            ActivityKind.burn => l10n.incineratorBurnButton,
+            ActivityKind.reclaimSol => l10n.reclaimSolTitle,
             ActivityKind.sent => l10n.dashboardTxSent,
             ActivityKind.received => l10n.dashboardTxReceived,
             ActivityKind.transaction => l10n.labelTransaction,
           };
     final counterparty =
-        kind == ActivityKind.swap || kind == ActivityKind.transaction
+        kind != ActivityKind.sent && kind != ActivityKind.received
         ? tx.hash ?? tx.id
         : kind == ActivityKind.sent
         ? activity?.recipient ?? tx.to
@@ -290,57 +292,67 @@ class _TransactionRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            if (kind == ActivityKind.swap)
-              Container(
-                key: Key('activity-swap-icon-${tx.id}'),
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: TibaneColors.orange.withValues(alpha: 0.1),
-                ),
-                child: const Icon(
+            Container(
+              key: Key('activity-${kind.name}-icon-${tx.id}'),
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: TibaneColors.orange.withValues(alpha: 0.1),
+              ),
+              child: switch (kind) {
+                ActivityKind.swap => const Icon(
                   Icons.swap_horiz,
-                  size: 24,
+                  size: 32,
                   color: TibaneColors.orange,
                 ),
-              )
-            else if (kind == ActivityKind.transaction)
-              Icon(
-                Icons.receipt_long_outlined,
-                size: 32,
-                color: TibaneColors.orange,
-              )
-            else
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  TokenIcon(
-                    imageUrl: tokenInfo.imageUrl,
-                    mint: tokenInfo.mint ?? '',
-                    symbol: tokenInfo.symbol,
-                    size: 32,
-                  ),
-                  Positioned(
-                    right: -2,
-                    bottom: -2,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: TibaneColors.card,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        kind == ActivityKind.sent
-                            ? Icons.arrow_upward
-                            : Icons.arrow_downward,
-                        size: 12,
-                        color: amountColor,
+                ActivityKind.burn => const Icon(
+                  Icons.local_fire_department,
+                  size: 32,
+                  color: TibaneColors.orange,
+                ),
+                ActivityKind.reclaimSol => const Icon(
+                  Icons.attach_money,
+                  size: 32,
+                  color: TibaneColors.orange,
+                ),
+                ActivityKind.transaction => const Icon(
+                  Icons.receipt_long_outlined,
+                  size: 32,
+                  color: TibaneColors.orange,
+                ),
+                ActivityKind.sent || ActivityKind.received => Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    TokenIcon(
+                      imageUrl: tokenInfo.imageUrl,
+                      mint: tokenInfo.mint ?? '',
+                      symbol: tokenInfo.symbol,
+                      size: 32,
+                    ),
+                    Positioned(
+                      right: -2,
+                      bottom: -2,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: TibaneColors.card,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          kind == ActivityKind.sent
+                              ? Icons.arrow_upward
+                              : Icons.arrow_downward,
+                          size: 12,
+                          color: amountColor,
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              },
+            ),
             const SizedBox(width: 12),
             Expanded(
               flex: 2,
@@ -351,13 +363,13 @@ class _TransactionRow extends StatelessWidget {
                     label,
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 13 * 1.15,
+                      fontSize: 13 * 1.15 * 1.15,
                     ),
                   ),
                   Text(
                     shortenAddress(counterparty),
                     style: monoStyle(
-                      fontSize: 11,
+                      fontSize: 12.1,
                       color: TibaneColors.textMuted,
                     ),
                   ),

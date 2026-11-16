@@ -751,21 +751,23 @@ class WalletService extends ChangeNotifier {
 
       final client = await _libwallet.ensureClient();
       final tracked = await client.tokens.list();
-      final trackedAddrs = tracked.map((t) => t.address).toSet();
+      final trackedTypes = {
+        for (final token in tracked)
+          if (token.network == net.id) token.address: token.type,
+      };
       debugPrint(
-        '[holdings] libwallet currently tracks ${trackedAddrs.length} tokens',
+        '[holdings] libwallet currently tracks ${trackedTypes.length} tokens',
       );
 
       var anyAdded = false;
       for (final entry in onChain.entries) {
-        if (trackedAddrs.contains(entry.key)) {
+        if (trackedTypes[entry.key] == entry.value.type) {
           debugPrint('[holdings]   already tracked: ${entry.key}');
           continue;
         }
         debugPrint(
-          '[holdings]   missing: ${entry.key} '
-          '(decimals=${entry.value.decimals} type=${entry.value.type}). '
-          'registering…',
+          '[holdings]   registering or correcting ${entry.key} '
+          '(decimals=${entry.value.decimals} type=${entry.value.type})',
         );
         final added = await _libwallet.ensureTokenTracked(
           mint: entry.key,

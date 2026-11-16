@@ -75,6 +75,41 @@ Future<void> _pump(
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
 
+  testWidgets('hides token-account advisory but shows blocking warnings', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      simulation: TransactionSimulation.fromJson({
+        'chain': 'solana',
+        'warnings': [
+          {
+            'code': 'recipient_new_account',
+            'severity': 'warn',
+            'message': 'Recipient needs a token account.',
+          },
+          {
+            'code': 'test_block',
+            'severity': 'block',
+            'message': 'This transfer is blocked.',
+          },
+        ],
+      }),
+    );
+    expect(find.text('Recipient needs a token account.'), findsNothing);
+    expect(find.text('This transfer is blocked.'), findsOneWidget);
+    final l10n = AppLocalizations.of(
+      tester.element(find.byType(SendReviewSheet)),
+    );
+    final confirm = tester.widget<FilledButton>(
+      find.ancestor(
+        of: find.text(l10n.sendCannotSend),
+        matching: find.byType(FilledButton),
+      ),
+    );
+    expect(confirm.onPressed, isNull);
+  });
+
   for (final language in ['en', 'pt', 'fr', 'ja']) {
     for (final size in [const Size(375, 667), const Size(393, 852)]) {
       testWidgets('review typography and fee fit $language at $size', (

@@ -10,6 +10,7 @@ import '../../services/wallet/wallet_export_format.dart'
 import '../../services/wallet/hardware_wallet.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/network_logos.dart';
 import '../../widgets/wallet_error_display.dart';
@@ -159,12 +160,10 @@ class _WalletsManagementScreenState extends State<WalletsManagementScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: TibaneColors.orange,
-        foregroundColor: TibaneColors.black,
+      floatingActionButton: GradientButton(
         onPressed: _addWallet,
-        icon: const Icon(Icons.add),
-        label: Text(l10n.walletsMgmtNewWallet),
+        icon: Icons.add,
+        label: l10n.walletsMgmtNewWallet,
       ),
       body: SafeArea(
         child: Builder(
@@ -376,9 +375,9 @@ class _WalletGroupDetailsScreenState extends State<WalletGroupDetailsScreen> {
           ..sort(compareAccountsForSwitcher);
     final added = _accounts.where((a) => !main.contains(a)).toList()
       ..sort(compareAccountsForSwitcher);
-    final canBackup =
-        _wallets.isNotEmpty &&
-        _wallets.every((wallet) => wallet.keys.any((key) => key.isPassword));
+    final canBackup = _wallets.any(
+      (wallet) => wallet.keys.any((key) => key.isPassword),
+    );
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: Text(group.displayName(l10n.walletsMgmtUnnamed))),

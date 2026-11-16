@@ -376,6 +376,7 @@ class BalancesStore extends ChangeNotifier {
         if (addr != null) _wallet.cacheTxsFor(addr, _transactions);
         unawaited(_enrichActivity(_transactions, addr));
       }
+      unawaited(_enrichActivity(_transactions, addr));
       if (allHoldings != null) {
         final nativeSol = isSolana
             ? allHoldings.where((h) => h.mint == wsolMint).firstOrNull

@@ -64,6 +64,7 @@ void _promptSetUp(BuildContext context, String walletId, String message) {
 Future<List<SigningKey>?> collectSigningKeys(
   BuildContext context, {
   bool transactionReviewed = false,
+  String? confirmationTitle,
 }) async {
   final lw = context.read<WalletService>().libwallet;
   final sourceContext = lw.signingContext;
@@ -110,9 +111,12 @@ Future<List<SigningKey>?> collectSigningKeys(
     wallet: wallet,
     readStoreKey: (storeKey, password) =>
         lw.readStoreKeyPrivate(storeKey, password: password),
-    title: l10n.authSignTitle,
+    title: confirmationTitle ?? l10n.authSignTitle,
     subtitlePurpose: l10n.authSignPurpose,
-    actionLabel: l10n.actionSign,
+    actionLabel: confirmationTitle == null
+        ? l10n.actionSign
+        : l10n.actionConfirm,
+    confirmationStyle: confirmationTitle != null,
     transactionReviewed: transactionReviewed,
     normalBiometrics: lw.normalWalletBiometrics,
   );
@@ -233,12 +237,14 @@ Future<Uint8List?> signOne(
 Future<BatchAuth?> authorizeBatch(
   BuildContext context, {
   bool transactionReviewed = false,
+  String? confirmationTitle,
 }) async {
   final wallet = context.read<WalletService>();
   if (useSignSheet(wallet)) {
     final keys = await collectSigningKeys(
       context,
       transactionReviewed: transactionReviewed,
+      confirmationTitle: confirmationTitle,
     );
     if (keys == null) return null;
     return BatchAuth(keys);

@@ -2,14 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/l10n.dart';
 import '../../theme/tibane_theme.dart';
-import 'inapp_create_screen.dart';
 import 'create_seed_wallet_screen.dart';
+import 'inapp_create_screen.dart';
+import 'mpc_wallet_intro_screen.dart';
 import 'widgets/wallet_setup_method_card.dart';
 
 class WalletCreateOptionsScreen extends StatelessWidget {
   const WalletCreateOptionsScreen({super.key});
 
   Future<void> _createMpc(BuildContext context) async {
+    final ready = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const MpcWalletIntroScreen()),
+    );
+    if (ready != true || !context.mounted) return;
     final done = await Navigator.of(
       context,
     ).push<bool>(MaterialPageRoute(builder: (_) => const InAppCreateScreen()));

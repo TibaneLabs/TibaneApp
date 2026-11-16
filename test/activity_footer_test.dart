@@ -162,14 +162,14 @@ void main() {
           externalSolana: true,
         ),
         'https://solscan.io/account/$_owner',
-        reason: 'MWA must ignore the inactive in-app network',
+        reason: 'CatCard and MWA must ignore the inactive in-app network',
       );
     },
   );
 
   for (final locale in AppLocalizations.supportedLocales) {
     testWidgets(
-      'Activity footer opens a nine-row list and View All in $locale',
+      'Settings opens a nine-row Activity list and View All in $locale',
       (tester) async {
         tester.view.physicalSize = const Size(786, 1704);
         tester.view.devicePixelRatio = 2;
@@ -217,14 +217,47 @@ void main() {
         await tester.pumpAndSettle();
         final l10n = await AppLocalizations.delegate.load(locale);
         final footer = find.byType(BottomNavigationBar);
-        expect(tester.widget<BottomNavigationBar>(footer).items, hasLength(4));
-        expect(store.refreshes, 0);
-        await tester.tap(
+        expect(tester.widget<BottomNavigationBar>(footer).items, hasLength(3));
+        expect(
           find.descendant(
             of: footer,
             matching: find.text(l10n.dashboardTabActivity),
           ),
+          findsNothing,
         );
+        expect(store.refreshes, 0);
+        await tester.tap(
+          find.descendant(
+            of: footer,
+            matching: find.text(l10n.bottomNavSettingsLabel),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final reclaim = find.byKey(const Key('settings-reclaim-sol'));
+        final activity = find.byKey(const Key('settings-activity'));
+        final activitySubtitle = find.descendant(
+          of: activity,
+          matching: find.text(l10n.settingsActivitySubtitle),
+        );
+        final reclaimSubtitle = find.descendant(
+          of: reclaim,
+          matching: find.text(l10n.toolsReclaimSolDescription),
+        );
+        expect(
+          tester.widget<Text>(activitySubtitle).style,
+          tester.widget<Text>(reclaimSubtitle).style,
+        );
+        expect(
+          tester.getTopLeft(reclaim).dy,
+          lessThan(tester.getTopLeft(activity).dy),
+        );
+        expect(
+          tester.getTopLeft(activity).dy,
+          lessThan(
+            tester.getTopLeft(find.byKey(const Key('settings-heading'))).dy,
+          ),
+        );
+        await tester.tap(activity);
         await tester.pumpAndSettle();
         expect(find.byType(ActivityScreen), findsOneWidget);
         expect(store.refreshes, 1);
@@ -284,6 +317,10 @@ void main() {
         await tester.tap(viewAll);
         await tester.pumpAndSettle();
         expect(urls, ['https://solscan.io/account/$_owner']);
+        await tester.tap(find.byKey(const Key('activity-back')));
+        await tester.pumpAndSettle();
+        expect(activity, findsOneWidget);
+        expect(find.byType(ActivityScreen), findsNothing);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();

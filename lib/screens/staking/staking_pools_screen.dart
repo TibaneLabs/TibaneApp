@@ -9,10 +9,14 @@ import '../../theme/tibane_theme.dart';
 import '../../widgets/tibane_card.dart';
 import '../../widgets/token_icon.dart';
 import 'staking_detail_screen.dart';
+import 'my_staked_screen.dart';
 import '../../l10n/l10n.dart';
 import '../../utils/log.dart';
 import '../../utils/wallet_error.dart';
 import '../../utils/context_extensions.dart';
+
+const _pillHeight = 32 * 1.15;
+const _pillBaseFontSize = 11 * 1.15;
 
 class StakingPoolsScreen extends StatefulWidget {
   const StakingPoolsScreen({super.key});
@@ -28,6 +32,7 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
   bool _loading = true;
   String? _error;
   String _sortBy = 'members';
+  bool _showingMyStaked = false;
 
   @override
   void initState() {
@@ -81,14 +86,8 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
     switch (_sortBy) {
       case 'staked':
         pools.sort((a, b) => b.totalStaked.compareTo(a.totalStaked));
-      case 'rewards':
-        pools.sort((a, b) => b.rewardBalance.compareTo(a.rewardBalance));
-      case 'age':
-        pools.sort((a, b) => a.initialBaseTime.compareTo(b.initialBaseTime));
       case 'mcap':
         pools.sort((a, b) => (b.marketCap ?? -1).compareTo(a.marketCap ?? -1));
-      case 'name':
-        pools.sort((a, b) => (a.tokenName ?? '').compareTo(b.tokenName ?? ''));
       default: // members
         pools.sort((a, b) => b.memberCount.compareTo(a.memberCount));
     }
@@ -109,19 +108,6 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: TibaneColors.orange.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.account_balance,
-                  color: TibaneColors.orange,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -175,53 +161,41 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        // Sort chips
-        SizedBox(
-          height: 32,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              _SortChip(
-                label: l10n.stakingMembers,
-                value: 'members',
-                current: _sortBy,
-                onTap: (v) => setState(() => _sortBy = v),
-              ),
-              const SizedBox(width: 8),
-              _SortChip(
-                label: l10n.stakingMcap,
-                value: 'mcap',
-                current: _sortBy,
-                onTap: (v) => setState(() => _sortBy = v),
-              ),
-              const SizedBox(width: 8),
-              _SortChip(
-                label: l10n.stakingTotalStaked,
-                value: 'staked',
-                current: _sortBy,
-                onTap: (v) => setState(() => _sortBy = v),
-              ),
-              const SizedBox(width: 8),
-              _SortChip(
-                label: l10n.stakingRewards,
-                value: 'rewards',
-                current: _sortBy,
-                onTap: (v) => setState(() => _sortBy = v),
-              ),
-              const SizedBox(width: 8),
-              _SortChip(
-                label: l10n.stakingAge,
-                value: 'age',
-                current: _sortBy,
-                onTap: (v) => setState(() => _sortBy = v),
-              ),
-              const SizedBox(width: 8),
-              _SortChip(
-                label: l10n.labelName,
-                value: 'name',
-                current: _sortBy,
-                onTap: (v) => setState(() => _sortBy = v),
+              for (final (value, label) in [
+                ('members', l10n.stakingMembers),
+                ('mcap', l10n.stakingMcap),
+                ('staked', l10n.stakingSortTotal),
+              ])
+                _StakingPill(
+                  label: label,
+                  selected: _sortBy == value,
+                  onTap: () => setState(() => _sortBy = value),
+                ),
+              _StakingPill(
+                label: l10n.stakingMyStaked,
+                action: true,
+                selected: _showingMyStaked,
+                onTap: () async {
+                  if (_showingMyStaked) return;
+                  FocusScope.of(context).unfocus();
+                  setState(() => _showingMyStaked = true);
+                  try {
+                    await Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => MyStakedScreen(directory: _pools),
+                      ),
+                    );
+                  } finally {
+                    if (mounted) setState(() => _showingMyStaked = false);
+                  }
+                },
               ),
             ],
           ),
@@ -296,42 +270,66 @@ class _StakingPoolsScreenState extends State<StakingPoolsScreen> {
   }
 }
 
-class _SortChip extends StatelessWidget {
+class _StakingPill extends StatelessWidget {
   final String label;
-  final String value;
-  final String current;
-  final void Function(String) onTap;
+  final bool selected;
+  final bool action;
+  final VoidCallback onTap;
 
-  const _SortChip({
+  const _StakingPill({
     required this.label,
-    required this.value,
-    required this.current,
+    this.selected = false,
+    this.action = false,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final selected = value == current;
-    return GestureDetector(
-      onTap: () => onTap(value),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
+    final style = monoStyle(
+      fontSize: _pillBaseFontSize,
+      color: selected ? TibaneColors.orange : TibaneColors.textMuted,
+    );
+    // Size from the original label so larger type uses the existing padding.
+    final measure = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: DefaultTextStyle.of(context).style.merge(style),
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final width = measure.width + (action ? 4 * 8 * 1.15 : 2 * 12 * 1.15 + 2);
+    measure.dispose();
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(6),
+      side: BorderSide(
+        color: selected
+            ? TibaneColors.orange.withValues(alpha: 0.3)
+            : TibaneColors.border,
+      ),
+    );
+    return Semantics(
+      button: true,
+      selected: action ? null : selected,
+      child: SizedBox(
+        width: width,
+        height: _pillHeight,
+        child: Material(
           color: selected
               ? TibaneColors.orange.withValues(alpha: 0.15)
               : TibaneColors.darker,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: selected
-                ? TibaneColors.orange.withValues(alpha: 0.3)
-                : TibaneColors.border,
-          ),
-        ),
-        child: Text(
-          label,
-          style: monoStyle(
-            fontSize: 11,
-            color: selected ? TibaneColors.orange : TibaneColors.textMuted,
+          shape: shape,
+          child: InkWell(
+            onTap: onTap,
+            customBorder: shape,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(label, style: style.apply(fontSizeFactor: 1.25)),
+              ),
+            ),
           ),
         ),
       ),
@@ -425,7 +423,10 @@ class _PoolCard extends StatelessWidget {
                 value: '${formatSol(pool.rewardBalance, decimals: 2)} SOL',
                 valueColor: TibaneColors.gold,
               ),
-              _PoolStat(label: l10n.stakingMembers, value: '${pool.memberCount}'),
+              _PoolStat(
+                label: l10n.stakingMembers,
+                value: '${pool.memberCount}',
+              ),
             ],
           ),
         ],
@@ -491,7 +492,10 @@ class _StakingUnavailableInRegion extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               l10n.stakingUnavailableBody,
-              style: const TextStyle(color: TibaneColors.textMuted, height: 1.5),
+              style: const TextStyle(
+                color: TibaneColors.textMuted,
+                height: 1.5,
+              ),
               textAlign: TextAlign.center,
             ),
           ],

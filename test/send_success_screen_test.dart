@@ -5,11 +5,37 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:libwallet/libwallet.dart' show Network, NetworkType;
 import 'package:tibaneapp/l10n/gen/app_localizations.dart';
 import 'package:tibaneapp/screens/wallet/send_screen.dart';
+import 'package:tibaneapp/services/rpc_service.dart';
 import 'package:tibaneapp/services/wallet/unified_account.dart';
 import 'package:tibaneapp/theme/tibane_theme.dart';
 
 const _from = 'CBcWENrpEfVBcU9gu5b5mdSBsfyzkV8UyPXenSniWS3o';
 const _to = '9Geyod8NY1iizHWuyghULybsk4WzE3B3PdBToQQmWPXs';
+
+class _ConfirmationRpc extends RpcService {
+  _ConfirmationRpc() : super.real();
+
+  SolanaSignatureStatus status = SolanaSignatureStatus.pending;
+  int checks = 0;
+  bool closed = false;
+  bool unavailable = false;
+
+  @override
+  Future<List<SolanaSignatureStatus>> getSignatureStatuses(
+    List<String> signatures,
+  ) async {
+    expect(signatures, ['1234567890abcdefghij']);
+    checks++;
+    if (unavailable) throw StateError('RPC unavailable');
+    return [status];
+  }
+
+  @override
+  void dispose() {
+    closed = true;
+    super.dispose();
+  }
+}
 
 Future<void> _pump(
   WidgetTester tester, {
@@ -53,6 +79,50 @@ Future<void> _pump(
 
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
+  late _ConfirmationRpc rpc;
+  setUp(() {
+    rpc = _ConfirmationRpc();
+    RpcService.testInstance = rpc;
+  });
+  tearDown(() => RpcService.testInstance = null);
+
+  testWidgets('submitted send becomes successful after ModChain confirms', (
+    tester,
+  ) async {
+    rpc.unavailable = true;
+    await _pump(tester);
+    expect(find.text('Transaction submitted'), findsOneWidget);
+    rpc.unavailable = false;
+    rpc.status = SolanaSignatureStatus.confirmed;
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(find.text('Send successful'), findsOneWidget);
+    expect(find.text('Transaction submitted'), findsNothing);
+    expect(rpc.closed, isTrue);
+  });
+
+  testWidgets('on-chain execution error never shows send success', (
+    tester,
+  ) async {
+    rpc.status = SolanaSignatureStatus.failed;
+    await _pump(tester);
+    expect(find.text('Send failed'), findsOneWidget);
+    expect(find.text('Send successful'), findsNothing);
+    expect(rpc.closed, isTrue);
+  });
+
+  testWidgets('timeout keeps the send submitted and stops checking', (
+    tester,
+  ) async {
+    await _pump(tester);
+    await tester.pump(const Duration(seconds: 25));
+    expect(find.text('Transaction submitted'), findsOneWidget);
+    expect(rpc.closed, isTrue);
+    final checks = rpc.checks;
+    await tester.pump(const Duration(seconds: 1));
+    expect(rpc.checks, checks);
+  });
+
   for (final language in ['en', 'pt', 'fr', 'ja']) {
     for (final size in [const Size(375, 667), const Size(393, 852)]) {
       testWidgets('compact send success in $language at $size', (tester) async {
@@ -61,7 +131,10 @@ void main() {
           tester.element(find.byType(SendSuccessScreen)),
         );
         expect(
-          tester.widget<Text>(find.text(l10n.transactionSubmittedTitle)).style!.fontSize,
+          tester
+              .widget<Text>(find.text(l10n.transactionSubmittedTitle))
+              .style!
+              .fontSize,
           closeTo(28.6, 0.001),
         );
         for (final label in [l10n.labelFrom, l10n.labelTo]) {
@@ -86,6 +159,7 @@ void main() {
         expect(explorer, findsOneWidget);
         expect(find.text(l10n.backToHome), findsOneWidget);
         expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
       });
     }
   }
@@ -116,5 +190,7 @@ void main() {
     await tester.pump();
     expect(copied, [_from, _to]);
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(rpc.closed, isTrue);
   });
 }

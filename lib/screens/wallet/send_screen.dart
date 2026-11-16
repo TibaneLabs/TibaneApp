@@ -15,6 +15,7 @@ import '../../constants/solana_constants.dart';
 import '../../l10n/l10n.dart';
 import '../../services/balances_store.dart';
 import '../../services/jupiter_service.dart';
+import '../../services/rpc_service.dart';
 import '../../services/solana_common.dart';
 import '../../services/wallet/asset_network.dart';
 import '../../services/wallet/send_asset.dart';
@@ -1378,7 +1379,9 @@ class SendReviewSheet extends StatelessWidget {
                 l10n.sendSimWillFail(sim.revertReason ?? l10n.sendUnknownError),
               ),
             ],
-            for (final w in sim.warnings) ...[
+            for (final w in sim.warnings.where(
+              (w) => w.code != 'recipient_new_account' || w.severity == 'block',
+            )) ...[
               const SizedBox(height: 10),
               _warning(
                 w.severity == 'block'
@@ -1521,10 +1524,9 @@ class SendReviewSheet extends StatelessWidget {
   }
 }
 
-/// Full-screen confirmation shown after a transfer is broadcast: a success
-/// mark, the From / To / transaction details (each tap-to-copy), a link to the
-/// chain explorer, and a back-to-home action.
-class SendSuccessScreen extends StatelessWidget {
+/// Transfer receipt. For Solana mainnet it updates as the network confirms
+/// the transaction or reports an execution failure.
+class SendSuccessScreen extends StatefulWidget {
   final String symbol;
 
   final String? fromAddress;
@@ -1542,12 +1544,92 @@ class SendSuccessScreen extends StatelessWidget {
   });
 
   @override
+  State<SendSuccessScreen> createState() => _SendSuccessScreenState();
+}
+
+class _SendSuccessScreenState extends State<SendSuccessScreen> {
+  SolanaSignatureStatus _status = SolanaSignatureStatus.pending;
+  RpcService? _rpc;
+  Timer? _retry;
+  Timer? _deadline;
+
+  @override
+  void initState() {
+    super.initState();
+    final net = widget.net;
+    final hash = widget.txHash;
+    if (net == null ||
+        net.type != NetworkType.solana ||
+        net.chainId != 'mainnet' ||
+        net.testNet ||
+        hash == null ||
+        hash.isEmpty) {
+      return;
+    }
+    final rpc = _rpc = RpcService();
+    _deadline = Timer(const Duration(seconds: 25), _stopConfirmation);
+    unawaited(_checkConfirmation(rpc, hash));
+  }
+
+  Future<void> _checkConfirmation(RpcService rpc, String hash) async {
+    var status = SolanaSignatureStatus.pending;
+    try {
+      final statuses = await rpc
+          .getSignatureStatuses([hash])
+          .timeout(const Duration(seconds: 4));
+      status = statuses.single;
+    } catch (_) {
+      // An unavailable RPC response does not mean the send failed.
+    }
+    if (!mounted || !identical(_rpc, rpc)) return;
+    if (status == SolanaSignatureStatus.pending) {
+      _retry = Timer(
+        const Duration(milliseconds: 500),
+        () => unawaited(_checkConfirmation(rpc, hash)),
+      );
+    } else {
+      _stopConfirmation();
+      setState(() => _status = status);
+    }
+  }
+
+  void _stopConfirmation() {
+    _retry?.cancel();
+    _deadline?.cancel();
+    _rpc?.dispose();
+    _rpc = null;
+  }
+
+  @override
+  void dispose() {
+    _stopConfirmation();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final SendSuccessScreen(:symbol, :fromAddress, :toAddress, :txHash, :net) =
+        widget;
     final url = explorerTxUrl(net, txHash);
-    final exName = net == null
-        ? null
-        : explorerNameFor(net!.type, net!.chainId);
+    final exName = net == null ? null : explorerNameFor(net.type, net.chainId);
+    final (mark, title, subtitle) = switch (_status) {
+      SolanaSignatureStatus.pending => (
+        const Icon(Icons.schedule, size: 88, color: TibaneColors.orange),
+        l10n.transactionSubmittedTitle,
+        l10n.transactionSubmittedBody,
+      ),
+      SolanaSignatureStatus.confirmed => (
+        txSuccessMark(size: 88),
+        l10n.sendSuccessTitle,
+        l10n.sendSuccessSubtitle(symbol),
+      ),
+      SolanaSignatureStatus.failed => (
+        const Icon(Icons.error_outline, size: 88, color: TibaneColors.error),
+        l10n.sendReceiptFailedTitle,
+        l10n.sendReceiptFailedBody,
+      ),
+    };
     return Scaffold(
       backgroundColor: TibaneColors.black,
       appBar: AppBar(title: Text(l10n.sendTitle(symbol))),
@@ -1560,14 +1642,10 @@ class SendSuccessScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     const SizedBox(height: 36),
-                    const Icon(
-                      Icons.schedule,
-                      size: 88,
-                      color: TibaneColors.orange,
-                    ),
+                    mark,
                     const SizedBox(height: 28),
                     Text(
-                      l10n.transactionSubmittedTitle,
+                      title,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: TibaneColors.text,
@@ -1578,7 +1656,7 @@ class SendSuccessScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      l10n.transactionSubmittedBody,
+                      subtitle,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: TibaneColors.textMuted,
@@ -1591,12 +1669,12 @@ class SendSuccessScreen extends StatelessWidget {
                       labelFontSize: 11 * 1.2,
                       value: fromAddress == null
                           ? '—'
-                          : abbreviateAccountAddress(fromAddress!),
+                          : abbreviateAccountAddress(fromAddress),
                       onTap: fromAddress == null
                           ? null
                           : () => copyWithToast(
                               context,
-                              fromAddress!,
+                              fromAddress,
                               l10n.labelAddress,
                             ),
                     ),
@@ -1617,7 +1695,7 @@ class SendSuccessScreen extends StatelessWidget {
                           ? null
                           : () => copyWithToast(
                               context,
-                              txHash!,
+                              txHash,
                               l10n.labelTransactionId,
                             ),
                       trailing: url == null

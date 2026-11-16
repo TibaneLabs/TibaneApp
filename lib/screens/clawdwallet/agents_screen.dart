@@ -6,6 +6,7 @@ import '../../models/token_account.dart';
 import '../../services/clawdwallet_service.dart';
 import '../../services/rpc_service.dart';
 import '../../theme/tibane_theme.dart';
+import '../../widgets/gradient_button.dart';
 import '../../widgets/tibane_card.dart';
 import '../wallet/widgets/authorize_and_sign.dart';
 import 'activity_screen.dart';
@@ -143,7 +144,9 @@ class _AgentsScreenState extends State<AgentsScreen> {
       MaterialPageRoute(
         builder: (_) => ActivityScreen(
           walletId: id,
-          walletName: (w['name'] as String?) ?? context.l10n.clawdAgentsDefaultWalletName,
+          walletName:
+              (w['name'] as String?) ??
+              context.l10n.clawdAgentsDefaultWalletName,
         ),
       ),
     );
@@ -160,15 +163,10 @@ class _AgentsScreenState extends State<AgentsScreen> {
           child: _buildBody(),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: GradientButton(
         onPressed: _openCreate,
-        backgroundColor: TibaneColors.orange,
-        foregroundColor: TibaneColors.black,
-        icon: const Icon(Icons.add),
-        label: Text(
-          context.l10n.clawdAgentsNewAgent,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
+        icon: Icons.add,
+        label: context.l10n.clawdAgentsNewAgent,
       ),
     );
   }
@@ -229,7 +227,10 @@ class _AgentsScreenState extends State<AgentsScreen> {
             child: Text(
               context.l10n.clawdAgentsEmptyHint,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: TibaneColors.textMuted, height: 1.5),
+              style: const TextStyle(
+                color: TibaneColors.textMuted,
+                height: 1.5,
+              ),
             ),
           ),
         ],
@@ -292,7 +293,9 @@ class _AgentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = (wallet['name'] as String?) ?? context.l10n.clawdAgentsDefaultWalletName;
+    final name =
+        (wallet['name'] as String?) ??
+        context.l10n.clawdAgentsDefaultWalletName;
     final addr = (wallet['solana_address'] ?? wallet['address']) as String?;
     final locked = wallet['locked'] == true;
 

@@ -11,6 +11,7 @@ import 'package:tibaneapp/screens/wallet/create_seed_wallet_screen.dart';
 import 'package:tibaneapp/screens/wallet/inapp_import_mnemonic_screen.dart';
 import 'package:tibaneapp/screens/wallet/inapp_import_private_key_screen.dart';
 import 'package:tibaneapp/screens/wallet/inapp_import_screen.dart';
+import 'package:tibaneapp/screens/wallet/mpc_wallet_intro_screen.dart';
 import 'package:tibaneapp/screens/wallet/wallet_create_options_screen.dart';
 import 'package:tibaneapp/screens/wallet/wallet_screen.dart';
 import 'package:tibaneapp/screens/wallet/wallet_welcome_screen.dart';
@@ -233,6 +234,9 @@ void main() {
     final harness = await _pump(tester);
     await _tap(tester, 'wallet-welcome-create');
     await _tap(tester, 'wallet-create-mpc-option');
+    for (var step = 0; step < 4; step++) {
+      await _tap(tester, 'mpc-intro-next');
+    }
     expect(find.byType(InAppCreateScreen), findsOneWidget);
     expect(find.byWidgetPredicate((w) => w is SegmentedButton), findsOneWidget);
     expect(find.text('Send verification code'), findsOneWidget);
@@ -243,6 +247,56 @@ void main() {
     expect(harness.result, isNull);
     expect(tester.takeException(), isNull);
   });
+
+  for (final locale in AppLocalizations.supportedLocales) {
+    testWidgets('MPC intro steps and back navigation in $locale', (
+      tester,
+    ) async {
+      final harness = await _pump(
+        tester,
+        locale: locale,
+        size: const Size(320, 568),
+        textScale: 1.5,
+      );
+      await _tap(tester, 'wallet-welcome-create');
+      await _tap(tester, 'wallet-create-mpc-option');
+      final l10n = AppLocalizations.of(
+        tester.element(find.byType(MpcWalletIntroScreen)),
+      );
+      final titles = [
+        l10n.mpcIntroSplitTitle,
+        l10n.mpcIntroPhraseTitle,
+        l10n.mpcIntroSecurityTitle,
+        l10n.mpcIntroRestoreTitle,
+      ];
+      for (var step = 0; step < titles.length; step++) {
+        expect(find.text(titles[step]), findsOneWidget);
+        expect(find.byType(InAppCreateScreen), findsNothing);
+        if (step > 0) {
+          final (body, emphasis) = switch (step) {
+            1 => (l10n.mpcIntroPhraseBody, l10n.mpcIntroPhraseEmphasis),
+            2 => (l10n.mpcIntroSecurityBody, l10n.mpcIntroSecurityEmphasis),
+            _ => (l10n.mpcIntroRestoreBody, l10n.mpcIntroRestoreEmphasis),
+          };
+          final text = tester.widget<Text>(find.text('$body\n\n$emphasis'));
+          final paragraph = text.textSpan! as TextSpan;
+          final bold = paragraph.children!.last as TextSpan;
+          expect(bold.text, emphasis);
+          expect(bold.style!.fontWeight, FontWeight.w700);
+        }
+        expect(tester.takeException(), isNull);
+        if (step + 1 < titles.length) await _tap(tester, 'mpc-intro-next');
+      }
+      expect(harness.wallet.backend.clientRequests, 0);
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.mpcIntroSecurityTitle), findsOneWidget);
+      for (var step = 0; step < 3; step++) {
+        await _tap(tester, 'mpc-intro-back');
+      }
+      expect(find.byType(WalletCreateOptionsScreen), findsOneWidget);
+    });
+  }
 
   testWidgets(
     'seed creation opens without generation and preserves completion routing',
@@ -267,6 +321,9 @@ void main() {
     final harness = await _pump(tester);
     await _tap(tester, 'wallet-welcome-create');
     await _tap(tester, 'wallet-create-mpc-option');
+    for (var step = 0; step < 4; step++) {
+      await _tap(tester, 'mpc-intro-next');
+    }
     await _back(tester, InAppCreateScreen, true);
     expect(find.text('Open setup'), findsOneWidget);
     expect(harness.result, true);

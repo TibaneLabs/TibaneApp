@@ -276,7 +276,7 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
-    testWidgets('$locale starts on Wallet with only four footer tabs', (
+    testWidgets('$locale starts on Wallet with only three footer tabs', (
       tester,
     ) async {
       final wallet = _Wallet();
@@ -288,7 +288,6 @@ void main() {
       expect(nav.currentIndex, 0);
       expect(nav.items.map((item) => item.label), [
         l10n.bottomNavWalletLabel,
-        l10n.dashboardTabActivity,
         l10n.bottomNavBrowseLabel,
         l10n.bottomNavSettingsLabel,
       ]);
@@ -327,7 +326,10 @@ void main() {
     expect(find.byType(DAppBrowserScreen), findsNothing);
     tester.state<TibaneShellState>(find.byType(TibaneShell)).navigateTo(4);
     await tester.pumpAndSettle();
-    expect(tester.widget<BottomNavigationBar>(footer).currentIndex, 3);
+    expect(
+      tester.widget<BottomNavigationBar>(footer).currentIndex,
+      ShellTab.settings.index,
+    );
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
@@ -347,7 +349,7 @@ void main() {
     expect(find.text('Connect'), findsNothing);
   });
 
-  testWidgets('Settings opens Tools without losing the four-tab footer', (
+  testWidgets('Settings opens Tools without losing the three-tab footer', (
     tester,
   ) async {
     final wallet = _Wallet();
@@ -362,14 +364,27 @@ void main() {
     );
     await tester.pumpAndSettle();
     final tools = find.byKey(const Key('settings-tools'));
+    final activity = find.byKey(const Key('settings-activity'));
+    expect(
+      tester.getTopLeft(tools).dy,
+      greaterThan(tester.getBottomLeft(activity).dy),
+    );
+    expect(
+      find.descendant(
+        of: tools,
+        matching: find.text(l10n.settingsToolsSubtitle),
+      ),
+      findsOneWidget,
+    );
     await tester.ensureVisible(tools);
     await tester.tap(tools);
     await tester.pumpAndSettle();
     expect(find.byType(ToolsScreen), findsOneWidget);
-    expect(tester.widget<BottomNavigationBar>(footer).items, hasLength(4));
+    expect(tester.widget<BottomNavigationBar>(footer).items, hasLength(3));
     expect(find.byKey(const Key('tools-stake')), findsOneWidget);
     expect(find.byKey(const Key('tools-incinerator')), findsOneWidget);
-    expect(find.byKey(const Key('tools-search')), findsOneWidget);
+    expect(find.byKey(const Key('tools-bulk-sell')), findsOneWidget);
+    expect(find.byKey(const Key('tools-search')), findsNothing);
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(find.byType(SettingsScreen), findsOneWidget);

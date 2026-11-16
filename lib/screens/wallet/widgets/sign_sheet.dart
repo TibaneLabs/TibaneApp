@@ -39,6 +39,7 @@ Future<List<SigningKey>?> showSignSheet(
   subtitlePurpose, // e.g. 'sign this transaction' (default) / 'change your password'
   String actionLabel = 'Sign',
   bool transactionReviewed = false,
+  bool confirmationStyle = false,
   NormalWalletBiometrics? normalBiometrics,
 }) async {
   var biometricRequired = false;
@@ -105,7 +106,10 @@ Future<List<SigningKey>?> showSignSheet(
     }
   }
   if (isNormalMnemonicWallet(wallet)) {
-    final password = await showWalletPasswordDialog(context);
+    final password = await showWalletPasswordDialog(
+      context,
+      confirmationTitle: confirmationStyle ? title : null,
+    );
     if (!context.mounted || password == null || password.isEmpty) return null;
     return [
       SigningKey(id: wallet.keys.single.id, key: password, type: 'Password'),
@@ -124,6 +128,7 @@ Future<List<SigningKey>?> showSignSheet(
       title: title,
       subtitlePurpose: subtitlePurpose ?? 'sign this transaction',
       actionLabel: actionLabel,
+      confirmationStyle: confirmationStyle,
     ),
   );
 }
@@ -135,6 +140,7 @@ class _SignSheet extends StatefulWidget {
     required this.title,
     required this.subtitlePurpose,
     required this.actionLabel,
+    required this.confirmationStyle,
   });
 
   final Wallet wallet;
@@ -143,6 +149,7 @@ class _SignSheet extends StatefulWidget {
   final String title;
   final String subtitlePurpose;
   final String actionLabel;
+  final bool confirmationStyle;
 
   @override
   State<_SignSheet> createState() => _SignSheetState();
@@ -259,16 +266,34 @@ class _SignSheetState extends State<_SignSheet> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                GradientButton(
-                  label: widget.actionLabel,
-                  expanded: true,
-                  onPressed: _ready && !_busy
-                      ? () => Navigator.pop(context, _collected)
-                      : null,
-                ),
+                if (widget.confirmationStyle)
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: TibaneColors.orange,
+                      foregroundColor: TibaneColors.black,
+                    ),
+                    onPressed: _ready && !_busy
+                        ? () => Navigator.pop(context, _collected)
+                        : null,
+                    child: Text(widget.actionLabel),
+                  )
+                else
+                  GradientButton(
+                    label: widget.actionLabel,
+                    expanded: true,
+                    onPressed: _ready && !_busy
+                        ? () => Navigator.pop(context, _collected)
+                        : null,
+                  ),
                 const SizedBox(height: 8),
                 TextButton(
                   onPressed: _busy ? null : () => Navigator.pop(context),
+                  style: widget.confirmationStyle
+                      ? TextButton.styleFrom(
+                          backgroundColor: TibaneColors.surface,
+                          foregroundColor: TibaneColors.text,
+                        )
+                      : null,
                   child: Text(l10n.actionCancel),
                 ),
               ],

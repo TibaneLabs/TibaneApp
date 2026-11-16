@@ -17,7 +17,6 @@ import 'screens/settings_screen.dart';
 import 'screens/swap_screen.dart';
 import 'screens/wallet/biometric_migration_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
-import 'screens/wallet/activity_screen.dart';
 import 'screens/wallet/widgets/hardware_status.dart';
 import 'services/balances_store.dart';
 import 'services/app_lock_controller.dart';
@@ -98,7 +97,7 @@ bool startupGateReady({
 /// behaviour where back on a root tab exited. Pure, for unit testing.
 enum ShellBackAction { popTab, exitApp }
 
-enum ShellTab { wallet, activity, browser, settings }
+enum ShellTab { wallet, browser, settings }
 
 @visibleForTesting
 ShellBackAction shellBackAction({required bool activeTabCanPop}) =>
@@ -106,9 +105,7 @@ ShellBackAction shellBackAction({required bool activeTabCanPop}) =>
 
 @visibleForTesting
 bool bottomTabTapPopsToRoot(int index) =>
-    index == ShellTab.wallet.index ||
-    index == ShellTab.activity.index ||
-    index == ShellTab.settings.index;
+    index == ShellTab.wallet.index || index == ShellTab.settings.index;
 
 /// Lazy-build + pause state for the Browse tab, given whether it was already
 /// built (`wasVisited`) and the active tab index. The heavy webview is built
@@ -205,7 +202,7 @@ class TibaneApp extends StatelessWidget {
 
 /// Main app shell with bottom navigation
 class TibaneShell extends StatefulWidget {
-  /// Tab to show on first build. 0=wallet/swap, 1=activity, 2=browse, 3=settings.
+  /// Tab to show on first build. 0=wallet/swap, 1=browse, 2=settings.
   final int initialIndex;
 
   /// When non-null, forces the Seeker / non-Seeker layout instead of probing
@@ -213,7 +210,7 @@ class TibaneShell extends StatefulWidget {
   final bool? forceSeeker;
 
   const TibaneShell({super.key, this.initialIndex = 0, this.forceSeeker})
-    : assert(initialIndex >= 0 && initialIndex < 4);
+    : assert(initialIndex >= 0 && initialIndex < 3);
 
   @override
   State<TibaneShell> createState() => TibaneShellState();
@@ -386,7 +383,7 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
         final nav = _navKeys[_currentIndex].currentState;
         switch (shellBackAction(activeTabCanPop: nav?.canPop() ?? false)) {
           case ShellBackAction.popTab:
-            nav!.pop();
+            unawaited(nav!.maybePop());
           case ShellBackAction.exitApp:
             SystemNavigator.pop();
         }
@@ -406,14 +403,6 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
                 backgroundColor: TibaneColors.black,
                 appBar: const TibaneAppBar(),
                 body: _WalletOrSwapTab(forceSeeker: widget.forceSeeker),
-              ),
-            ),
-            _TabNavigator(
-              navKey: _navKeys[ShellTab.activity.index],
-              rootBuilder: (_) => Scaffold(
-                backgroundColor: TibaneColors.black,
-                appBar: const TibaneAppBar(),
-                body: _ActivityTab(activeTab: _activeTab),
               ),
             ),
             // Browse: built (and its heavy webview spun up) only after its first
@@ -464,11 +453,6 @@ class TibaneShellState extends State<TibaneShell> with WidgetsBindingObserver {
             label: showSwap
                 ? l10n.bottomNavSwapLabel
                 : l10n.bottomNavWalletLabel,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.history_outlined),
-            activeIcon: const Icon(Icons.history),
-            label: l10n.dashboardTabActivity,
           ),
           BottomNavigationBarItem(
             icon: const Icon(Icons.travel_explore_outlined),
@@ -561,30 +545,6 @@ class _WalletOrSwapTab extends StatelessWidget {
         ? const SwapScreen(initialInputMint: wsolMint)
         : const WalletScreen();
   }
-}
-
-class _ActivityTab extends StatefulWidget {
-  const _ActivityTab({required this.activeTab});
-  final ValueListenable<int> activeTab;
-
-  @override
-  State<_ActivityTab> createState() => _ActivityTabState();
-}
-
-class _ActivityTabState extends State<_ActivityTab> {
-  bool _visited = false;
-
-  @override
-  Widget build(BuildContext context) => ValueListenableBuilder<int>(
-    valueListenable: widget.activeTab,
-    builder: (_, index, _) {
-      final active = index == ShellTab.activity.index;
-      _visited = _visited || active;
-      return _visited
-          ? ActivityScreen(active: active)
-          : const SizedBox.shrink();
-    },
-  );
 }
 
 /// Browse root. Builds the heavy dApp browser lazily (only after the tab's first
