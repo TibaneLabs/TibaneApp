@@ -1,0 +1,26 @@
+Uma grande atualização: carteiras de hardware, novas ferramentas para Solana e uma carteira redesenhada.
+
+CARTEIRAS DE HARDWARE
+- Suporte a Ledger, incluindo atualização de firmware, verificação de autenticidade e gerenciamento de apps.
+- Carteiras CatCard (cartão inteligente) via USB.
+- Assinadores offline por QR codes animados.
+
+NOVAS FERRAMENTAS PARA SOLANA
+- Venda em lote: venda vários tokens por SOL de uma só vez.
+- Recuperar SOL: feche contas de token vazias e receba de volta o aluguel.
+- Meus stakes: todas as suas posições ChiefStaker em um só lugar.
+- Selo de verificação em tokens conhecidos.
+
+CARTEIRA
+- Contas agrupadas por carteira, com opções para mostrar ou ocultar.
+- Guia passo a passo para criar uma carteira MPC.
+- Melhorias nas contas Bitcoin e EVM.
+- Envie com um toque para as contas das suas outras carteiras.
+- O swap mostra os saldos dos dois lados, com cotações MAX mais precisas.
+- Visão de lucros e perdas, e histórico de atividades redesenhado.
+- Bloqueio opcional com o código do iPhone.
+
+E MAIS
+- Disponível em francês, japonês e português.
+- Requer iOS 15 ou posterior.
+- Muitas melhorias de design e correções de bugs.

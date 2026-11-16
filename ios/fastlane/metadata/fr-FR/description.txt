@@ -1,0 +1,40 @@
+Tibane réunit dans une seule app rapide tout ce dont les utilisateurs avancés de Solana ont besoin : un portefeuille non custodial, des swaps de tokens, un explorateur de staking avec les statistiques des pools en direct, des outils pour nettoyer votre portefeuille et récupérer des SOL, et des infos token avec les principaux détenteurs, la capitalisation et l'offre on-chain.
+
+PORTEFEUILLE
+- Non custodial : vous gardez le contrôle de vos clés.
+- Créez un portefeuille MPC avec une configuration guidée, ou utilisez une phrase de récupération classique.
+- Portefeuilles matériels : Ledger, CatCard et signataires hors ligne par QR code.
+- Solana d'abord, avec des comptes Bitcoin et EVM dans la même app.
+- Soldes en direct, valeur totale du portefeuille, plus-values et moins-values, et historique complet des activités.
+- Badges de vérification sur les tokens connus.
+- Verrouillage de l'application facultatif avec Face ID, Touch ID ou le code de votre iPhone.
+
+SWAP ET VENTE GROUPÉE
+- Échangez vos tokens Solana au meilleur prix disponible.
+- Vente groupée : vendez plusieurs tokens contre du SOL en une seule opération.
+
+POOLS DE STAKING
+- Parcourez tous les pools ChiefStaker : total staké, récompenses, nombre de membres.
+- Consultez les statistiques complètes d'un pool : poids, décroissance (tau), paliers.
+- Mes positions : tous vos stakes et récompenses en attente au même endroit, avec « Tout réclamer » en un geste.
+
+NETTOYAGE ET RÉCUPÉRATION DE SOL
+- Récupérer des SOL : fermez les comptes de tokens vides et récupérez leur loyer (environ 0,002 SOL chacun).
+- Incinérateur : brûlez les tokens indésirables, les NFT et les domaines .sol inutilisés.
+- Mode sponsorisé : un relais paie les frais réseau, avec un pourboire ajustable.
+
+INFOS TOKEN
+- Recherchez n'importe quel token SPL : offre, capitalisation, quantité brûlée, décimales.
+- Principaux détenteurs avec leur part on-chain.
+- Adresse du mint copiable d'un geste.
+
+NAVIGATEUR DAPP
+- Lancez n'importe quelle dApp Solana depuis le navigateur intégré.
+- Signez avec le portefeuille que vous avez déjà configuré.
+
+Disponible en français, anglais, japonais et portugais.
+
+Open source. Développé par Tibane Labs, une équipe de recherche Solana qui doit son nom au chat à l'origine de tout.
+
+Confidentialité : https://tibane.net/app/privacy
+Code source : https://tibane.net

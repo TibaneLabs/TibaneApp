@@ -1,7 +1,26 @@
-Initial App Store release of Tibane.
+A big update: hardware wallets, new Solana tools, and a redesigned wallet.
 
-- Non-custodial Solana wallet, with optional Mobile Wallet Adapter for Seeker and Saga.
-- Browse and join ChiefStaker staking pools.
-- Incinerator: burn empty token accounts, junk NFTs, and unused .sol domains to reclaim SOL.
-- Token info: supply, market cap, burned amount, top holders.
-- Built-in web browser with Solana wallet support.
+HARDWARE WALLETS
+- Ledger support, including firmware updates, genuine check, and app management.
+- CatCard smart-card wallets over USB.
+- Air-gapped signers via animated QR codes.
+
+NEW SOLANA TOOLS
+- Bulk Sell: sell several tokens for SOL at once.
+- Reclaim SOL: close empty token accounts and recover their rent.
+- My Staked: all your ChiefStaker positions in one place.
+- Verified badges on known tokens.
+
+WALLET
+- Accounts grouped by wallet, with options to show or hide them.
+- Step-by-step guide for creating an MPC wallet.
+- Improved Bitcoin and EVM account handling.
+- Send to your other wallets' accounts in one tap.
+- Swap shows balances on both sides, with more accurate MAX quotes.
+- Profit and loss view, and a redesigned activity history.
+- Optional app lock with your iPhone passcode.
+
+ALSO
+- Available in French, Japanese, and Portuguese.
+- Requires iOS 15 or later.
+- Many design improvements and bug fixes.

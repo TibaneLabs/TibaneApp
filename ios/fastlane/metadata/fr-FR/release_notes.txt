@@ -1,0 +1,26 @@
+Une grosse mise à jour : portefeuilles matériels, nouveaux outils Solana et portefeuille repensé.
+
+PORTEFEUILLES MATÉRIELS
+- Prise en charge de Ledger, avec mises à jour du firmware, vérification d'authenticité et gestion des applications.
+- Portefeuilles CatCard (carte à puce) en USB.
+- Signataires hors ligne par QR codes animés.
+
+NOUVEAUX OUTILS SOLANA
+- Vente groupée : vendez plusieurs tokens contre du SOL en une fois.
+- Récupérer des SOL : fermez les comptes de tokens vides et récupérez leur loyer.
+- Mes positions : tous vos stakes ChiefStaker au même endroit.
+- Badges de vérification sur les tokens connus.
+
+PORTEFEUILLE
+- Comptes regroupés par portefeuille, avec options pour les afficher ou les masquer.
+- Guide pas à pas pour créer un portefeuille MPC.
+- Meilleure gestion des comptes Bitcoin et EVM.
+- Envoi en un geste vers les comptes de vos autres portefeuilles.
+- Le swap affiche les soldes des deux côtés, avec des cotations MAX plus précises.
+- Vue des plus-values et moins-values, et historique des activités repensé.
+- Verrouillage facultatif avec le code de votre iPhone.
+
+ET AUSSI
+- Disponible en français, japonais et portugais.
+- iOS 15 ou ultérieur requis.
+- Nombreuses améliorations visuelles et corrections de bugs.

@@ -9,6 +9,7 @@
 #   ./scripts/take_screenshots.sh "iPad Pro 13-inch (M4)"
 #   ./scripts/take_screenshots.sh <UDID> ipad                             # explicit prefix when device is a UDID
 #   ./scripts/take_screenshots.sh <UDID> iphone
+#   ./scripts/take_screenshots.sh "iPhone 17 Pro Max" iphone ja         # app language (en, fr, ja, pt)
 
 set -e
 
@@ -17,7 +18,16 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 DEFAULT_DEVICE="iPhone 16 Pro Max"
 DEVICE="${1:-$DEFAULT_DEVICE}"
 PREFIX_OVERRIDE="${2:-}"   # optional: "ipad" or "iphone"
-SCREENSHOTS_DIR="$PROJECT_DIR/fastlane/screenshots/en-US"
+APP_LOCALE="${3:-en}"      # app language: en, fr, ja, pt
+# App Store Connect folder for each app language.
+case "$APP_LOCALE" in
+    en) STORE_LOCALE="en-US" ;;
+    fr) STORE_LOCALE="fr-FR" ;;
+    ja) STORE_LOCALE="ja" ;;
+    pt) STORE_LOCALE="pt-BR" ;;
+    *) echo "Unknown locale: $APP_LOCALE"; exit 1 ;;
+esac
+SCREENSHOTS_DIR="$PROJECT_DIR/fastlane/screenshots/$STORE_LOCALE"
 SIGNAL_DIR="/tmp/screenshot_signals"
 
 GREEN='\033[0;32m'
@@ -27,6 +37,7 @@ NC='\033[0m'
 
 echo -e "${GREEN}=== Tibane App Store Screenshots ===${NC}"
 echo -e "${BLUE}Device:${NC} $DEVICE"
+echo -e "${BLUE}Locale:${NC} $APP_LOCALE -> $STORE_LOCALE"
 
 mkdir -p "$SCREENSHOTS_DIR"
 rm -rf "$SIGNAL_DIR"
@@ -40,7 +51,7 @@ fi
 
 echo "Simulator UDID: $UDID"
 xcrun simctl boot "$UDID" 2>/dev/null || true
-open -a Simulator --args -CurrentDeviceUDID "$UDID"
+open -a Simulator --args -CurrentDeviceUDID "$UDID" 2>/dev/null || true  # optional: capture works headless
 sleep 2
 
 cd "$PROJECT_DIR"
@@ -79,15 +90,18 @@ wait_and_capture() {
 }
 
 echo -e "${YELLOW}Building and launching screenshot app...${NC}"
-flutter run --target=lib/screenshot_main.dart -d "$UDID" --no-hot 2>&1 &
+flutter run --target=lib/screenshot_main.dart -d "$UDID" --no-hot \
+    --dart-define=SCREENSHOT_LOCALE="$APP_LOCALE" 2>&1 &
 FLUTTER_PID=$!
 
 wait_and_capture 1 "$SCREENSHOTS_DIR/${PREFIX}01_wallet.png"
-wait_and_capture 2 "$SCREENSHOTS_DIR/${PREFIX}02_wallet_setup.png"
-wait_and_capture 3 "$SCREENSHOTS_DIR/${PREFIX}03_staking_pools.png"
-wait_and_capture 4 "$SCREENSHOTS_DIR/${PREFIX}04_staking_detail.png"
-wait_and_capture 5 "$SCREENSHOTS_DIR/${PREFIX}05_incinerator.png"
-wait_and_capture 6 "$SCREENSHOTS_DIR/${PREFIX}06_token_info.png"
+wait_and_capture 2 "$SCREENSHOTS_DIR/${PREFIX}02_bulk_sell.png"
+wait_and_capture 3 "$SCREENSHOTS_DIR/${PREFIX}03_my_staked.png"
+wait_and_capture 4 "$SCREENSHOTS_DIR/${PREFIX}04_staking_pools.png"
+wait_and_capture 5 "$SCREENSHOTS_DIR/${PREFIX}05_staking_detail.png"
+wait_and_capture 6 "$SCREENSHOTS_DIR/${PREFIX}06_incinerator.png"
+wait_and_capture 7 "$SCREENSHOTS_DIR/${PREFIX}07_token_info.png"
+wait_and_capture 8 "$SCREENSHOTS_DIR/${PREFIX}08_wallet_setup.png"
 
 kill "$FLUTTER_PID" 2>/dev/null || true
 pkill -f "flutter run" 2>/dev/null || true

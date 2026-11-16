@@ -1,0 +1,40 @@
+A Tibane reúne em um único app rápido tudo o que importa para quem usa a Solana a fundo: uma carteira não custodial, swaps de tokens, um explorador de staking com estatísticas dos pools ao vivo, ferramentas para limpar sua carteira e recuperar SOL, e informações de tokens com os maiores detentores, capitalização de mercado e oferta on-chain.
+
+CARTEIRA
+- Não custodial: você mantém o controle das suas chaves.
+- Crie uma carteira MPC com configuração guiada ou use uma frase de recuperação tradicional.
+- Carteiras de hardware: Ledger, CatCard e assinadores offline por QR code.
+- Solana em primeiro lugar, com contas Bitcoin e EVM no mesmo app.
+- Saldos ao vivo, total do portfólio, lucros e perdas, e histórico completo de atividades.
+- Selo de verificação em tokens conhecidos.
+- Bloqueio do app opcional com Face ID, Touch ID ou o código do iPhone.
+
+SWAP E VENDA EM LOTE
+- Troque tokens da Solana pela melhor cotação disponível.
+- Venda em lote: venda vários tokens por SOL de uma só vez.
+
+POOLS DE STAKING
+- Explore todos os pools ChiefStaker: total em staking, recompensas, número de membros.
+- Veja as estatísticas completas de um pool: peso, decaimento (tau), marcos.
+- Meus stakes: todas as suas posições e recompensas pendentes em um só lugar, com "Resgatar tudo" em um toque.
+
+LIMPEZA E RECUPERAÇÃO DE SOL
+- Recuperar SOL: feche contas de token vazias e receba de volta o aluguel (cerca de 0,002 SOL cada).
+- Incinerador: queime tokens indesejados, NFTs e domínios .sol sem uso.
+- Modo patrocinado: um relay paga a taxa da rede, com gorjeta ajustável.
+
+INFO DO TOKEN
+- Consulte qualquer token SPL: oferta, capitalização de mercado, quantidade queimada, casas decimais.
+- Maiores detentores com porcentagens on-chain.
+- Endereço do mint copiável com um toque.
+
+NAVEGADOR DE DAPPS
+- Abra qualquer dApp da Solana no navegador do app.
+- Assine com a carteira que você já configurou.
+
+Disponível em português, inglês, francês e japonês.
+
+Código aberto. Criado pela Tibane Labs, uma equipe de pesquisa em Solana que leva o nome do gato que deu início a tudo.
+
+Privacidade: https://tibane.net/app/privacy
+Código-fonte: https://tibane.net

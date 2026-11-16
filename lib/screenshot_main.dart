@@ -22,16 +22,25 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:libwallet/libwallet.dart' as lw;
 import 'package:provider/provider.dart';
 
+import 'constants/solana_constants.dart';
 import 'l10n/l10n.dart';
 import 'main.dart';
 import 'models/staking_pool.dart';
 import 'models/token_account.dart';
+import 'screens/bulk_sell_screen.dart';
 import 'screens/incinerator_screen.dart';
+import 'screens/staking/my_staked_screen.dart';
 import 'screens/staking/staking_detail_screen.dart';
 import 'screens/staking/staking_pools_screen.dart';
 import 'screens/token_detail_screen.dart';
 import 'screens/wallet/wallet_welcome_screen.dart';
+import 'services/balances_store.dart';
+import 'services/browser_preferences.dart';
 import 'services/chiefstaker_api.dart';
+import 'services/jupiter_service.dart';
+import 'services/token_meta_store.dart';
+import 'services/uk_compliance_service.dart';
+import 'services/wallet/bulk_sell_service.dart';
 import 'services/rpc_service.dart';
 import 'services/wallet/libwallet_backend.dart';
 import 'services/wallet/wallet_backend.dart';
@@ -47,6 +56,12 @@ const _chiefPussyMint = 'DRtvTCzfiKGhCVREmBbZdN9sB8PHeq9KdRZ3VmFhpump';
 const _poolAddress = 'C4poo1ChiefStaker11111111111111111111111111';
 const _poolVault = 'V4uLT1ChiefStaker111111111111111111111111';
 const _poolAuthority = 'AuTHorIty11111111111111111111111111111111';
+
+/// App language to render, e.g. `--dart-define=SCREENSHOT_LOCALE=ja`.
+const _localeCode = String.fromEnvironment(
+  'SCREENSHOT_LOCALE',
+  defaultValue: 'en',
+);
 
 // 2.4831 SOL in lamports
 final BigInt _solBalance = BigInt.from(2483100000);
@@ -135,8 +150,17 @@ class _ScreenshotApp extends StatelessWidget {
         ChangeNotifierProvider<WalletService>(
           create: (_) => _StubWalletService(),
         ),
+        ChangeNotifierProvider<BalancesStore>(
+          create: (ctx) => _StubBalancesStore(ctx.read<WalletService>()),
+        ),
+        ChangeNotifierProvider(create: (_) => BrowserPreferences()),
+        ChangeNotifierProvider<UkComplianceService>(
+          create: (_) => _StubUkCompliance(),
+        ),
+        ChangeNotifierProvider(create: (_) => TokenMetaStore()),
       ],
       child: MaterialApp(
+        locale: const Locale(_localeCode),
         title: 'Tibane',
         debugShowCheckedModeBanner: false,
         theme: TibaneTheme.darkTheme,
@@ -190,57 +214,79 @@ class _ShellWithRunnerState extends State<_ShellWithRunner> {
   }
 
   Future<void> _runSequence() async {
+    final l10n = context.l10n;
     // First frame mounted — give fonts/theme a moment to settle.
     await _wait(1500);
 
-    // 1) Wallet dashboard, now the app's initial tab.
+    // 1) Wallet dashboard, the app's initial tab.
     _shellKey.currentState?.navigateTo(ShellTab.wallet.index);
     await _wait(900);
     await _captureAt(1);
 
-    // 2) Wallet creation/import entry point.
-    _push(const WalletWelcomeScreen());
-    await _wait(900);
+    // 2) Bulk Sell with the demo holdings.
+    _push(
+      // ignore: invalid_use_of_visible_for_testing_member
+      BulkSellScreen.testing(
+        service: _StubBulkSellService(),
+        authorize: (_) async => null,
+      ),
+    );
+    await _wait(1500);
     await _captureAt(2);
     _pop();
     await _wait(400);
 
-    // 3) Staking pools, a pushed route rather than a footer tab.
-    _push(
-      const Scaffold(
-        backgroundColor: TibaneColors.black,
-        body: SafeArea(child: StakingPoolsScreen()),
-      ),
-    );
-    await _wait(1300); // ChiefStakerApi.listPools resolves quickly
+    // 3) My Staked: positions across ChiefStaker pools.
+    _push(MyStakedScreen(directory: await _StubChiefStakerApi().listPools()));
+    await _wait(1800);
     await _captureAt(3);
     _pop();
     await _wait(400);
 
-    // 4) Staking detail (push real screen with our top mock pool)
-    _push(StakingDetailScreen(pool: _mockTopPool()));
-    await _wait(1500);
+    // 4) Staking pools directory.
+    _push(
+      Scaffold(
+        backgroundColor: TibaneColors.black,
+        appBar: AppBar(title: Text(l10n.homeStakingPoolsTitle)),
+        body: const SafeArea(child: StakingPoolsScreen()),
+      ),
+    );
+    await _wait(1300);
     await _captureAt(4);
     _pop();
     await _wait(400);
 
-    // 5) Incinerator (the screen has its own header, so wrap without AppBar)
-    _push(
-      const Scaffold(
-        backgroundColor: TibaneColors.black,
-        body: SafeArea(child: IncineratorScreen()),
-      ),
-    );
-    await _wait(2000);
+    // 5) Staking detail for the top pool.
+    _push(StakingDetailScreen(pool: _mockTopPool()));
+    await _wait(1500);
     await _captureAt(5);
     _pop();
     await _wait(400);
 
-    // 6) Token info — pushed with the $ChiefPussy mint. TokenDetailScreen
-    // owns its own Scaffold + AppBar so no caller wrapping is needed.
+    // 6) Incinerator, as opened from Tools.
+    _push(
+      Scaffold(
+        backgroundColor: TibaneColors.black,
+        appBar: AppBar(title: Text(l10n.incineratorTitle)),
+        body: const IncineratorScreen(),
+      ),
+    );
+    await _wait(2000);
+    await _captureAt(6);
+    _pop();
+    await _wait(400);
+
+    // 7) Token info for $ChiefPussy.
     _push(const TokenDetailScreen(mint: _chiefPussyMint));
     await _wait(1800);
-    await _captureAt(6);
+    await _captureAt(7);
+    _pop();
+    await _wait(400);
+
+    // 8) Wallet creation/import entry point.
+    _push(const WalletWelcomeScreen());
+    await _wait(900);
+    await _captureAt(8);
     _pop();
 
     debugPrint('SCREENSHOT_SIGNAL: All screens captured');
@@ -296,6 +342,12 @@ class _StubWalletService extends WalletService {
   Future<void> tryRestore() async {}
 
   @override
+  bool get dataReady => true;
+
+  @override
+  Future<void> discoverHoldings() async {}
+
+  @override
   Future<void> refreshBalances() async {}
 
   @override
@@ -315,6 +367,23 @@ class _StubWalletService extends WalletService {
 class _StubLibwallet extends LibwalletBackend {
   @override
   bool get hasWallet => true;
+
+  @override
+  String? get accountId => 'demo-account';
+
+  @override
+  Future<bool> needsBiometricMigration() async => false;
+
+  @override
+  lw.Network? get currentNetwork => lw.Network.fromJson({
+    'Id': 'solana-mainnet',
+    'Type': 'solana',
+    'ChainId': 'mainnet',
+    'Name': 'Solana',
+    'TestNet': false,
+    'Created': '2026-01-01T00:00:00Z',
+    'Updated': '2026-01-01T00:00:00Z',
+  });
 
   @override
   bool get isConnected => true;
@@ -356,7 +425,7 @@ class _StubLibwallet extends LibwalletBackend {
         id: 'a2',
         key: 'solana:$_chiefPussyMint',
         name: 'Tibane Thecat',
-        symbol: r'$ChiefPussy',
+        symbol: 'ChiefPussy',
         amount: lw.Amount(_chiefPussyBalance, 6),
         type: 'spl-token',
         network: 'solana.mainnet',
@@ -520,7 +589,7 @@ class _StubRpcService extends RpcService {
       _chiefPussyMint: TokenMetadata(
         mint: _chiefPussyMint,
         name: 'Tibane Thecat',
-        symbol: r'$ChiefPussy',
+        symbol: 'ChiefPussy',
         decimals: 6,
         pricePerToken: 0.0000374,
         supply: BigInt.from(1000000000) * BigInt.from(1000000),
@@ -589,7 +658,7 @@ class _StubRpcService extends RpcService {
       return TokenMetadata(
         mint: _chiefPussyMint,
         name: 'Tibane Thecat',
-        symbol: r'$ChiefPussy',
+        symbol: 'ChiefPussy',
         decimals: 6,
         pricePerToken: 0.0000374,
         supply: BigInt.from(1000000000) * BigInt.from(1000000),
@@ -701,40 +770,73 @@ class _StubRpcService extends RpcService {
     String poolAddress,
     String userAddress,
   ) async {
-    return UserStake(
-      owner: userAddress,
-      pool: poolAddress,
-      amount: BigInt.from(5000) * BigInt.from(1000000),
-      // 5,000 $CP
-      stakeTime: BigInt.from(
-        DateTime.now()
-                .subtract(const Duration(days: 14))
-                .millisecondsSinceEpoch ~/
-            1000,
-      ),
-      expStartFactor: BigInt.zero,
-      rewardDebt: BigInt.zero,
-      bump: 255,
-      unstakeRequestAmount: BigInt.zero,
-      unstakeRequestTime: BigInt.zero,
-      lastStakeTime: BigInt.from(
-        DateTime.now()
-                .subtract(const Duration(days: 7))
-                .millisecondsSinceEpoch ~/
-            1000,
-      ),
-      baseTimeSnapshot: BigInt.zero,
-      totalRewardsClaimed: BigInt.from(123000000),
-      // 0.123 SOL claimed
-      claimedRewardsWad: BigInt.zero,
+    return _demoStake(
+      userAddress,
+      poolAddress,
+      BigInt.from(5000) * BigInt.from(1000000),
+      days: 14,
     );
   }
 
   @override
-  Future<StakingPool?> getStakingPool(String address) async => _mockTopPool();
+  Future<StakingPool?> getStakingPool(String address) async {
+    for (final pool in await _StubChiefStakerApi().listPools()) {
+      if (pool.address == address) return pool;
+    }
+    return null;
+  }
+
+  @override
+  Future<int> getTokenDecimals(String mint) async => 6;
+
+  @override
+  Future<List<UserStake>> getUserStakes(String owner) async {
+    final pools = await _StubChiefStakerApi().listPools();
+    return [
+      for (final (i, amount) in [5000, 2150000, 420, 512].indexed)
+        _demoStake(
+          owner,
+          pools[i].address,
+          BigInt.from(amount) * BigInt.from(10).pow(pools[i].tokenDecimals),
+          days: 30 - i * 6,
+        ),
+    ];
+  }
 
   @override
   void dispose() {} // skip super.dispose() — _client wasn't really used
+}
+
+UserStake _demoStake(
+  String userAddress,
+  String poolAddress,
+  BigInt amount, {
+  required int days,
+}) {
+  return UserStake(
+    owner: userAddress,
+    pool: poolAddress,
+    amount: amount,
+    stakeTime: BigInt.from(
+      DateTime.now().subtract(Duration(days: days)).millisecondsSinceEpoch ~/
+          1000,
+    ),
+    expStartFactor: BigInt.zero,
+    rewardDebt: BigInt.zero,
+    bump: 255,
+    unstakeRequestAmount: BigInt.zero,
+    unstakeRequestTime: BigInt.zero,
+    lastStakeTime: BigInt.from(
+      DateTime.now()
+              .subtract(Duration(days: days ~/ 2))
+              .millisecondsSinceEpoch ~/
+          1000,
+    ),
+    baseTimeSnapshot: BigInt.zero,
+    totalRewardsClaimed: BigInt.from(123000000),
+    // 0.123 SOL claimed
+    claimedRewardsWad: BigInt.zero,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -802,7 +904,7 @@ class _StubChiefStakerApi extends ChiefStakerApi {
 
 StakingPool _mockTopPool() => _mockPool(
   name: 'Tibane Thecat',
-  symbol: r'$ChiefPussy',
+  symbol: 'ChiefPussy',
   mint: _chiefPussyMint,
   members: 412,
   rewardSol: 34.21,
@@ -843,7 +945,11 @@ StakingPool _mockPool({
     tauSeconds: BigInt.from(86400 * 7),
     // 7d tau
     baseTime: base,
-    accRewardPerWeightedShare: BigInt.zero,
+    // Pending rewards of about 30% of the pool's balance, pro rata.
+    accRewardPerWeightedShare:
+        BigInt.from((rewardSol * 0.3 * 1e9).toInt()) *
+        BigInt.from(10).pow(18) ~/
+        staked,
     lastUpdateTime: BigInt.from(DateTime.now().millisecondsSinceEpoch ~/ 1000),
     bump: 255,
     lastSyncedLamports: BigInt.from((rewardSol * 1e9).toInt()),
@@ -880,4 +986,113 @@ Map<String, dynamic> _heliusNft(
       {'group_key': 'collection', 'group_value': collection},
     ],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Demo holdings (Jupiter-shaped) shared by the dashboard and Bulk Sell
+// ---------------------------------------------------------------------------
+
+TokenHolding _holding(
+  String mint,
+  String symbol,
+  String name,
+  double ui,
+  int decimals,
+  double price, {
+  double change = 0,
+  String? image,
+}) => TokenHolding(
+  mint: mint,
+  symbol: symbol,
+  name: name,
+  imageUrl: image,
+  balance:
+      BigInt.from(ui * 1000) *
+      BigInt.from(10).pow(decimals) ~/
+      BigInt.from(1000),
+  decimals: decimals,
+  uiBalance: ui,
+  priceUsd: price,
+  valueUsd: ui * price,
+  priceChange24h: change,
+);
+
+final _solHolding = _holding(
+  wsolMint,
+  'SOL',
+  'Solana',
+  2.4831,
+  9,
+  238.98,
+  change: 3.42,
+);
+
+List<TokenHolding> _tokenHoldings() => [
+  _holding(usdcMint, 'USDC', 'USD Coin', 142.50, 6, 1.0, change: 0.01),
+  _holding(
+    'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',
+    'JUP',
+    'Jupiter',
+    512.30,
+    6,
+    0.556,
+    change: 5.81,
+  ),
+  _holding(
+    _chiefPussyMint,
+    'ChiefPussy',
+    'Tibane Thecat',
+    128540,
+    6,
+    0.0000374,
+    change: -2.14,
+  ),
+  _holding(
+    'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+    'BONK',
+    'Bonk',
+    2150000,
+    5,
+    0.0000094,
+    change: 1.27,
+  ),
+];
+
+class _StubBalancesStore extends BalancesStore {
+  _StubBalancesStore(super.wallet);
+
+  @override
+  void init() {}
+
+  @override
+  Future<void> refresh() async {}
+
+  @override
+  Future<void> refreshHistory() async {}
+
+  @override
+  List<TokenHolding> get holdings => _tokenHoldings();
+
+  @override
+  TokenHolding? get nativeSolHolding => _solHolding;
+
+  @override
+  bool get loadingTxs => false;
+}
+
+class _StubUkCompliance extends UkComplianceService {
+  @override
+  bool get isUk => false;
+
+  @override
+  Future<void> init() async {}
+}
+
+class _StubBulkSellService extends BulkSellService {
+  _StubBulkSellService()
+    : super(client: () => throw UnsupportedError('screenshot'));
+
+  @override
+  Future<List<TokenHolding>> holdings(BulkSellAccount account) async =>
+      _tokenHoldings();
 }

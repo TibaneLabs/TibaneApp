@@ -11,4 +11,6 @@ The wallet keys are generated and stored on-device. The phone/OTP is only used f
 
 The Incinerator and Staking features require a connected wallet. Once wallet creation is complete, you can browse staking pools (read-only without staking SOL), and use the Incinerator on any token accounts the wallet holds.
 
+The swap feature in the app is backed by Okx, same as the Phantom app already found on app store.
+
 Source code and additional documentation: https://tibane.net

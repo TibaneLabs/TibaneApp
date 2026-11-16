@@ -1,33 +1,40 @@
-Tibane gives Solana power users a single, fast app for everything that matters: a non-custodial wallet, a staking explorer with live pool stats, an account incinerator that reclaims SOL from dust accounts, and a token info tool with on-chain holders, market cap, and supply.
+Tibane gives Solana power users a single, fast app for everything that matters: a non-custodial wallet, token swaps, a staking explorer with live pool stats, tools to clean up your wallet and reclaim SOL, and a token info tool with on-chain holders, market cap, and supply.
 
 WALLET
-- Non-custodial. Your keys live on your device.
-- Built first for Solana Mobile (Seeker, Saga) with Mobile Wallet Adapter.
-- Also runs as a self-contained in-app wallet — no external app required.
-- Live SOL and SPL token balances, with portfolio totals and recent transfers.
+- Non-custodial. You stay in control of your keys.
+- Create an MPC wallet with guided setup, or use a classic recovery phrase.
+- Hardware wallets: Ledger, CatCard, and air-gapped QR signers.
+- Solana first, with Bitcoin and EVM accounts in the same app.
+- Live balances, portfolio totals, profit and loss, and full activity history.
+- Verified badges on known tokens.
+- Optional app lock with Face ID, Touch ID, or your iPhone passcode.
+
+SWAP AND BULK SELL
+- Swap Solana tokens at the best available quote.
+- Bulk Sell: sell several tokens for SOL in a single flow.
 
 STAKING POOLS
-- Browse every ChiefStaker pool — total staked, rewards, member count.
+- Browse every ChiefStaker pool: total staked, rewards, member count.
 - Dive into a pool's full stats: pool weight, decay (tau), milestones.
-- Track your own stake, weight progression, and pending rewards.
+- My Staked: all your positions and pending rewards in one place, with one-tap Claim All.
 
-INCINERATOR
-- Find empty token accounts, junk NFTs, and unused .sol domains.
-- Burn them to reclaim the SOL rent (about 0.002 SOL per account).
-- Sponsored mode: a relay pays the network fee, you keep most of the rent.
-- Adjustable tip — share rent with the relay or keep nearly all of it.
+CLEAN UP AND RECLAIM SOL
+- Reclaim SOL: close empty token accounts and get their rent back (about 0.002 SOL each).
+- Incinerator: burn junk tokens, NFTs, and unused .sol domains.
+- Sponsored mode: a relay pays the network fee, with an adjustable tip.
 
 TOKEN INFO
 - Look up any SPL token: supply, market cap, burned amount, decimals.
 - Top holders with on-chain percentages.
 - Mint address with one-tap copy.
 
-IN-APP BROWSER
-- A general-purpose web browser opening to tibane.net.
-- Type any URL, the same way you would in Safari.
-- When a website asks to connect or sign, the wallet prompts for explicit approval.
+DAPP BROWSER
+- Launch any Solana dApp from the in-app browser.
+- Sign with the wallet you already have set up.
 
-Open source. Built by Tibane Labs — a Solana research team named after the cat that started it all.
+Available in English, French, Japanese, and Portuguese.
+
+Open source. Built by Tibane Labs, a Solana research team named after the cat that started it all.
 
 Privacy: https://tibane.net/app/privacy
 Source: https://tibane.net
