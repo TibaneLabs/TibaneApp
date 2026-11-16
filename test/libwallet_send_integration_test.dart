@@ -9,7 +9,9 @@ import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libwallet/libwallet.dart';
+import 'package:tibaneapp/constants/solana_constants.dart';
 import 'package:tibaneapp/services/solana_common.dart';
+import 'package:tibaneapp/services/wallet/libwallet_backend.dart';
 
 const _seed =
     '9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60';
@@ -42,6 +44,29 @@ class _LocalRpc implements Transport {
   ]) => inner.request(path, verb, {...?params, 'RPC': rpc});
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _SendClient implements LibwalletClient {
+  _SendClient(this.transactions, this.tokens);
+
+  @override
+  final TransactionApi transactions;
+  @override
+  final TokenApi tokens;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _SendBackend extends LibwalletBackend {
+  _SendBackend(this.client, this.currentNetwork, this.accountId);
+
+  final LibwalletClient client;
+  @override
+  final Network currentNetwork;
+  @override
+  final String accountId;
+  @override
+  Future<LibwalletClient> ensureClient() async => client;
 }
 
 void main() {
@@ -148,6 +173,9 @@ void main() {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final requests = <Map<String, dynamic>>[];
     var failSimulation = false;
+    var token2022 = false;
+    final simulatedTokenPrograms = <bool>[];
+    final token2022Bytes = base58Decode(token2022ProgramId);
     final mintData = Uint8List(82)..[44] = 6;
     final subscription = server.listen((request) async {
       final body =
@@ -155,6 +183,22 @@ void main() {
               as Map<String, dynamic>;
       requests.add(body);
       final method = body['method'];
+      var incorrectProgram = false;
+      if (token2022 && method == 'simulateTransaction') {
+        final wire = base64Decode((body['params'] as List).first as String);
+        final usesToken2022 =
+            List.generate(
+              wire.length - token2022Bytes.length + 1,
+              (index) => index,
+            ).any(
+              (offset) => List.generate(
+                token2022Bytes.length,
+                (i) => i,
+              ).every((i) => wire[offset + i] == token2022Bytes[i]),
+            );
+        simulatedTokenPrograms.add(usesToken2022);
+        incorrectProgram = !usesToken2022;
+      }
       final result = switch (method) {
         'getBalance' => {
           'context': {'slot': 1},
@@ -173,8 +217,18 @@ void main() {
           'context': {'slot': 1},
           'value': (body['params'] as List).first == _mint
               ? {
-                  'owner': 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
-                  'data': [base64Encode(mintData), 'base64'],
+                  'owner': token2022 ? token2022ProgramId : splTokenProgramId,
+                  'data':
+                      ((body['params'] as List)[1] as Map)['encoding'] ==
+                          'jsonParsed'
+                      ? {
+                          'program': token2022 ? 'spl-token-2022' : 'spl-token',
+                          'parsed': {
+                            'type': 'mint',
+                            'info': {'decimals': 6, 'supply': '1000000'},
+                          },
+                        }
+                      : [base64Encode(mintData), 'base64'],
                   'lamports': 1461600,
                   'executable': false,
                   'rentEpoch': 0,
@@ -185,7 +239,11 @@ void main() {
         'simulateTransaction' => {
           'context': {'slot': 1},
           'value': {
-            'err': failSimulation
+            'err': incorrectProgram
+                ? {
+                    'InstructionError': [1, 'IncorrectProgramId'],
+                  }
+                : failSimulation
                 ? {
                     'InstructionError': [0, 'InsufficientFunds'],
                   }
@@ -275,6 +333,41 @@ void main() {
       expect((await transactions.simulate(tx)).willRevert, isTrue);
       failSimulation = false;
     }
+
+    final tokens = TokenApi(transport);
+    final registered = await tokens.create(
+      name: 'Token-2022 fixture',
+      symbol: 'T22',
+      address: _mint,
+      decimals: 6,
+      network: net.id,
+      type: 'spl-token',
+    );
+    token2022 = true;
+    final backend = _SendBackend(
+      _SendClient(transactions, tokens),
+      net,
+      account.id,
+    );
+    addTearDown(backend.dispose);
+    final repaired = await backend.simulateSend(
+      to: _recipient,
+      amount: Amount(BigInt.from(1000000), 6),
+      asset: 'solana.mainnet.$_mint',
+    );
+    expect(repaired.willRevert, isFalse);
+    expect(simulatedTokenPrograms, [false, true]);
+    expect((await tokens.get(registered.id)).type, 'spl-token-2022');
+
+    failSimulation = true;
+    final blocked = await backend.simulateSend(
+      to: _recipient,
+      amount: Amount(BigInt.from(1000000), 6),
+      asset: 'solana.mainnet.$_mint',
+    );
+    expect(blocked.willRevert, isTrue);
+    expect(simulatedTokenPrograms, [false, true, true]);
+
     final methods = requests.map((body) => body['method']);
     expect(methods, contains('simulateTransaction'));
     expect(

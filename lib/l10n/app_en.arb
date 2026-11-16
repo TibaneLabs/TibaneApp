@@ -51,6 +51,8 @@
   "walletPartialBroadcast": "Some transactions were submitted. Check Activity before retrying to avoid sending twice.",
   "transactionSubmittedTitle": "Transaction submitted",
   "transactionSubmittedBody": "Waiting for network confirmation. Check Activity for the final status.",
+  "sendReceiptFailedTitle": "Send failed",
+  "sendReceiptFailedBody": "The network could not complete this transfer.",
   "browserUnknownEffects": "We could not verify all effects of this transaction. Only approve if you trust this site.",
   "browserBaseUnits": "Amount (base units)",
   "walletPasswordUpdateIncomplete": "The password update is incomplete. Keep both passwords and retry with the same old and new passwords.",

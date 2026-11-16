@@ -49,6 +49,8 @@
   "walletPartialBroadcast": "Certaines transactions ont été envoyées. Vérifiez Activité avant de réessayer pour éviter un double envoi.",
   "transactionSubmittedTitle": "Transaction envoyée",
   "transactionSubmittedBody": "En attente de confirmation du réseau. Consultez le statut final dans Activité.",
+  "sendReceiptFailedTitle": "Échec de l’envoi",
+  "sendReceiptFailedBody": "Le réseau n’a pas pu terminer ce transfert.",
   "browserUnknownEffects": "Tous les effets de cette transaction n'ont pas pu être vérifiés. N'approuvez que si vous faites confiance à ce site.",
   "browserBaseUnits": "Montant (unités minimales)",
   "walletPasswordUpdateIncomplete": "Le changement de mot de passe est incomplet. Conservez les deux mots de passe et réessayez avec les mêmes ancien et nouveau mots de passe.",

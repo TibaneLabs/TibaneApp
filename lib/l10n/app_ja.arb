@@ -49,6 +49,8 @@
   "walletPartialBroadcast": "一部の取引は送信済みです。二重送信を防ぐため、再試行する前にアクティビティを確認してください。",
   "transactionSubmittedTitle": "取引を送信しました",
   "transactionSubmittedBody": "ネットワークの承認を待っています。最終ステータスはアクティビティで確認できます。",
+  "sendReceiptFailedTitle": "送信に失敗しました",
+  "sendReceiptFailedBody": "ネットワークでこの送金を完了できませんでした。",
   "browserUnknownEffects": "この取引のすべての影響を確認できませんでした。信頼できるサイトの場合のみ承認してください。",
   "browserBaseUnits": "数量（最小単位）",
   "walletPasswordUpdateIncomplete": "パスワードの変更が完了していません。両方を保管し、同じ旧パスワードと新パスワードで再試行してください。",

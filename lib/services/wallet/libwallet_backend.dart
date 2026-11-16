@@ -486,17 +486,25 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   }) async {
     try {
       final client = await _getClient();
-      final existing = await client.tokens.list();
-      if (existing.any((t) => t.address == mint)) {
-        debugPrint('[track] $mint: already in tokens table');
-        return false;
-      }
       final net = _currentNetwork ?? await client.networks.getCurrent();
       _currentNetwork = net;
-      // Track on any mainnet (Solana SPL + EVM ERC-20). EVM token-add needs
-      // libwallet 0.4.74+ (earlier versions 500'd with "invalid UUID length").
+      // Track on mainnet only (Solana SPL + EVM ERC-20).
       if (net.testNet) {
         debugPrint('[track] $mint: skip, testnet network=${net.id}');
+        return false;
+      }
+      final existing = await client.tokens.list();
+      final entry = existing
+          .where((t) => t.address == mint && t.network == net.id)
+          .firstOrNull;
+      if (entry != null) {
+        if (net.type == NetworkType.solana &&
+            _isSolanaTokenType(type) &&
+            entry.type != type) {
+          await client.tokens.update(entry.id, type: type);
+          return true;
+        }
+        debugPrint('[track] $mint: already in tokens table');
         return false;
       }
       final chainKey = '${net.type.name}.${net.chainId}';
@@ -504,8 +512,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       var resolvedName = name ?? '';
       var resolvedSymbol = symbol ?? '';
       var resolvedDecimals = decimals ?? -1;
-      var resolvedType =
-          type ?? (net.type == NetworkType.evm ? 'erc20' : 'spl-token');
+      var resolvedType = type ?? (net.type == NetworkType.evm ? 'erc20' : '');
       debugPrint(
         '[track] $mint: incoming name="$resolvedName" symbol="$resolvedSymbol" '
         'decimals=$resolvedDecimals type=$resolvedType net=${net.type.name}',
@@ -514,6 +521,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // (erc20/…) + verify metadata; on Solana only when something's missing.
       if (resolvedSymbol.isEmpty ||
           resolvedDecimals < 0 ||
+          resolvedType.isEmpty ||
           net.type != NetworkType.solana) {
         try {
           final d = await client.tokens.discover(
@@ -532,8 +540,10 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
           debugPrint('[track] $mint: discover failed: $e');
         }
       }
-      if (resolvedDecimals < 0) {
-        debugPrint('[track] $mint: bail, decimals unresolved');
+      if (resolvedDecimals < 0 ||
+          (net.type == NetworkType.solana &&
+              !_isSolanaTokenType(resolvedType))) {
+        debugPrint('[track] $mint: bail, token metadata unresolved');
         return false;
       }
       await client.tokens.create(
@@ -560,6 +570,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       return false;
     }
   }
+
+  static bool _isSolanaTokenType(String? type) =>
+      type == 'spl-token' || type == 'spl-token-2022';
 
   /// Backwards-compatible shim for the hard-coded ChiefPussy path used
   /// during refreshBalances. Same contract as [ensureTokenTracked].
@@ -3463,6 +3476,42 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     );
     // LibWallet builds and simulates the transfer. Never approve a preview
     // when simulation fails; the send screen must surface that failure.
+    final simulation = await client.transactions.simulate(tx);
+    if (network.type != NetworkType.solana ||
+        !simulation.willRevert ||
+        !(simulation.revertReason?.contains('IncorrectProgramId') ?? false)) {
+      return simulation;
+    }
+    final prefix = 'solana.${network.chainId}.';
+    if (!resolvedAsset.startsWith(prefix)) return simulation;
+    final mint = resolvedAsset.substring(prefix.length);
+    if (mint.isEmpty || mint == 'NATIVE') return simulation;
+
+    // LibWallet builds from the registered program. Repair stale metadata
+    // only when the mint lookup confirms a different program on this network.
+    try {
+      final registered = (await client.tokens.list(search: mint))
+          .where(
+            (token) => token.address == mint && token.network == network.id,
+          )
+          .firstOrNull;
+      if (registered == null) return simulation;
+      final discovered = await client.tokens.discover(
+        network: network.id,
+        address: mint,
+      );
+      if (discovered.address != mint ||
+          !_isSolanaTokenType(discovered.type) ||
+          discovered.type == registered.type ||
+          discovered.decimals != amount.exp ||
+          registered.decimals != discovered.decimals) {
+        return simulation;
+      }
+      await client.tokens.update(registered.id, type: discovered.type);
+    } catch (e) {
+      debugPrint('[send] Unable to verify registered Solana token program: $e');
+      return simulation;
+    }
     return client.transactions.simulate(tx);
   }
 

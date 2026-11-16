@@ -49,6 +49,8 @@
   "walletPartialBroadcast": "Algumas transações foram enviadas. Confira a Atividade antes de tentar novamente para não enviar duas vezes.",
   "transactionSubmittedTitle": "Transação enviada",
   "transactionSubmittedBody": "Aguardando confirmação da rede. Consulte o status final em Atividade.",
+  "sendReceiptFailedTitle": "Falha no envio",
+  "sendReceiptFailedBody": "A rede não conseguiu concluir esta transferência.",
   "browserUnknownEffects": "Não foi possível verificar todos os efeitos desta transação. Aprove apenas se confiar neste site.",
   "browserBaseUnits": "Quantidade (unidades mínimas)",
   "walletPasswordUpdateIncomplete": "A alteração da senha está incompleta. Guarde as duas senhas e tente novamente com as mesmas senhas antiga e nova.",
