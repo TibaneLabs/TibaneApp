@@ -47,12 +47,15 @@ class _Transport implements Transport {
     Map<String, dynamic>? params,
   ]) async {
     if (path == 'Wallet/wallet') return wallet.toJson();
-    if (path == 'StoreKey:derivePassword') {
+    if (path.startsWith('Wallet/Key/') && path.endsWith(':verify')) {
       passwordChecks++;
+      final key = params!['Key'] as Map;
       return {
-        'Public_Key': params!['Password'] == 'fixture-password'
-            ? 'password-public'
-            : 'wrong-public',
+        'Id': path.substring('Wallet/Key/'.length, path.length - 7),
+        'Valid': key['Key'] == 'fixture-password',
+        'Checked': 'unsealed',
+        'Kdf': 'argon2id',
+        'KdfUpgrade': false,
       };
     }
     if (path == 'RemoteKey:reshare') {
@@ -69,12 +72,12 @@ class _Transport implements Transport {
 class _Client implements LibwalletClient {
   _Client(Transport transport)
     : wallets = WalletApi(transport),
-      storeKeys = StoreKeyApi(transport),
+      walletKeys = WalletKeyApi(transport),
       remoteKeys = RemoteKeyApi(transport);
   @override
   final WalletApi wallets;
   @override
-  final StoreKeyApi storeKeys;
+  final WalletKeyApi walletKeys;
   @override
   final RemoteKeyApi remoteKeys;
   @override

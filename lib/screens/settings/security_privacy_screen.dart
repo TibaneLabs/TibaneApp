@@ -193,38 +193,40 @@ class SecurityPrivacyScreen extends StatelessWidget {
     final messenger = context.messenger;
     // A reshare re-splits the wallet secret, so the RemoteKey share must be
     // re-pushed under a fresh, active session — minting it sends a 2FA code.
-    final session = await _withProgress(
-      context,
-      l10n.securitySendingCode,
-      () => wallet.libwallet.startPasswordChangeVerification(
-        oldPassword: result.oldPassword,
-        newPassword: result.newPassword,
-      ),
+    // Each wallet of the group (Solana + EVM/Bitcoin) gets its own session,
+    // so the user enters one code per wallet; the progress dialog is lowered
+    // while a code is asked for.
+    var cancelled = false;
+    final progress = _ProgressDialog(context, l10n.securitySendingCode);
+    final ok = await wallet.libwallet.changePassword(
+      oldPassword: result.oldPassword,
+      newPassword: result.newPassword,
+      requestCode: (session, step, steps) async {
+        progress.hide();
+        if (!context.mounted) return null;
+        final code = await showDialog<String>(
+          context: context,
+          builder: (_) => _CodeEntryDialog(
+            length: session.length,
+            step: steps > 1 ? step : null,
+            steps: steps,
+          ),
+        );
+        if (code == null || code.isEmpty || !context.mounted) {
+          cancelled = true;
+          return null;
+        }
+        progress.show(l10n.securityChangingPassword);
+        return code;
+      },
     );
+    progress.hide();
     if (!context.mounted) return;
-    if (session == null) {
-      logError(
-        '[SecurityPrivacy._changePassword] reshare start failed: ${wallet.libwallet.error}',
-      );
-      showWalletError(context, wallet.libwallet.error ?? 'Could not send code');
+    if (!ok &&
+        cancelled &&
+        !await wallet.libwallet.hasPendingPasswordRotation()) {
       return;
     }
-    final code = await showDialog<String>(
-      context: context,
-      builder: (_) => _CodeEntryDialog(length: session.length),
-    );
-    if (code == null || code.isEmpty) return;
-    if (!context.mounted) return;
-    final ok = await _withProgress(
-      context,
-      l10n.securityChangingPassword,
-      () => wallet.libwallet.changePassword(
-        sessionToken: session.session,
-        code: code,
-        oldPassword: result.oldPassword,
-        newPassword: result.newPassword,
-      ),
-    );
     if (!context.mounted) return;
     if (ok) {
       messenger.showSnackBar(
@@ -521,7 +523,12 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
 class _CodeEntryDialog extends StatefulWidget {
   final int length;
 
-  const _CodeEntryDialog({required this.length});
+  /// When set, which of [steps] wallets this code is for (password changes
+  /// need one code per wallet).
+  final int? step;
+  final int steps;
+
+  const _CodeEntryDialog({required this.length, this.step, this.steps = 1});
 
   @override
   State<_CodeEntryDialog> createState() => _CodeEntryDialogState();
@@ -550,6 +557,13 @@ class _CodeEntryDialogState extends State<_CodeEntryDialog> {
             l10n.securityCodeEntryBody(widget.length),
             style: const TextStyle(color: TibaneColors.textMuted),
           ),
+          if (widget.step != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              l10n.securityCodeEntryStep(widget.step!, widget.steps),
+              style: const TextStyle(color: TibaneColors.textMuted),
+            ),
+          ],
           const SizedBox(height: 12),
           TextField(
             controller: _ctrl,
@@ -578,5 +592,58 @@ class _CodeEntryDialogState extends State<_CodeEntryDialog> {
         ),
       ],
     );
+  }
+}
+
+/// A non-dismissible progress dialog that can be lowered and raised again
+/// around another dialog (the per-wallet 2FA code prompts).
+class _ProgressDialog {
+  _ProgressDialog(this._context, String message) {
+    show(message);
+  }
+
+  final BuildContext _context;
+  bool _visible = false;
+
+  void show(String message) {
+    if (_visible || !_context.mounted) return;
+    _visible = true;
+    unawaited(
+      showDialog<void>(
+        context: _context,
+        barrierDismissible: false,
+        builder: (_) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            backgroundColor: TibaneColors.card,
+            content: Row(
+              children: [
+                const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: TibaneColors.orange,
+                  ),
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: const TextStyle(color: TibaneColors.textMuted),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void hide() {
+    if (!_visible) return;
+    _visible = false;
+    if (_context.mounted) Navigator.of(_context, rootNavigator: true).pop();
   }
 }

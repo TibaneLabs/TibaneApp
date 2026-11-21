@@ -17,6 +17,7 @@ import '../widgets/tibane_card.dart';
 import 'bulk_sell_screen.dart';
 import 'incinerator_screen.dart';
 import 'staking/staking_pools_screen.dart';
+import 'wallet/recover_funds_screen.dart';
 import 'wallet/solana_context.dart';
 import 'wallet/widgets/authorize_and_sign.dart';
 
@@ -75,6 +76,14 @@ class ToolsScreen extends StatelessWidget {
             );
           },
         ),
+      _ToolCard(
+        key: const Key('tools-recover-funds'),
+        title: l10n.recoverTitle,
+        description: l10n.recoverToolDescription,
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const RecoverFundsScreen())),
+      ),
     ];
 
     return Scaffold(

@@ -16,17 +16,18 @@ class _Wallets implements WalletApi {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class _StoreKeys implements StoreKeyApi {
+class _WalletKeys implements WalletKeyApi {
   int checks = 0;
   @override
-  Future<String> derivePassword({
-    required String password,
-    required String walletKeyId,
-  }) async {
+  Future<WalletKeyCheck> verify(String keyId, {KeyDescription? key}) async {
     checks++;
-    return password == 'correct-fixture'
-        ? 'key-public-${walletKeyId.replaceFirst('-Password-0', '')}'
-        : 'different-public-key';
+    return WalletKeyCheck(
+      id: keyId,
+      valid: key?.key == 'correct-fixture',
+      checked: 'unsealed',
+      kdf: 'argon2id',
+      kdfUpgrade: false,
+    );
   }
 
   @override
@@ -38,7 +39,7 @@ class _Client implements LibwalletClient {
   @override
   final _Wallets wallets;
   @override
-  final _StoreKeys storeKeys = _StoreKeys();
+  final _WalletKeys walletKeys = _WalletKeys();
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -83,7 +84,7 @@ void main() {
         password: 'correct-fixture',
         prompt: normalBiometricPrompt,
       );
-      expect(client.storeKeys.checks, 2);
+      expect(client.walletKeys.checks, 2);
       expect(await auth.isEnabled(wallet), isTrue);
     },
   );
@@ -171,7 +172,7 @@ void main() {
       final backend = _Backend(client, auth, wallet.id);
       addTearDown(backend.dispose);
       await backend.enableNormalWalletBiometrics(prompt: normalBiometricPrompt);
-      expect(client.storeKeys.checks, 0);
+      expect(client.walletKeys.checks, 0);
       final key = await auth.readSigningKey(wallet, normalBiometricPrompt);
       expect(key!.key, 'fixture-device-secret');
       expect(key.type, 'StoreKey');

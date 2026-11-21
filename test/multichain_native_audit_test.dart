@@ -85,7 +85,7 @@ void main() {
   test(
     'official mainnet configuration covers the five non-Solana currencies',
     () {
-      expect(libwalletPackageVersion, '0.5.10');
+      expect(libwalletPackageVersion, '0.5.13');
       for (final symbol in _symbols) {
         final network = networks.singleWhere(
           (n) =>

@@ -95,10 +95,18 @@ Future<List<PasswordRotationItem>> preparePasswordRotation({
   return plans;
 }
 
+/// Reshare each wallet of [plans] onto [newPassword], one after the other.
+///
+/// [remoteKeyFor] gives the fresh, validated RemoteKey session for ONE wallet
+/// and is called right before that wallet's reshare: the signing fleet keeps
+/// one ceremony per session, so the wallets of a multiCreate pair each need
+/// their own `remoteKeys.reshare` + `validate` (one 2FA code per wallet, see
+/// libwallet docs/key-handling.md). Wallets already on [newPassword] don't
+/// call it.
 Future<void> executePasswordRotation({
   required List<PasswordRotationItem> plans,
   required String newPassword,
-  required String remoteKey,
+  required Future<String> Function(PasswordRotationItem) remoteKeyFor,
   required Future<Wallet> Function(PasswordRotationItem, List<KeyDescription>)
   reshare,
   required Future<void> Function(Wallet, String?) persist,
@@ -111,7 +119,15 @@ Future<void> executePasswordRotation({
     for (final plan in plans) {
       final after = plan.alreadyUpdated
           ? plan.wallet
-          : await reshare(plan, plan.newKeys(newPassword, remoteKey));
+          : await reshare(
+              plan,
+              plan.newKeys(
+                newPassword,
+                plan.wallet.keys.any((k) => k.isRemoteKey)
+                    ? await remoteKeyFor(plan)
+                    : '',
+              ),
+            );
       mutated = mutated || !plan.alreadyUpdated;
       if (after.pubkey != plan.wallet.pubkey ||
           after.curve != plan.wallet.curve) {
@@ -125,6 +141,11 @@ Future<void> executePasswordRotation({
     if (mutated || plans.any((p) => p.alreadyUpdated)) {
       throw PasswordRotationIncomplete(error);
     }
+    // Nothing changed (e.g. the first 2FA code was wrong or cancelled): don't
+    // leave a journal that reports a half-done change.
+    try {
+      await journal(const {});
+    } catch (_) {}
     rethrow;
   }
 }

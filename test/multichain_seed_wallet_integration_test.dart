@@ -74,7 +74,7 @@ class _Client implements LibwalletClient {
     : wallets = WalletApi(transport),
       accounts = AccountApi(transport),
       networks = NetworkApi(transport),
-      storeKeys = StoreKeyApi(transport);
+      walletKeys = WalletKeyApi(transport);
   @override
   final WalletApi wallets;
   @override
@@ -82,7 +82,7 @@ class _Client implements LibwalletClient {
   @override
   final NetworkApi networks;
   @override
-  final StoreKeyApi storeKeys;
+  final WalletKeyApi walletKeys;
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

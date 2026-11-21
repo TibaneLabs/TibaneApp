@@ -27,6 +27,7 @@ import 'signing.dart'
     show
         buildManagementReshareCommittee,
         effectiveManagementCreds,
+        managementCredsFrom,
         canSignWithoutDeviceShare;
 import 'unified_account.dart' show isUsableAccount;
 import 'wallet_backend.dart';
@@ -190,6 +191,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   void registerSigningAuthorization(List<SigningKey> keys, String context) {
     if (context != signingContext) throw StateError('wallet_operation_changed');
     _signingContexts[keys] = context;
+    final password = managementCredsFrom(keys).password;
+    if (password != null) unawaited(upgradePasswordKdfInBackground(password));
   }
 
   void _checkSigningAuthorization(List<SigningKey> keys) {
@@ -1607,28 +1610,23 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         prefs.containsKey('libw_password_rotation_pending_$group');
   }
 
-  Future<RemoteKeySession?> startPasswordChangeVerification({
-    required String oldPassword,
-    required String newPassword,
-  }) async {
-    try {
-      if (newPassword.length < 8) {
-        throw StateError('New password must be at least 8 characters');
-      }
-      await _passwordRotationPlans(oldPassword, newPassword);
-      return await startRemoteKeyReshare();
-    } catch (error) {
-      _error = 'Change password failed: $error';
-      notifyListeners();
-      return null;
-    }
-  }
-
+  /// Change the password of the active wallet group (both wallets of a
+  /// multiCreate pair). Every wallet is reshared onto the new password one
+  /// after the other, each on its OWN fresh RemoteKey session: before each
+  /// wallet's reshare a code is sent and [requestCode] is asked for it
+  /// (`step` of `steps`; return null to cancel). libwallet's signing fleet
+  /// keeps one ceremony per session, so a session can't serve two reshares
+  /// (docs/key-handling.md). An interrupted change resumes from the journal:
+  /// wallets already on the new password are skipped.
   Future<bool> changePassword({
-    required String sessionToken,
-    required String code,
     required String oldPassword,
     required String newPassword,
+    required Future<String?> Function(
+      RemoteKeySession session,
+      int step,
+      int steps,
+    )
+    requestCode,
     String? storeKeyPriv,
   }) async {
     _error = null;
@@ -1642,23 +1640,41 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         newPassword,
         storeKeyPriv: storeKeyPriv,
       );
-      final pending = plans.any((p) => !p.alreadyUpdated);
-      final remote = pending
-          ? (await _fleetCall(
-              'remoteKeys.validate',
-              client.remoteKeys.validate(session: sessionToken, code: code),
-            )).remoteKey
-          : '';
-      if (pending && remote.isEmpty) {
-        throw StateError('2FA validation returned no remote key');
-      }
+      final steps = plans
+          .where(
+            (p) => !p.alreadyUpdated && p.wallet.keys.any((k) => k.isRemoteKey),
+          )
+          .length;
+      var step = 0;
       final group = await _activeBackupGroupId();
       final prefs = await SharedPreferences.getInstance();
       final journalKey = 'libw_password_rotation_pending_$group';
       await executePasswordRotation(
         plans: plans,
         newPassword: newPassword,
-        remoteKey: remote,
+        remoteKeyFor: (plan) async {
+          step++;
+          final remoteKey = plan.wallet.keys.firstWhere((k) => k.isRemoteKey);
+          final session = await _fleetCall(
+            'remoteKeys.reshare(password ${plan.wallet.curve})',
+            client.remoteKeys.reshare(key: remoteKey.key),
+          );
+          final code = await requestCode(session, step, steps);
+          if (code == null || code.trim().isEmpty) {
+            throw StateError('verification_cancelled');
+          }
+          final validation = await _fleetCall(
+            'remoteKeys.validate(password ${plan.wallet.curve})',
+            client.remoteKeys.validate(
+              session: session.session,
+              code: code.trim(),
+            ),
+          );
+          if (validation.remoteKey.isEmpty) {
+            throw StateError('2FA validation returned no remote key');
+          }
+          return validation.remoteKey;
+        },
         journal: (remaining) async {
           final ok = remaining.isEmpty
               ? await prefs.remove(journalKey)
@@ -1690,6 +1706,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
               throw StateError('Could not verify updated device share');
             }
           }
+          // New Password shares are sealed with the current KDF.
+          _kdfChecked.add(wallet.id);
           if (_walletId == wallet.id) {
             final ids = _extractKeyIdsByType(wallet);
             _passwordKeyId = ids['Password'];
@@ -1703,7 +1721,9 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       );
       _error = null;
       notifyListeners();
-      unawaited(_maybeAutoBackup());
+      // Every share changed: backups made before this can't restore the
+      // wallet any more.
+      unawaited(_maybeAutoBackup(password: newPassword));
       return true;
     } catch (error) {
       _error = 'Change password failed: $error';
@@ -1821,6 +1841,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       // The no-biometric creation path has two Password shares and no
       // StoreKey. It can already sign; never rotate its committee for setup.
       if (canSignWithoutDeviceShare(wallet)) {
+        unawaited(upgradePasswordKdfInBackground(password));
         return true;
       }
       // Validate the SMS/email code. We need the freshly-minted
@@ -1858,6 +1879,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       _password = password;
       notifyListeners();
       unawaited(ensureSolanaDefault());
+      // The reshare replaced every share: older backups can't restore it.
+      unawaited(_maybeAutoBackup(password: password));
       return true;
     } catch (e) {
       _error = '2FA recovery failed: $e';
@@ -1908,6 +1931,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         ),
       );
       debugPrint('[recovery] RemoteKey share repaired for $_walletId');
+      unawaited(_maybeAutoBackup());
       return true;
     } catch (e) {
       _error = 'Repair failed: $e';
@@ -2018,6 +2042,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       );
       notifyListeners();
       unawaited(ensureSolanaDefault());
+      unawaited(_maybeAutoBackup(password: newPassword));
       return true;
     } catch (e) {
       _error = 'Password reset failed: $e';
@@ -3215,8 +3240,8 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
   /// already enabled (the user has backed up at least once) — it never
   /// auto-enrolls a wallet. No-op when locked; never throws (writeAutoBackup
   /// swallows its own errors).
-  Future<void> _maybeAutoBackup() async {
-    final pw = _password;
+  Future<void> _maybeAutoBackup({String? password}) async {
+    final pw = password ?? _password;
     if (pw == null) return; // locked — can't export
     if (await lastAutoBackup() == null) return; // auto-backup not enabled
     await writeAutoBackup(pw);
@@ -3242,7 +3267,17 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       if (!wallet.keys.any((key) => key.isPassword)) {
         throw StateError('private_key_wallet_backup_unavailable');
       }
-      await _verifyWalletPassword(client, wallet: wallet, password: password);
+      final check = await _verifyWalletPassword(
+        client,
+        wallet: wallet,
+        password: password,
+      );
+      // A backup is what an attacker would brute-force: re-seal PBKDF2-era
+      // Password shares first so the file only holds Argon2id ones.
+      if (check.needsKdfUpgrade) {
+        await _upgradePasswordKdf(client, wallet, password);
+        _kdfChecked.add(id);
+      }
     }
     final files = <String, Map<String, dynamic>>{};
     for (final id in targets) {
@@ -3389,6 +3424,7 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
       await prefs.setString(_prefsPasswordKeyId, _passwordKeyId!);
       await WalletExportPolicy.recordBackupImports(addedIds);
       notifyListeners();
+      unawaited(upgradePasswordKdfInBackground(password));
       return true;
     } catch (e) {
       // Clean up any wallet that landed in libwallet's local store before
@@ -4427,11 +4463,11 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
     return map;
   }
 
-  /// Verify [password] against the public key stored for the wallet's Password
-  /// share. `StoreKey:derivePassword` is a deterministic derivation API, not an
-  /// authentication API: it succeeds for every input. Treating success as a
-  /// match would let any password through export, restore and transfer gates.
-  Future<void> _verifyWalletPassword(
+  /// Check [password] by opening the wallet's Password share
+  /// (`Wallet/Key/<id>:verify`, libwallet ≥ 0.5.11), changing nothing. Throws
+  /// `StateError('Wrong password')` when it doesn't open. The returned check
+  /// says whether the share should be re-sealed to a newer KDF.
+  Future<WalletKeyCheck> _verifyWalletPassword(
     LibwalletClient client, {
     required Wallet wallet,
     required String password,
@@ -4443,27 +4479,96 @@ class LibwalletBackend extends ChangeNotifier implements WalletBackend {
         break;
       }
     }
-    if (passwordKey == null || passwordKey.key.isEmpty) {
+    if (passwordKey == null) {
       throw StateError('Wallet has no Password share');
     }
-
-    String derivedPublicKey;
+    if (password.isEmpty) throw StateError('Wrong password');
+    final WalletKeyCheck check;
     try {
-      derivedPublicKey = await client.storeKeys.derivePassword(
-        password: password,
-        walletKeyId: passwordKey.id,
+      check = await client.walletKeys.verify(
+        passwordKey.id,
+        key: KeyDescription.password(password),
       );
     } catch (_) {
       throw StateError('Wrong password');
     }
-    if (!passwordPublicKeyMatches(passwordKey.key, derivedPublicKey)) {
-      throw StateError('Wrong password');
-    }
+    if (!check.valid) throw StateError('Wrong password');
+    return check;
   }
 
-  @visibleForTesting
-  static bool passwordPublicKeyMatches(
-    String expectedPublicKey,
-    String derivedPublicKey,
-  ) => expectedPublicKey.isNotEmpty && expectedPublicKey == derivedPublicKey;
+  // ------------------------------------------------------------------
+  // Password KDF upgrade (libwallet 0.5.11+, docs/key-handling.md
+  // "Password KDF"): Password shares sealed before 0.5.11 use PBKDF2, which is
+  // cheap to brute-force from a backup. When the user next types the
+  // password, re-seal them to the same password (Argon2id), then back up.
+  // ------------------------------------------------------------------
+
+  /// Wallets whose Password shares were checked this run; cleared by nothing
+  /// but a restart (a share only ever gets upgraded, never downgraded).
+  final Set<String> _kdfChecked = {};
+  Future<void> _kdfQueue = Future.value();
+
+  /// Re-seal [wallet]'s Password shares that [password] opens and whose KDF is
+  /// older than what new shares get. Returns how many were re-sealed. A share
+  /// under a password shorter than 8 characters can't be re-sealed to it and
+  /// is left alone (the user has to change the password). Never throws.
+  Future<int> _upgradePasswordKdf(
+    LibwalletClient client,
+    Wallet wallet,
+    String password,
+  ) async {
+    if (password.length < 8) return 0;
+    var upgraded = 0;
+    for (final key in wallet.keys.where((k) => k.isPassword)) {
+      try {
+        final check = await client.walletKeys.verify(
+          key.id,
+          key: KeyDescription.password(password),
+        );
+        if (!check.valid || !check.needsKdfUpgrade) continue;
+        await client.walletKeys.recrypt(
+          key.id,
+          oldPassword: password,
+          newPassword: password,
+        );
+        upgraded++;
+        debugPrint(
+          '[kdf] re-sealed ${key.id} (was ${check.kdfParams ?? check.kdf})',
+        );
+      } catch (e) {
+        debugPrint('[kdf] upgrade of ${key.id} failed: $e');
+      }
+    }
+    return upgraded;
+  }
+
+  /// Background KDF upgrade for the active wallet group after the user typed
+  /// [password] (sign sheet, unlock, restore). One check per wallet per run;
+  /// refreshes the auto-backup when anything was re-sealed, since the stored
+  /// backup still holds the PBKDF2 copy.
+  Future<void> upgradePasswordKdfInBackground(String password) {
+    final id = walletId;
+    if (id == null || password.length < 8) return Future.value();
+    return _kdfQueue = _kdfQueue.then((_) async {
+      try {
+        final client = await ensureClient();
+        final groups = await WalletGroupStore.read();
+        final group = groups[id] ?? id;
+        final targets = (await client.wallets.list()).where(
+          (w) =>
+              (w.id == id || groups[w.id] == group) &&
+              !_kdfChecked.contains(w.id) &&
+              w.keys.any((k) => k.isPassword),
+        );
+        var upgraded = 0;
+        for (final wallet in targets.toList()) {
+          upgraded += await _upgradePasswordKdf(client, wallet, password);
+          _kdfChecked.add(wallet.id);
+        }
+        if (upgraded > 0) await _maybeAutoBackup(password: password);
+      } catch (e) {
+        debugPrint('[kdf] background upgrade failed: $e');
+      }
+    });
+  }
 }

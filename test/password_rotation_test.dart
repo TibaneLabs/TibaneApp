@@ -66,7 +66,7 @@ void main() {
         executePasswordRotation(
           plans: await prepare(),
           newPassword: 'new',
-          remoteKey: 'fresh',
+          remoteKeyFor: (plan) async => 'fresh-${plan.wallet.id}',
           reshare: (plan, _) async {
             changed.add(plan.wallet.id);
             passwords[plan.wallet.id] = 'new';
@@ -86,7 +86,8 @@ void main() {
       await executePasswordRotation(
         plans: await prepare(),
         newPassword: 'new',
-        remoteKey: '',
+        remoteKeyFor: (_) async =>
+            fail('Already-updated wallets need no 2FA session'),
         reshare: (_, _) async =>
             fail('Already-updated wallets must not rotate again'),
         persist: (_, _) async {},
@@ -96,6 +97,44 @@ void main() {
       expect(passwords.values, everyElement('new'));
     },
   );
+
+  test('each wallet reshares on its own fresh RemoteKey session', () async {
+    final wallets = [
+      _wallet('ed', ['Password', 'Password', 'RemoteKey']),
+      _wallet('secp', ['Password', 'Password', 'RemoteKey']),
+    ];
+    final plans = await preparePasswordRotation(
+      wallets: wallets,
+      oldPassword: 'old',
+      newPassword: 'new',
+      passwordMatches: (_, pw) async => pw == 'old',
+      readStoreSecret: (_, _, _) async => null,
+    );
+    final events = <String>[];
+    await executePasswordRotation(
+      plans: plans,
+      newPassword: 'new',
+      remoteKeyFor: (plan) async {
+        events.add('session:${plan.wallet.id}');
+        return 'session-${plan.wallet.id}';
+      },
+      reshare: (plan, keys) async {
+        final remote = keys.singleWhere((k) => k.type == 'RemoteKey');
+        events.add('reshare:${plan.wallet.id}:${remote.key}');
+        return plan.wallet;
+      },
+      persist: (_, _) async {},
+      journal: (_) async {},
+    );
+    // One session per wallet, minted right before that wallet's reshare and
+    // never reused for the next one.
+    expect(events, [
+      'session:ed',
+      'reshare:ed:session-ed',
+      'session:secp',
+      'reshare:secp:session-secp',
+    ]);
+  });
 
   test('all old credentials are validated before the first mutation', () async {
     await expectLater(

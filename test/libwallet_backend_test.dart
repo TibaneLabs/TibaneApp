@@ -290,27 +290,4 @@ void main() {
       expect(plan.ensured, isEmpty);
     });
   });
-
-  group('LibwalletBackend.passwordPublicKeyMatches', () {
-    test('accepts only the public key derived from the original password', () {
-      expect(
-        LibwalletBackend.passwordPublicKeyMatches(
-          'stored-public',
-          'stored-public',
-        ),
-        isTrue,
-      );
-      expect(
-        LibwalletBackend.passwordPublicKeyMatches(
-          'stored-public',
-          'other-public',
-        ),
-        isFalse,
-      );
-    });
-
-    test('never accepts an empty stored key', () {
-      expect(LibwalletBackend.passwordPublicKeyMatches('', ''), isFalse);
-    });
-  });
 }

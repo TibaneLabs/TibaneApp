@@ -79,7 +79,7 @@ void main() {
         await executePasswordRotation(
           plans: plans,
           newPassword: 'new-password',
-          remoteKey: 'unused',
+          remoteKeyFor: (_) async => 'unused',
           reshare: (plan, keys) async {
             await for (final event in client.wallets.reshare(
               plan.wallet.id,
